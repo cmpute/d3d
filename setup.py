@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 setup(
@@ -11,7 +11,7 @@ setup(
     url='https://github.com/cmpute/d3d',
     download_url='https://github.com/cmpute/d3d/archive/master.zip',
     license='BSD-3-Clause',
-    packages=['d3d'],
+    packages=find_packages(),
     install_requires=['numpy', 'torch'],
     setup_requires=['pybind11', 'torch'],
     extras_require={'test': ['pytest']},

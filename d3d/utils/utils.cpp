@@ -15,7 +15,11 @@ struct coord_hash : public std::unary_function<coord_t, std::size_t>
 {
     std::size_t operator()(const coord_t& k) const
     {
-        return std::get<0>(k) ^ std::get<1>(k) ^ std::get<2>(k);
+        constexpr int p = 997; // match this to the range of k
+        size_t ret = std::get<0>(k);
+        ret = ret * p + std::get<1>(k);
+        ret = ret * p + std::get<2>(k);
+        return ret;
     }
 };
  
@@ -74,32 +78,30 @@ int voxelize_3d_templated(
     coord_m voxel_idmap;
     int coord_temp[3];
     int nvoxels = 0;
-    bool failed = false;
-
     for (int i = 0; i < npoints; ++i)
     {
         // calculate voxel-wise coordinates
-        failed = false;
+        bool out_of_range = false;
         for (int d = 0; d < 3; ++d)
         {
-            int idx = floor((points_[i][d] - voxel_bound_[d << 1]) / voxel_size_[d]);
+            int idx = int((points_[i][d] - voxel_bound_[d << 1]) / voxel_size_[d]);
             if (idx < 0 || idx >= voxel_shape_[d])
             {
-                failed = true;
+                out_of_range = true;
                 break;
             }
             coord_temp[d] = idx;
         }
-        if (failed) continue;
+        if (out_of_range) continue;
 
         // assign voxel
+        int voxel_idx;
         auto coord_tuple = make_tuple(coord_temp[0], coord_temp[1], coord_temp[2]);
         auto voxel_iter = voxel_idmap.find(coord_tuple);
-        int voxel_idx;
         if (voxel_iter == voxel_idmap.end())
         {
             if (nvoxels >= max_voxels)
-                break; // TODO: break or continues?
+                continue;
 
             voxel_idx = nvoxels++;
             voxel_idmap[coord_tuple] = voxel_idx;
@@ -110,7 +112,7 @@ int voxelize_3d_templated(
             voxel_idx = voxel_iter->second;
 
         // assign voxel mask and original features
-        int n = voxel_npoints_[voxel_idx];
+        int n = voxel_npoints_[voxel_idx]++;
         if (n < max_points)
         {
             voxel_pmask_[voxel_idx][n] = true;
@@ -140,14 +142,13 @@ int voxelize_3d_templated(
                 break;
             }
         }
-
-        ++voxel_npoints_[voxel_idx];
     }
 
     // if aggregate is mean, divide them by the numbers now
-    for (int i = 0; i < nvoxels; i++)
-        for (int d = 0; d < nfeatures; d++)
-            aggregates_[i][d] /= voxel_npoints_[i];
+    if (ReductionType == 1)
+        for (int i = 0; i < nvoxels; i++)
+            for (int d = 0; d < nfeatures; d++)
+                aggregates_[i][d] /= voxel_npoints_[i];
 
     return nvoxels;
 }
@@ -176,6 +177,8 @@ int voxelize_3d(
     case 3:
         return voxelize_3d_templated<3>(points, voxel_shape, voxel_bound, max_points, max_voxels,
             voxels, coords, aggregates, voxel_pmask, voxel_npoints);
+    default:
+        return 0;
     }
 }
 

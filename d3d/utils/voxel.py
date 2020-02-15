@@ -8,7 +8,6 @@ class VoxelGenerator:
 
         self._bounds = torch.tensor(bounds, dtype=torch.float)
         self._shape = torch.tensor(shape, dtype=torch.int32)
-        self._voxel_size = None # TODO: calculate
         self._max_points = max_points
         self._max_voxels = max_voxels
 
@@ -26,24 +25,27 @@ class VoxelGenerator:
     def __call__(self, points):
 
         # initialize variables
-        voxels = torch.empty((self._max_voxels, self._max_points, points.shape[-1]), dtype=torch.float32)
+        voxels = torch.zeros((self._max_voxels, self._max_points, points.shape[-1]), dtype=torch.float32)
         coords = torch.empty((self._max_voxels, 3), dtype=torch.int32)
         aggregates = torch.empty((self._max_voxels, points.shape[-1]), dtype=torch.float32)\
-            if self._reduction else torch.empty(0)
+            if self._reduction else torch.empty((0,0))
         voxel_pmask = torch.empty((self._max_voxels, self._max_points), dtype=torch.bool)
-        voxel_npoints = torch.empty(self._max_voxels, dtype=torch.int32)
+        voxel_npoints = torch.zeros(self._max_voxels, dtype=torch.int32) # need to be initialized
 
         # call implementation
         nvoxels = voxelize_3d(points, self._shape, self._bounds,
-            self._max_voxels, self._max_voxels, self._reduction,
+            self._max_points, self._max_voxels, self._reduction,
             voxels, coords, aggregates, voxel_pmask, voxel_npoints
         )
         
-        return edict(
+        ret = edict(
             voxels = voxels[:nvoxels],
             coords = coords[:nvoxels],
-            aggregates = aggregates[:nvoxels],
             voxel_pmask = voxel_pmask[:nvoxels],
             voxel_npoints = voxel_npoints[:nvoxels],
         )
 
+        if self._reduction:
+            ret.aggregates = aggregates[:nvoxels]
+
+        return ret
