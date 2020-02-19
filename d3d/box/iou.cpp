@@ -7,14 +7,14 @@ void rbox_2d_iou(
     const Tensor boxes1, const Tensor boxes2, Tensor ious
 )
 {
-    size_t N = boxes1.sizes().at(0);
-    size_t M = boxes2.sizes().at(0);
-
     auto boxes1_ = boxes1.accessor<float, 2>();
     auto boxes2_ = boxes2.accessor<float, 2>();
     auto ious_ = ious.accessor<float, 2>();
-    for (size_t i = 0; i < N; i++)
-        for (size_t j = 0; j < M; j++)
+
+    auto N = boxes1_.size(0);
+    auto M = boxes2_.size(0);
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < M; j++)
         {
             Box2 b1(boxes1_[i][0], boxes1_[i][1], boxes1_[i][2],
                 boxes1_[i][3], boxes1_[i][4]);

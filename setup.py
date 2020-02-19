@@ -27,7 +27,7 @@ setup(
     keywords=['detection', '3d'],
 
     ext_modules=[
-        CppExtension('d3d.box._impl', ['d3d/box/impl.cpp', 'd3d/box/iou.cpp'], include_dirs=["."]),
+        CUDAExtension('d3d.box._impl', ['d3d/box/impl.cpp', 'd3d/box/iou.cpp', 'd3d/box/iou_cuda.cu'], include_dirs=["."]),
         CppExtension('d3d.voxel._impl', ['d3d/voxel/impl.cpp'], include_dirs=["./robin-map/include"])
     ],
     cmdclass={

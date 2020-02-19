@@ -1,5 +1,5 @@
 import torch
-from ._impl import rbox_2d_iou as rbox_2d_iou_cc
+from ._impl import rbox_2d_iou as rbox_2d_iou_cc, rbox_2d_iou_cuda
 
 def rbox_2d_iou(boxes1, boxes2):
     if len(boxes1.shape) != 2 or len(boxes2.shape) != 2:
@@ -7,8 +7,14 @@ def rbox_2d_iou(boxes1, boxes2):
     if boxes1.shape[1] != 5 or boxes2.shape[1] != 5:
         raise ValueError("Input boxes should have 5 fields: x, y, w, h, r")
 
-    ious = torch.empty((len(boxes1), len(boxes2)), dtype=torch.float)
-    rbox_2d_iou_cc(boxes1, boxes2, ious)
+    boxes1, boxes2 = boxes1.contiguous(), boxes2.contiguous()
+
+    if boxes1.is_cuda and boxes2.is_cuda:
+        ious = torch.empty((len(boxes1), len(boxes2)), dtype=torch.float, device=boxes1.device)
+        rbox_2d_iou_cuda(boxes1, boxes2, ious)
+    else:
+        ious = torch.empty((len(boxes1), len(boxes2)), dtype=torch.float)
+        rbox_2d_iou_cc(boxes1, boxes2, ious)
     
     return ious
 
