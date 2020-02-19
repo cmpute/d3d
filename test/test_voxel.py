@@ -3,7 +3,7 @@ import unittest
 import torch
 import numpy as np
 
-from d3d.utils.voxel import VoxelGenerator
+from d3d.voxel import VoxelGenerator
 from spconv.utils import VoxelGeneratorV2
 
 

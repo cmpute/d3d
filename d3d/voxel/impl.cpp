@@ -3,7 +3,6 @@
 #include <tuple>
 
 #include <torch/extension.h>
-#include <torch/types.h>
 #include <iostream>
 
 using namespace std;
