@@ -3,7 +3,7 @@ from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtensio
 
 setup(
     name="d3d",
-    version="0.0.2",
+    version="0.0.3",
     description="Customized tools for 3D object detection",
     long_description='(see project homepage)',
     author='Jacob Zhong',
@@ -27,7 +27,11 @@ setup(
     keywords=['detection', '3d'],
 
     ext_modules=[
-        CUDAExtension('d3d.box._impl', ['d3d/box/impl.cpp', 'd3d/box/iou.cpp', 'd3d/box/iou_cuda.cu'], include_dirs=["."]),
+        CUDAExtension('d3d.box._impl', [
+            'd3d/box/impl.cpp',
+            'd3d/box/iou.cpp', 'd3d/box/iou_cuda.cu',
+            'd3d/box/nms.cpp', 'd3d/box/nms_cuda.cu'
+            ], include_dirs=["."]),
         CppExtension('d3d.voxel._impl', ['d3d/voxel/impl.cpp'], include_dirs=["./robin-map/include"])
     ],
     cmdclass={

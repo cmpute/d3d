@@ -1,5 +1,6 @@
 import torch
-from ._impl import rbox_2d_iou as rbox_2d_iou_cc, rbox_2d_iou_cuda
+from ._impl import rbox_2d_iou as rbox_2d_iou_cc, rbox_2d_iou_cuda, \
+    rbox_2d_nms as rbox_2d_nms_cc, rbox_2d_nms_cuda
 
 def rbox_2d_iou(boxes1, boxes2):
     if len(boxes1.shape) != 2 or len(boxes2.shape) != 2:
@@ -18,9 +19,21 @@ def rbox_2d_iou(boxes1, boxes2):
     
     return ious
 
-# References:
-# https://github.com/multimodallearning/pytorch-mask-rcnn/blob/master/nms
-# https://github.com/gdlg/pytorch_nms
+def rbox_2d_nms(boxes, scores, threshold=0):
+    if len(boxes) != len(scores):
+        raise ValueError("Numbers of boxes and scores are inconsistent!")
+    if len(scores.shape) == 2:
+        scores = scores.max(axis=0)
 
-# def nms(boxes, scores, overlap, top_k):
-#     return _impl.nms_forward(boxes, scores, overlap, top_k)
+    if boxes.is_cuda and scores.is_cuda:
+        order = scores.argsort(descending=True)
+        suppressed = torch.zeros(len(boxes), dtype=bool, device=boxes.device)
+        rbox_2d_nms_cuda(boxes, order, threshold, suppressed) 
+    else:
+        order = scores.argsort(descending=True)
+        suppressed = torch.zeros(len(boxes), dtype=bool)
+        rbox_2d_nms_cc(boxes, order, threshold, suppressed) 
+    return ~suppressed
+
+# TODO: implement softnms
+# https://github.com/DocF/Soft-NMS/blob/master/softnms_pytorch.py

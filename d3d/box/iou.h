@@ -2,5 +2,9 @@
 
 #include <torch/extension.h>
 
-void rbox_2d_iou(const torch::Tensor boxes1, const torch::Tensor boxes2, torch::Tensor ious);
-void rbox_2d_iou_cuda(const torch::Tensor boxes1, const torch::Tensor boxes2, torch::Tensor ious);
+void rbox_2d_iou(
+    const torch::Tensor boxes1, const torch::Tensor boxes2, torch::Tensor ious
+);
+void rbox_2d_iou_cuda(
+    const torch::Tensor boxes1, const torch::Tensor boxes2, torch::Tensor ious
+);

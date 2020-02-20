@@ -1,33 +1,35 @@
-#include <torch/extension.h>
-#include <torch/types.h>
-#include <iostream>
+#include <d3d/box/nms.h>
+#include <d3d/box/geometry.hpp>
 
-std::vector<at::Tensor> nms_cuda_forward(
-        at::Tensor boxes,
-        at::Tensor idx,
-        float nms_overlap_thresh,
-        unsigned long top_k);
+using namespace std;
 
-#define CHECK_CUDA(x) AT_ASSERTM(x.type().is_cuda(), #x " must be a CUDA tensor")
-#define CHECK_CONTIGUOUS(x) AT_ASSERTM(x.is_contiguous(), #x " must be contiguous")
-#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
+void rbox_2d_nms(
+    const torch::Tensor boxes, const torch::Tensor order,
+    float threshold,
+    torch::Tensor suppressed
+) {
+    auto boxes_ = boxes.accessor<float, 2>();
+    auto suppressed_ = suppressed.accessor<bool, 1>();
+    auto order_ = order.accessor<long, 1>();
 
-std::vector<at::Tensor> nms_forward(
-        at::Tensor boxes,
-        at::Tensor scores,
-        float thresh,
-        unsigned long top_k) {
+    int N = boxes_.size(0);
+    for (int _i = 0; _i < N; _i++)
+    {
+        int i = order_[_i];
+        if (suppressed_[i])
+            continue;
+        for (int _j = _i + 1; _j < N; ++_j)
+        {
+            int j = order_[_j];
+            if (suppressed_[j])
+                continue;
 
-
-    auto idx = std::get<1>(scores.sort(0, true));
-
-    CHECK_INPUT(boxes);
-    CHECK_INPUT(idx);
-
-    return nms_cuda_forward(boxes, idx, thresh, top_k);
+            Box2 bi(boxes_[i][0], boxes_[i][1], boxes_[i][2],
+                boxes_[i][3], boxes_[i][4]);
+            Box2 bj(boxes_[j][0], boxes_[j][1], boxes_[j][2],
+                boxes_[j][3], boxes_[j][4]);
+            if (bi.iou(bj) > threshold)
+                suppressed_[j] = true;
+        }
+    }
 }
-
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("nms_forward", &nms_forward, "NMS");
-}
-

@@ -1,169 +1,114 @@
-#include <torch/extension.h>
-#include <ATen/ATen.h>
+#include <d3d/common.h>
+#include <d3d/box/nms.h>
+#include <d3d/box/geometry.hpp>
 
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <vector>
-#include <iostream>
+using namespace torch;
 
-// Hard-coded maximum. Increase if needed.
-#define MAX_COL_BLOCKS 1000
+constexpr int ThreadsPerBlock = sizeof(int64_t) * 8;
 
-#define DIVUP(m,n) (((m)+(n)-1) / (n))
-int64_t const threadsPerBlock = sizeof(unsigned long long) * 8;
-
-// The functions below originates from Fast R-CNN
-// See https://github.com/rbgirshick/py-faster-rcnn
-// Copyright (c) 2015 Microsoft
-// Licensed under The MIT License
-// Written by Shaoqing Ren
+// FIXME: Is there any reason to cut blocks like this? Why not directly calculate?
+// FIXME: Should have quicker solution, directly compare each pair boxes and suppress the box with
+//        lower score if they have overlap greater than threshold.
+//        This should be only considered if it takes too much time with respect to whole process.
 
 template <typename scalar_t>
-__device__ inline scalar_t devIoU(scalar_t const * const a, scalar_t const * const b) {
-  scalar_t left = max(a[0], b[0]), right = min(a[2], b[2]);
-  scalar_t top = max(a[1], b[1]), bottom = min(a[3], b[3]);
-  scalar_t width = max(right - left, 0.f), height = max(bottom - top, 0.f);
-  scalar_t interS = width * height;
-  scalar_t Sa = (a[2] - a[0]) * (a[3] - a[1]);
-  scalar_t Sb = (b[2] - b[0]) * (b[3] - b[1]);
-  return interS / (Sa + Sb - interS);
-}
+__global__ void rbox_2d_nms_kernel(
+    const _PackedAccessor(2) boxes,
+    const _PackedAccessorT(int64_t, 1) order,
+    const scalar_t threshold,
+    _PackedAccessorT(int64_t, 2) mask
+) {
+    const int row_start = blockIdx.y;
+    const int col_start = blockIdx.x;
+    if (row_start > col_start) return; // calculate only upper part
 
-template <typename scalar_t>
-__global__ void nms_kernel(const int64_t n_boxes, const scalar_t nms_overlap_thresh,
-                           const scalar_t *dev_boxes, const int64_t *idx, int64_t *dev_mask) {
-  const int64_t row_start = blockIdx.y;
-  const int64_t col_start = blockIdx.x;
+    const int row_size = min(boxes.size(0) - row_start * ThreadsPerBlock, ThreadsPerBlock);
+    const int col_size = min(boxes.size(0) - col_start * ThreadsPerBlock, ThreadsPerBlock);
 
-  const int row_size =
-        min(n_boxes - row_start * threadsPerBlock, threadsPerBlock);
-  const int col_size =
-        min(n_boxes - col_start * threadsPerBlock, threadsPerBlock);
-
-  __shared__ scalar_t block_boxes[threadsPerBlock * 4];
-  if (threadIdx.x < col_size) {
-    block_boxes[threadIdx.x * 4 + 0] =
-        dev_boxes[idx[(threadsPerBlock * col_start + threadIdx.x)] * 4 + 0];
-    block_boxes[threadIdx.x * 4 + 1] =
-        dev_boxes[idx[(threadsPerBlock * col_start + threadIdx.x)] * 4 + 1];
-    block_boxes[threadIdx.x * 4 + 2] =
-        dev_boxes[idx[(threadsPerBlock * col_start + threadIdx.x)] * 4 + 2];
-    block_boxes[threadIdx.x * 4 + 3] =
-        dev_boxes[idx[(threadsPerBlock * col_start + threadIdx.x)] * 4 + 3];
-  }
-  __syncthreads();
-
-  if (threadIdx.x < row_size) {
-    const int cur_box_idx = threadsPerBlock * row_start + threadIdx.x;
-    const scalar_t *cur_box = dev_boxes + idx[cur_box_idx] * 4;
-    int i = 0;
-    unsigned long long t = 0;
-    int start = 0;
-    if (row_start == col_start) {
-      start = threadIdx.x + 1;
+    __shared__ scalar_t block_boxes[ThreadsPerBlock][5];
+    if (threadIdx.x < col_size)
+    {
+        #pragma unroll
+        for (int i = 0; i < 5; ++i)
+        {
+            int boxi = order[ThreadsPerBlock * col_start + threadIdx.x];
+            block_boxes[threadIdx.x][i] = boxes[boxi][i];
+        }
     }
-    for (i = start; i < col_size; i++) {
-      if (devIoU(cur_box, block_boxes + i * 4) > nms_overlap_thresh) {
-        t |= 1ULL << i;
-      }
+    __syncthreads();
+
+    if (threadIdx.x < row_size)
+    {
+        const int bcur_idx = order[ThreadsPerBlock * row_start + threadIdx.x];
+        Box2 bcur(boxes[bcur_idx][0], boxes[bcur_idx][1], boxes[bcur_idx][2],
+            boxes[bcur_idx][3], boxes[bcur_idx][4]);
+
+        int64_t flag = 0;
+        int start = (row_start == col_start) ? threadIdx.x + 1 : 0;
+        for (int i = start; i < col_size; i++)
+        {
+            Box2 bcomp(block_boxes[i][0], block_boxes[i][1], block_boxes[i][2],
+                block_boxes[i][3], block_boxes[i][4]);
+            if (bcur.iou(bcomp) > threshold)
+                flag |= 1ULL << i;
+        }
+        mask[bcur_idx][col_start] = flag;
     }
-    const int col_blocks = DIVUP(n_boxes, threadsPerBlock);
-    dev_mask[cur_box_idx * col_blocks + col_start] = t;
-  }
 }
 
+__global__ void nms_collect(
+    const _PackedAccessorT(int64_t, 1) order,
+    const _PackedAccessorT(int64_t, 2) mask,
+    _PackedAccessorT(int64_t, 1) remv,
+    _PackedAccessorT(bool, 1) suppressed // already filled by false
+) {
+    const int nboxes = mask.size(0);
+    const int nblocks = mask.size(1);
 
-__global__ void nms_collect(const int64_t boxes_num, const int64_t col_blocks, int64_t top_k, const int64_t *idx, const int64_t *mask, int64_t *keep, int64_t *parent_object_index, int64_t *num_to_keep) {
-  int64_t remv[MAX_COL_BLOCKS];
-  int64_t num_to_keep_ = 0;
+    for (int i = 0; i < nboxes; i++)
+    {
+        int block_idx = i / ThreadsPerBlock;
+        int thread_idx = i % ThreadsPerBlock;
 
-  for (int i = 0; i < col_blocks; i++) {
-      remv[i] = 0;
-  }
-
-  for (int i = 0; i < boxes_num; ++i) {
-      parent_object_index[i] = 0;
-  }
-
-  for (int i = 0; i < boxes_num; i++) {
-    int nblock = i / threadsPerBlock;
-    int inblock = i % threadsPerBlock;
-
-
-    if (!(remv[nblock] & (1ULL << inblock))) {
-      int64_t idxi = idx[i];
-      keep[num_to_keep_] = idxi;
-      const int64_t *p = &mask[0] + i * col_blocks;
-      for (int j = nblock; j < col_blocks; j++) {
-        remv[j] |= p[j];
-      }
-      for (int j = i; j < boxes_num; j++) {
-        int nblockj = j / threadsPerBlock;
-        int inblockj = j % threadsPerBlock;
-        if (p[nblockj] & (1ULL << inblockj))
-            parent_object_index[idx[j]] = num_to_keep_+1;
-      }
-      parent_object_index[idx[i]] = num_to_keep_+1;
-
-      num_to_keep_++;
-
-      if (num_to_keep_==top_k)
-          break;
+        if (!(remv[block_idx] & (1ULL << thread_idx)))
+        {
+            for (int j = block_idx; j < nblocks; j++)
+                remv[j] |= mask[i * nblocks][j];
+        }
+        else
+            suppressed[order[i]] = true;
     }
-  }
-
-  // Initialize the rest of the keep array to avoid uninitialized values.
-  for (int i = num_to_keep_; i < boxes_num; ++i)
-      keep[i] = 0;
-
-  *num_to_keep = min(top_k,num_to_keep_);
 }
 
-#define CHECK_CONTIGUOUS(x) AT_ASSERTM(x.is_contiguous(), #x " must be contiguous")
+void rbox_2d_nms_cuda(
+  const Tensor boxes, const Tensor order,
+  float threshold,
+  Tensor suppressed
+) {
 
-std::vector<at::Tensor> nms_cuda_forward(
-        at::Tensor boxes,
-        at::Tensor idx,
-        float nms_overlap_thresh,
-        unsigned long top_k) {
+    const int nboxes = boxes.sizes().at(0);
+    const int nblocks = DivUp(nboxes, ThreadsPerBlock);
+    auto long_options = torch::TensorOptions().device(torch::kCUDA).dtype(torch::kLong);
 
-  const auto boxes_num = boxes.size(0);
+    // This tensor store pairwise IOU result, rows are continuous while cols are divided by ThreadsPerBlock
+    // It has type int64, but it can act as uint64 in terms of bit operation
+    auto mask = torch::empty({nboxes, nblocks}, long_options);
 
-  const int col_blocks = DIVUP(boxes_num, threadsPerBlock);
+    dim3 blocks(nblocks, nblocks);
+    dim3 threads(ThreadsPerBlock);
 
-  AT_ASSERTM (col_blocks < MAX_COL_BLOCKS, "The number of column blocks must be less than MAX_COL_BLOCKS. Increase the MAX_COL_BLOCKS constant if needed.");
+    AT_DISPATCH_FLOATING_TYPES(boxes.type(), "rbox_2d_nms_kernel", ([&] {
+        rbox_2d_nms_kernel<<<blocks, threads>>>(
+            boxes._packed_accessor(2),
+            order._packed_accessor_typed(int64_t, 1),
+            (scalar_t) threshold,
+            mask._packed_accessor_typed(int64_t, 2));
+    }));
 
-  auto longOptions = torch::TensorOptions().device(torch::kCUDA).dtype(torch::kLong);
-  auto mask = at::empty({boxes_num * col_blocks}, longOptions);
-
-  dim3 blocks(DIVUP(boxes_num, threadsPerBlock),
-              DIVUP(boxes_num, threadsPerBlock));
-  dim3 threads(threadsPerBlock);
-
-  CHECK_CONTIGUOUS(boxes);
-  CHECK_CONTIGUOUS(idx);
-  CHECK_CONTIGUOUS(mask);
-
-  AT_DISPATCH_FLOATING_TYPES(boxes.type(), "nms_cuda_forward", ([&] {
-    nms_kernel<<<blocks, threads>>>(boxes_num,
-                                    (scalar_t)nms_overlap_thresh,
-                                    boxes.data<scalar_t>(),
-                                    idx.data<int64_t>(),
-                                    mask.data<int64_t>());
-  }));
-
-  auto keep = at::empty({boxes_num}, longOptions);
-  auto parent_object_index = at::empty({boxes_num}, longOptions);
-  auto num_to_keep = at::empty({}, longOptions);
-
-  nms_collect<<<1, 1>>>(boxes_num, col_blocks, top_k,
-                        idx.data<int64_t>(),
-                        mask.data<int64_t>(),
-                        keep.data<int64_t>(),
-                        parent_object_index.data<int64_t>(),
-                        num_to_keep.data<int64_t>());
-
-
-  return {keep,num_to_keep,parent_object_index};
+    auto remv = torch::zeros({nblocks}, long_options);
+    nms_collect<<<1, 1>>>(
+        order._packed_accessor_typed(int64_t, 1),
+        mask._packed_accessor_typed(int64_t, 2),
+        remv._packed_accessor_typed(int64_t, 1),
+        suppressed._packed_accessor_typed(bool, 1));
 }
-
