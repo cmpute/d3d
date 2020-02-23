@@ -23,7 +23,7 @@ def rbox_2d_nms(boxes, scores, threshold=0):
     if len(boxes) != len(scores):
         raise ValueError("Numbers of boxes and scores are inconsistent!")
     if len(scores.shape) == 2:
-        scores = scores.max(axis=0)
+        scores = scores.max(axis=1).values
 
     if boxes.is_cuda and scores.is_cuda:
         order = scores.argsort(descending=True)

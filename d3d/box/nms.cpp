@@ -18,7 +18,7 @@ void rbox_2d_nms(
         int i = order_[_i];
         if (suppressed_[i])
             continue;
-        for (int _j = _i + 1; _j < N; ++_j)
+        for (int _j = _i + 1; _j < N; _j++)
         {
             int j = order_[_j];
             if (suppressed_[j])

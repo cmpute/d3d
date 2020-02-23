@@ -11,8 +11,8 @@
 
 struct Point2
 {
-    float x, y;
-    CUDA_CALLABLE_MEMBER Point2() : x(0), y(0) {}
+    float x = 0, y = 0;
+    CUDA_CALLABLE_MEMBER Point2() {}
     CUDA_CALLABLE_MEMBER Point2(const float& x_, const float& y_) : x(x_), y(y_) {}
     CUDA_CALLABLE_MEMBER inline Point2 operator+(const Point2& v2) { return Point2(x + v2.x, y + v2.y); }
     CUDA_CALLABLE_MEMBER inline Point2 operator-(const Point2& v2) { return Point2(x - v2.x, y - v2.y); }
@@ -40,8 +40,8 @@ struct Line2
 template <int MaxPoints> struct Poly2 // Convex polygon with no holes
 {
     Point2 vertices[MaxPoints]; // vertices in counter-clockwise order
-    size_t nvertices; // actual number of vertices
-    CUDA_CALLABLE_MEMBER Poly2() : nvertices(0) {}
+    size_t nvertices = 0; // actual number of vertices
+    CUDA_CALLABLE_MEMBER Poly2() {}
 
     template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
     void operator=(const Poly2<MaxPointsOther> &other)
@@ -107,7 +107,8 @@ template <int MaxPoints> struct Poly2 // Convex polygon with no holes
 
 struct Box2 : Poly2<4>
 {
-    float _area;
+    float _area = 0;
+    CUDA_CALLABLE_MEMBER Box2() {}
     CUDA_CALLABLE_MEMBER Box2(const float& x, const float& y,
         const float& w, const float& h, const float& r)
     {

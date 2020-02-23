@@ -2,6 +2,7 @@
 #include <d3d/box/nms.h>
 #include <d3d/box/geometry.hpp>
 
+using namespace std;
 using namespace torch;
 
 constexpr int ThreadsPerBlock = sizeof(int64_t) * 8;
@@ -20,12 +21,12 @@ __global__ void rbox_2d_nms_kernel(
 ) {
     const int row_start = blockIdx.y;
     const int col_start = blockIdx.x;
-    if (row_start > col_start) return; // calculate only upper part
+    if (row_start > col_start) return; // calculate only blocks in upper triangle part
 
     const int row_size = min(boxes.size(0) - row_start * ThreadsPerBlock, ThreadsPerBlock);
     const int col_size = min(boxes.size(0) - col_start * ThreadsPerBlock, ThreadsPerBlock);
 
-    __shared__ scalar_t block_boxes[ThreadsPerBlock][5];
+    __shared__ scalar_t block_boxes[ThreadsPerBlock][5]; // XXX: find a way to declare Box2 object here directly
     if (threadIdx.x < col_size)
     {
         #pragma unroll
@@ -37,14 +38,16 @@ __global__ void rbox_2d_nms_kernel(
     }
     __syncthreads();
 
+    // calculate suppression in this cropped box
     if (threadIdx.x < row_size)
     {
-        const int bcur_idx = order[ThreadsPerBlock * row_start + threadIdx.x];
+        const int idx = ThreadsPerBlock * row_start + threadIdx.x;
+        const int bcur_idx = order[idx];
         Box2 bcur(boxes[bcur_idx][0], boxes[bcur_idx][1], boxes[bcur_idx][2],
             boxes[bcur_idx][3], boxes[bcur_idx][4]);
 
         int64_t flag = 0;
-        int start = (row_start == col_start) ? threadIdx.x + 1 : 0;
+        int start = (row_start == col_start) ? threadIdx.x + 1 : 0; // also calculate only upper part in diagonal blocks
         for (int i = start; i < col_size; i++)
         {
             Box2 bcomp(block_boxes[i][0], block_boxes[i][1], block_boxes[i][2],
@@ -52,7 +55,7 @@ __global__ void rbox_2d_nms_kernel(
             if (bcur.iou(bcomp) > threshold)
                 flag |= 1ULL << i;
         }
-        mask[bcur_idx][col_start] = flag;
+        mask[idx][col_start] = flag;
     }
 }
 
@@ -60,7 +63,7 @@ __global__ void nms_collect(
     const _PackedAccessorT(int64_t, 1) order,
     const _PackedAccessorT(int64_t, 2) mask,
     _PackedAccessorT(int64_t, 1) remv,
-    _PackedAccessorT(bool, 1) suppressed // already filled by false
+    _PackedAccessorT(bool, 1) suppressed // need to be filled by false
 ) {
     const int nboxes = mask.size(0);
     const int nblocks = mask.size(1);
@@ -70,13 +73,11 @@ __global__ void nms_collect(
         int block_idx = i / ThreadsPerBlock;
         int thread_idx = i % ThreadsPerBlock;
 
-        if (!(remv[block_idx] & (1ULL << thread_idx)))
-        {
-            for (int j = block_idx; j < nblocks; j++)
-                remv[j] |= mask[i * nblocks][j];
-        }
-        else
+        if (remv[block_idx] & (1ULL << thread_idx))
             suppressed[order[i]] = true;
+        else // suppress succeeding blocks
+            for (int j = block_idx; j < nblocks; j++)
+                remv[j] |= mask[i][j];
     }
 }
 
@@ -85,14 +86,14 @@ void rbox_2d_nms_cuda(
   float threshold,
   Tensor suppressed
 ) {
-
     const int nboxes = boxes.sizes().at(0);
     const int nblocks = DivUp(nboxes, ThreadsPerBlock);
     auto long_options = torch::TensorOptions().device(torch::kCUDA).dtype(torch::kLong);
 
-    // This tensor store pairwise IOU result, rows are continuous while cols are divided by ThreadsPerBlock
-    // It has type int64, but it can act as uint64 in terms of bit operation
-    auto mask = torch::empty({nboxes, nblocks}, long_options);
+    // This tensor store pairwise IOU result, rows are continuous while cols are divided by ThreadsPerBlock.
+    // It has type int64, but it can act as uint64 in terms of bit operation.
+    // Also note that the index in mask is corresponding to the position in `order` tensor.
+    auto mask = torch::zeros({nboxes, nblocks}, long_options);
 
     dim3 blocks(nblocks, nblocks);
     dim3 threads(ThreadsPerBlock);
@@ -105,7 +106,7 @@ void rbox_2d_nms_cuda(
             mask._packed_accessor_typed(int64_t, 2));
     }));
 
-    auto remv = torch::zeros({nblocks}, long_options);
+    auto remv = torch::zeros({nblocks}, long_options); // suppression flags
     nms_collect<<<1, 1>>>(
         order._packed_accessor_typed(int64_t, 1),
         mask._packed_accessor_typed(int64_t, 2),

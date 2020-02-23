@@ -15,7 +15,7 @@ void rbox_2d_iou(
     for (int i = 0; i < N; i++)
         for (int j = 0; j < M; j++)
         {
-            // TODO: calculate aabox iou first and discard ones that are not overlapping
+            // FIXME: calculate aabox iou first and discard ones that are not overlapping
 
             Box2 bi(boxes1_[i][0], boxes1_[i][1], boxes1_[i][2],
                 boxes1_[i][3], boxes1_[i][4]);
