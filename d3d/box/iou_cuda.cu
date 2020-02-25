@@ -27,7 +27,7 @@ void rbox_2d_iou_cuda(
 ) {
     const int total_ops = boxes1.sizes().at(0) * boxes2.sizes().at(0);
     const int threads = 1024;
-    const dim3 blocks(DivUp(total_ops, threads));
+    const int blocks = DivUp(total_ops, threads);
   
     AT_DISPATCH_FLOATING_TYPES(boxes1.type(), "rbox_2d_iou_cuda", ([&] {
         rbox_2d_iou_kernel<scalar_t><<<blocks, threads>>>(

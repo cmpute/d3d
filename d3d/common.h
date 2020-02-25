@@ -16,4 +16,19 @@
 
 #define DivUp(m,n) (((m)+(n)-1) / (n))
 
+#define CUDA_CHECK_ERROR_SYNC(errorMessage) {                                \
+    cudaError_t err = cudaGetLastError();                                    \
+    if( cudaSuccess != err) {                                                \
+        fprintf(stderr, "Cuda error: %s in file '%s' in line %i : %s.\n",    \
+                errorMessage, __FILE__, __LINE__, cudaGetErrorString( err) );\
+        exit(EXIT_FAILURE);                                                  \
+    }                                                                        \
+    err = cudaDeviceSynchronize();                                           \
+    if( cudaSuccess != err) {                                                \
+        fprintf(stderr, "Cuda error: %s in file '%s' in line %i : %s.\n",    \
+                errorMessage, __FILE__, __LINE__, cudaGetErrorString( err) );\
+        exit(EXIT_FAILURE);                                                  \
+    }                                                                        \
+    }
+
 #endif // D3D_COMMON_CUH

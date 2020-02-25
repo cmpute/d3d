@@ -5,7 +5,7 @@
 using namespace std;
 using namespace torch;
 
-constexpr int ThreadsPerBlock = sizeof(int64_t) * 8;
+constexpr int FlagWidth = sizeof(int64_t) * 8;
 
 // FIXME: Is there any reason to cut blocks like this? Why not directly calculate?
 // FIXME: Should have quicker solution, directly compare each pair boxes and suppress the box with
@@ -23,16 +23,16 @@ __global__ void rbox_2d_nms_kernel(
     const int col_start = blockIdx.x;
     if (row_start > col_start) return; // calculate only blocks in upper triangle part
 
-    const int row_size = min(boxes.size(0) - row_start * ThreadsPerBlock, ThreadsPerBlock);
-    const int col_size = min(boxes.size(0) - col_start * ThreadsPerBlock, ThreadsPerBlock);
+    const int row_size = min(boxes.size(0) - row_start * FlagWidth, FlagWidth);
+    const int col_size = min(boxes.size(0) - col_start * FlagWidth, FlagWidth);
 
-    __shared__ scalar_t block_boxes[ThreadsPerBlock][5]; // XXX: find a way to declare Box2 object here directly
+    __shared__ scalar_t block_boxes[FlagWidth][5]; // XXX: find a way to declare Box2 object here directly
     if (threadIdx.x < col_size)
     {
         #pragma unroll
         for (int i = 0; i < 5; ++i)
         {
-            int boxi = order[ThreadsPerBlock * col_start + threadIdx.x];
+            int boxi = order[FlagWidth * col_start + threadIdx.x];
             block_boxes[threadIdx.x][i] = boxes[boxi][i];
         }
     }
@@ -41,7 +41,7 @@ __global__ void rbox_2d_nms_kernel(
     // calculate suppression in this cropped box
     if (threadIdx.x < row_size)
     {
-        const int idx = ThreadsPerBlock * row_start + threadIdx.x;
+        const int idx = FlagWidth * row_start + threadIdx.x;
         const int bcur_idx = order[idx];
         Box2 bcur(boxes[bcur_idx][0], boxes[bcur_idx][1], boxes[bcur_idx][2],
             boxes[bcur_idx][3], boxes[bcur_idx][4]);
@@ -70,8 +70,8 @@ __global__ void nms_collect(
 
     for (int i = 0; i < nboxes; i++)
     {
-        int block_idx = i / ThreadsPerBlock;
-        int thread_idx = i % ThreadsPerBlock;
+        int block_idx = i / FlagWidth;
+        int thread_idx = i % FlagWidth;
 
         if (remv[block_idx] & (1ULL << thread_idx))
             suppressed[order[i]] = true;
@@ -87,16 +87,16 @@ void rbox_2d_nms_cuda(
   Tensor suppressed
 ) {
     const int nboxes = boxes.sizes().at(0);
-    const int nblocks = DivUp(nboxes, ThreadsPerBlock);
+    const int nblocks = DivUp(nboxes, FlagWidth);
     auto long_options = torch::TensorOptions().device(torch::kCUDA).dtype(torch::kLong);
 
-    // This tensor store pairwise IOU result, rows are continuous while cols are divided by ThreadsPerBlock.
+    // This tensor store pairwise IOU result, rows are continuous while cols are divided by FlagWidth.
     // It has type int64, but it can act as uint64 in terms of bit operation.
     // Also note that the index in mask is corresponding to the position in `order` tensor.
     auto mask = torch::zeros({nboxes, nblocks}, long_options);
 
     dim3 blocks(nblocks, nblocks);
-    dim3 threads(ThreadsPerBlock);
+    dim3 threads(FlagWidth);
 
     AT_DISPATCH_FLOATING_TYPES(boxes.type(), "rbox_2d_nms_kernel", ([&] {
         rbox_2d_nms_kernel<<<blocks, threads>>>(
