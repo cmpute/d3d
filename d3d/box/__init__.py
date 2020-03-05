@@ -1,6 +1,7 @@
 import torch
 from ._impl import rbox_2d_iou as rbox_2d_iou_cc, rbox_2d_iou_cuda, \
-    rbox_2d_nms as rbox_2d_nms_cc, rbox_2d_nms_cuda
+    rbox_2d_nms as rbox_2d_nms_cc, rbox_2d_nms_cuda, \
+    rbox_2d_crop as rbox_2d_crop_cc
 
 def rbox_2d_iou(boxes1, boxes2):
     if len(boxes1.shape) != 2 or len(boxes2.shape) != 2:
@@ -25,6 +26,9 @@ def rbox_2d_nms(boxes, scores, threshold=0):
     if len(scores.shape) == 2:
         scores = scores.max(axis=1).values
 
+    if boxes.numel() == 0:
+        return torch.tensor([], dtype=torch.bool)
+
     if boxes.is_cuda and scores.is_cuda:
         order = scores.argsort(descending=True)
         suppressed = torch.zeros(len(boxes), dtype=bool, device=boxes.device)
@@ -37,3 +41,15 @@ def rbox_2d_nms(boxes, scores, threshold=0):
 
 # TODO: implement softnms
 # https://github.com/DocF/Soft-NMS/blob/master/softnms_pytorch.py
+
+def rbox_2d_crop(cloud, boxes):
+    '''
+    Crop point cloud points out given rotated boxes.
+    The result is a list of indices tensor where each tensor is corresponding to indices of points lying in the box
+    '''
+
+    result = []
+    rbox_2d_crop_cc(cloud, boxes, result)
+    result = [torch.tensor(indices, dtype=torch.long) for indices in result]
+
+    return result

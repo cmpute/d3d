@@ -7,11 +7,6 @@ using namespace torch;
 
 constexpr int FlagWidth = sizeof(int64_t) * 8;
 
-// FIXME: Is there any reason to cut blocks like this? Why not directly calculate?
-// FIXME: Should have quicker solution, directly compare each pair boxes and suppress the box with
-//        lower score if they have overlap greater than threshold.
-//        This should be only considered if it takes too much time with respect to whole process.
-
 template <typename scalar_t>
 __global__ void rbox_2d_nms_kernel(
     const _PackedAccessor(2) boxes,

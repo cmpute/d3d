@@ -1,7 +1,8 @@
 import unittest
 
+import math
 import torch
-from d3d.box import rbox_2d_iou, rbox_2d_nms
+from d3d.box import rbox_2d_iou, rbox_2d_nms, rbox_2d_crop
 
 class TestVoxelModule(unittest.TestCase):
     def test_iou(self):
@@ -86,3 +87,21 @@ class TestVoxelModule(unittest.TestCase):
             True, False, True, True, False, True
         ], device=device)
         assert torch.all(mask == mask_expected)
+
+    def test_box_crop(self):
+        cloud = torch.rand(100,2)*2-1
+        boxes = torch.tensor([
+            [0, 0, 1, 1, 0],
+            [0, 0, 1, 1, math.pi/4]],
+            dtype=torch.float32)
+        
+        result = rbox_2d_crop(cloud, boxes)
+        abs_cloud = torch.abs(cloud)
+        exp_box1, = torch.where(torch.all(abs_cloud < 0.5, 1))
+        exp_box2, = torch.where(torch.abs(abs_cloud[:,0] + abs_cloud[:,1]) < math.sqrt(2)/2)
+        assert len(result) == 2
+        assert torch.all(result[0] == exp_box1)
+        assert torch.all(result[1] == exp_box2)
+
+if __name__ == "__main__":
+    TestVoxelModule().test_box_crop()

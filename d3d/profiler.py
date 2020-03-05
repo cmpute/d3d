@@ -8,7 +8,8 @@ import torch
 from py3nvml import py3nvml
 
 _timers = {}
-def tap_time(name, clean=False, report=False):
+_logger = logging.getLogger('d3d.profiler')
+def tap_time(name, clear=True, report=True):
     '''
     This function start a timer with certain name. The second call of this function with
     same name will stop the timer and report the time.
@@ -20,10 +21,10 @@ def tap_time(name, clean=False, report=False):
         return 0
     else:
         elapse = time.time() - _timers[name]
-        if clean:
+        if clear:
             del _timers[name]
         if report:
-            logging.getLogger('d3d.profiler').debug("Elapsed time for %s: %.4f" % (name, elapse))
+            _logger.debug("Elapsed time for %s: %.4f", name, elapse)
         return elapse
 
 class TensorRef:
@@ -46,23 +47,22 @@ def tap_tensors(report=False):
     '''
     tensor_new = [obj for obj in gc.get_objects() if torch.is_tensor(obj) and obj not in _tensors]
     tensor_del = [obj for obj in _tensors if obj.released()]
-    logger = logging.getLogger('d3d.profiler')
 
     if report:
-        logger.debug(f'========== {len(tensor_new)} new tensors, {len(tensor_del)} released tensors ==========')
+        _logger.debug(f'========== {len(tensor_new)} new tensors, {len(tensor_del)} released tensors ==========')
 
     if len(tensor_new) > 50:
-        logger.debug("(Tensor list suppressed)")
+        _logger.debug("(Tensor list suppressed)")
         report = False # prevent list being too long
         
     for tensor in tensor_new:
         ref = TensorRef(tensor)
         if report:
-            logger.debug("+" + str(ref))
+            _logger.debug("+" + str(ref))
         _tensors.add(ref)
     for ref in tensor_del:
         if report:
-            logger.debug("-" + str(ref))
+            _logger.debug("-" + str(ref))
         _tensors.remove(ref)
 
     return tensor_new, tensor_del

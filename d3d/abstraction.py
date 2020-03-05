@@ -1,6 +1,9 @@
 import enum
 import numpy as np
+import logging
 from scipy.spatial.transform import Rotation
+
+_logger = logging.getLogger("d3d")
 
 class ObjectTag:
     '''
@@ -18,8 +21,12 @@ class ObjectTag:
             self.labels = [labels]
             self.scores = [1]
         else:
-            self.labels = labels
-            self.scores = scores
+            if not isinstance(labels, (list, tuple)):
+                self.labels = [labels]
+                self.scores = [scores]
+            else:
+                self.labels = labels
+                self.scores = scores
 
         # convert labels to enum object
         for i in range(len(self.labels)):
@@ -75,9 +82,20 @@ class ObjectTarget3D:
     def tag_score(self):
         return self.tag.scores[0]
 
-class ObjectTarget3DArray:
-    def __init__(self, targets=[]):
-        self.targets = targets
+    @property
+    def yaw(self):
+        '''
+        Return the rotation angle around z-axis (ignoring rotations in other two directions)
+        '''
+        angles = self.orientation.as_euler("ZYX")
+        if abs(angles[1]) + abs(angles[2]) > 0.1:
+            _logger.warn("The roll (%.2f) and pitch(%.2f) angle in objects may be to large to ignore!",
+                angles[2], angles[1])
+        return angles[0]
+
+class ObjectTarget3DArray(list):
+    def __init__(self, iterable=[]):
+        super().__init__(iterable)
 
     def to_numpy(self):
         pass
@@ -86,8 +104,4 @@ class ObjectTarget3DArray:
         pass
 
     def __str__(self):
-        return "<ObjectTarget3DArray with %d objects>" % len(self.targets)
-    def __getitem__(self, index):
-        return self.targets[index]
-    def __iter__(self):
-        return iter(self.targets)
+        return "<ObjectTarget3DArray with %d objects>" % len(self)

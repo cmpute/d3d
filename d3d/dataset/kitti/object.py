@@ -209,13 +209,13 @@ class ObjectLoader:
         HR, HT = Rotation.from_dcm(Tr[:,:3]), Tr[:,3]
         objects = ObjectTarget3DArray()
 
-        for label in label:
-            if label[0] == KittiObjectClass.DontCare:
+        for item in label:
+            if item[0] == KittiObjectClass.DontCare:
                 continue
 
-            h,w,l = label[8:11] # height, width, length
-            position = label[11:14] # x, y, z in camera coordinate
-            ry = label[14] # rotation of y axis in camera coordinate
+            h,w,l = item[8:11] # height, width, length
+            position = item[11:14] # x, y, z in camera coordinate
+            ry = item[14] # rotation of y axis in camera coordinate
             position[1] -= h/2
 
             position = np.dot(position, RRect.inv().as_dcm().T)
@@ -223,8 +223,8 @@ class ObjectLoader:
             orientation = HR.inv() * RRect.inv() * Rotation.from_euler('y', ry)
             orientation *= Rotation.from_euler("x", np.pi/2) # change dimension from l,h,w to l,w,h
 
-            tag = ObjectTag(label[0], KittiObjectClass)
+            tag = ObjectTag(item[0], KittiObjectClass)
             target = ObjectTarget3D(position, orientation, [l,w,h], tag)
-            objects.targets.append(target)
+            objects.append(target)
 
         return objects

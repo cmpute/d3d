@@ -7,6 +7,7 @@
 #define D3D_GEOMETRY_HPP
 
 #include <cmath>
+#include <limits>
 #include <d3d/common.h>
 
 struct Point2
@@ -34,6 +35,19 @@ struct Line2
     {
         float w = a*l.b - l.a*b;
         return Point2((b*l.c - l.b*c) / w, (c*l.a - l.c*a) / w); 
+    }
+};
+
+struct AABox2 // Axis-aligned 2D box for quick calculation
+{
+    float min_x = 0, max_x = 0;
+    float min_y = 0, max_y = 0;
+
+    CUDA_CALLABLE_MEMBER AABox2() {};
+
+    CUDA_CALLABLE_MEMBER inline bool contains(const Point2& p) const
+    {
+        return p.x > min_x && p.x < max_x && p.y > min_y && p.y < max_y;
     }
 };
 
@@ -103,6 +117,32 @@ template <int MaxPoints> struct Poly2 // Convex polygon with no holes
         float area_u = area() + other.area() - area_i;
         return area_i / area_u;
     }
+
+    CUDA_CALLABLE_MEMBER inline bool contains(const Point2& p) const
+    {
+        for (size_t i = 0; i < nvertices; i++)
+        {
+            Line2 seg(vertices[i], vertices[(i+1) % nvertices]);
+            if (seg.dist(p) > 0) return false;
+        }
+        return true;
+    }
+
+    CUDA_CALLABLE_MEMBER inline AABox2 bbox() const
+    {
+        AABox2 result;
+        result.min_x = result.min_y = -std::numeric_limits<float>::infinity();
+        result.max_x = result.max_y = std::numeric_limits<float>::infinity();
+
+        for (size_t i = 0; i < nvertices; i++)
+        {
+            result.min_x = vertices[i].x > result.min_x ? result.min_x : vertices[i].x;
+            result.max_x = vertices[i].x < result.max_x ? result.max_x : vertices[i].x;
+            result.min_y = vertices[i].y > result.min_y ? result.min_y : vertices[i].y;
+            result.max_y = vertices[i].y < result.max_y ? result.max_y : vertices[i].y;
+        }
+        return result;
+    }
 };
 
 struct Box2 : Poly2<4>
@@ -124,11 +164,6 @@ struct Box2 : Poly2<4>
     }
 
     CUDA_CALLABLE_MEMBER float area() const { return _area; }
-};
-
-struct AABox2 // Axis-aligned 2D box for quick calculation
-{
-
 };
 
 #endif // D3D_GEOMETRY_HPP
