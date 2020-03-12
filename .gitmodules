@@ -1,6 +1,0 @@
-[submodule "robin-map"]
-	path = robin-map
-	url = https://github.com/Tessil/robin-map.git
-[submodule "backward"]
-	path = backward
-	url = https://github.com/bombela/backward-cpp

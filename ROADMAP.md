@@ -2,7 +2,7 @@
 
 - [x] Port voxel generator
 - [x] Port NMS cuda
-- [ ] solve spconv bugs: https://github.com/traveller59/spconv/issues/74 (also track https://github.com/poodarchu/Det3D/issues/71)
+- [ ] port in spconv and solve bugs: https://github.com/traveller59/spconv/issues/74 (also track https://github.com/poodarchu/Det3D/issues/71)
 - [ ] Include visualization based on [pptk, pcl-py, open3d]
 - [ ] Reimplement spconv with torch.sparse.XXXTensor and also support torch.is_contiguous
 

@@ -1,9 +1,13 @@
-from setuptools import setup, find_packages
-from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
+from setuptools import find_packages
+
+try:
+    from skbuild import setup
+except ImportError:
+    raise ImportError('scikit-build is required for installing')
 
 setup(
     name="d3d",
-    version="0.0.3",
+    version="0.0.4",
     description="Customized tools for 3D object detection",
     long_description='(see project homepage)',
     author='Jacob Zhong',
@@ -13,7 +17,7 @@ setup(
     license='BSD-3-Clause',
     packages=find_packages(),
     install_requires=['numpy', 'torch', 'py3nvml'],
-    setup_requires=['pybind11', 'torch'],
+    setup_requires=['pybind11', 'torch', 'skbuild'],
     extras_require={'test': ['pytest']},
     classifiers=[
         'Programming Language :: C++',
