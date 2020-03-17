@@ -1,5 +1,5 @@
 import torch
-from ._impl import rbox_2d_iou as rbox_2d_iou_cc, rbox_2d_iou_cuda, \
+from .box_impl import rbox_2d_iou as rbox_2d_iou_cc, rbox_2d_iou_cuda, \
     rbox_2d_nms as rbox_2d_nms_cc, rbox_2d_nms_cuda, \
     rbox_2d_crop as rbox_2d_crop_cc
 

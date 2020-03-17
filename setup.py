@@ -1,9 +1,13 @@
+import os
 from setuptools import find_packages
 
 try:
     from skbuild import setup
 except ImportError:
     raise ImportError('scikit-build is required for installing')
+
+import torch
+torch_root = os.path.dirname(torch.__file__)
 
 setup(
     name="d3d",
@@ -17,7 +21,7 @@ setup(
     license='BSD-3-Clause',
     packages=find_packages(),
     install_requires=['numpy', 'torch', 'py3nvml'],
-    setup_requires=['pybind11', 'torch', 'skbuild'],
+    setup_requires=['pybind11', 'torch', 'scikit-build'],
     extras_require={'test': ['pytest']},
     classifiers=[
         'Programming Language :: C++',
@@ -29,16 +33,5 @@ setup(
         'Topic :: Scientific/Engineering'
     ],
     keywords=['detection', '3d'],
-
-    ext_modules=[
-        CUDAExtension('d3d.box._impl', [
-            'd3d/box/impl.cpp',
-            'd3d/box/iou.cpp', 'd3d/box/iou_cuda.cu',
-            'd3d/box/nms.cpp', 'd3d/box/nms_cuda.cu'
-            ], include_dirs=["."]),
-        CppExtension('d3d.voxel._impl', ['d3d/voxel/impl.cpp'], include_dirs=["./robin-map/include"])
-    ],
-    cmdclass={
-        'build_ext': BuildExtension
-    }
+    cmake_args=[f'-DCMAKE_PREFIX_PATH={torch_root}']
 )

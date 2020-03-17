@@ -1,5 +1,5 @@
 import torch
-from ._impl import voxelize_3d
+from .voxel_impl import voxelize_3d
 from addict import Dict as edict
 
 class VoxelGenerator:

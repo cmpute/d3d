@@ -97,8 +97,22 @@ class ObjectTarget3DArray(list):
     def __init__(self, iterable=[]):
         super().__init__(iterable)
 
-    def to_numpy(self):
-        pass
+    def to_numpy(self, box_type="ground"):
+        '''
+        :param box_type: Decide how to represent the box
+        '''
+        if len(self) == 0:
+            return np.empty((0, 8))
+
+        def to_ground(box):
+            cls_value = box.tag.labels[0].value
+            arr = np.concatenate([box.position, box.dimension, [box.yaw, cls_value]])
+            return arr # store only 3D box and label
+        return np.stack([to_ground(box) for box in self])
+
+    def to_torch(self, box_type="ground"):
+        import torch
+        return torch.tensor(self.to_numpy(), box_type=box_type)
 
     def to_kitti(self):
         pass
