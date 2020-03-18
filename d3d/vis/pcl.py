@@ -9,7 +9,7 @@ try:
 except:
     pass
 
-def visualize_detections(visualizer: pcl.Visualizer, targets: ObjectTarget3DArray):
+def visualize_detections(visualizer: pcl.Visualizer, targets: ObjectTarget3DArray, text_scale=0.8):
     if not _pcl_available:
         raise RuntimeError("pcl is not available, please check the installation of package pcl.py")
 
@@ -28,7 +28,7 @@ def visualize_detections(visualizer: pcl.Visualizer, targets: ObjectTarget3DArra
             disp_text += " (%.2f)" % target.tag_score
         disp_pos = list(target.position)
         disp_pos[2] += lz / 2 # lift the text out of box
-        visualizer.addText3D(disp_text, disp_pos, text_scale=0.8, color=(1, 0.8, 1), id="target%d/tag" % i)
+        visualizer.addText3D(disp_text, disp_pos, text_scale=text_scale, color=(1, 0.8, 1), id="target%d/tag" % i)
 
         # draw orientation
         direction = target.orientation.as_dcm().dot([1,0,0])

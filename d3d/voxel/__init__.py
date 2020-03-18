@@ -26,7 +26,7 @@ class VoxelGenerator:
 
         # initialize variables
         voxels = torch.zeros((self._max_voxels, self._max_points, points.shape[-1]), dtype=torch.float32)
-        coords = torch.empty((self._max_voxels, 3), dtype=torch.int32)
+        coords = torch.empty((self._max_voxels, 3), dtype=torch.int32) # FIXME: could be type of long?
         aggregates = torch.empty((self._max_voxels, points.shape[-1]), dtype=torch.float32)\
             if self._reduction else torch.empty((0,0))
         voxel_pmask = torch.empty((self._max_voxels, self._max_points), dtype=torch.bool)
