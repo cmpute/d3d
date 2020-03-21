@@ -7,6 +7,8 @@ import logging
 import torch
 from py3nvml import py3nvml
 
+# TODO: compare functions in this module with ones in Pytorch-Lightning
+
 _timers = {}
 _logger = logging.getLogger('d3d.profiler')
 def tap_time(name, clear=True, report=True):

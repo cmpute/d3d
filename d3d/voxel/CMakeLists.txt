@@ -1,5 +1,6 @@
 add_library(voxel_impl MODULE
     impl.cpp
+    voxelize.cpp
 )
 python_extension_module(voxel_impl)
 target_link_libraries(voxel_impl ${TORCH_LIBRARIES})

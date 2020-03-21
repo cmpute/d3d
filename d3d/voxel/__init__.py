@@ -1,15 +1,16 @@
 import torch
-from .voxel_impl import voxelize_3d
+from .voxel_impl import voxelize_3d, voxelize_3d_sparse
 from addict import Dict as edict
 
 class VoxelGenerator:
     def __init__(self, bounds, shape,
-        max_points, max_voxels=20000, reduction="mean"):
+        max_points, max_voxels=20000, reduction="mean", sparse_repr=False):
 
         self._bounds = torch.tensor(bounds, dtype=torch.float)
         self._shape = torch.tensor(shape, dtype=torch.int32)
         self._max_points = max_points
         self._max_voxels = max_voxels
+        self._sparse_repr = sparse_repr
 
         if reduction.lower() == "none":
             self._reduction = 0
@@ -23,29 +24,11 @@ class VoxelGenerator:
             raise ValueError("Unsupported reduction type in VoxelGenerator!")
 
     def __call__(self, points):
-
-        # initialize variables
-        voxels = torch.zeros((self._max_voxels, self._max_points, points.shape[-1]), dtype=torch.float32)
-        coords = torch.empty((self._max_voxels, 3), dtype=torch.int32) # FIXME: could be type of long?
-        aggregates = torch.empty((self._max_voxels, points.shape[-1]), dtype=torch.float32)\
-            if self._reduction else torch.empty((0,0))
-        voxel_pmask = torch.empty((self._max_voxels, self._max_points), dtype=torch.bool)
-        voxel_npoints = torch.zeros(self._max_voxels, dtype=torch.int32) # need to be initialized
-
-        # call implementation
-        nvoxels = voxelize_3d(points, self._shape, self._bounds,
-            self._max_points, self._max_voxels, self._reduction,
-            voxels, coords, aggregates, voxel_pmask, voxel_npoints
-        )
         
-        ret = edict(
-            voxels = voxels[:nvoxels],
-            coords = coords[:nvoxels],
-            voxel_pmask = voxel_pmask[:nvoxels],
-            voxel_npoints = voxel_npoints[:nvoxels],
-        )
+        if self._sparse_repr:
+            ret = voxelize_3d_sparse(points, self._shape, self._bounds)
+        else:
+            ret = voxelize_3d(points, self._shape, self._bounds,
+                self._max_points, self._max_voxels, self._reduction)
 
-        if self._reduction:
-            ret.aggregates = aggregates[:nvoxels]
-
-        return ret
+        return edict(ret)
