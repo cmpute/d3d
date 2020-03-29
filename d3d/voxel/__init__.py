@@ -3,6 +3,9 @@ from .voxel_impl import voxelize_3d, voxelize_3d_sparse
 from addict import Dict as edict
 
 class VoxelGenerator:
+    # TODO: directly output tensors with type long
+    # TODO: support max_points, max_voxels for sparse representation (default for max_voxels should be changed to -1 (not set)), and sampling strategy should be implemented
+    # TODO: support min_points to filter out voxels with less points
     def __init__(self, bounds, shape,
         max_points, max_voxels=20000, reduction="mean", sparse_repr=False):
 
@@ -26,7 +29,8 @@ class VoxelGenerator:
     def __call__(self, points):
         
         if self._sparse_repr:
-            ret = voxelize_3d_sparse(points, self._shape, self._bounds)
+            ret = voxelize_3d_sparse(points, self._shape, self._bounds,
+                self._max_points, self._max_voxels)
         else:
             ret = voxelize_3d(points, self._shape, self._bounds,
                 self._max_points, self._max_voxels, self._reduction)

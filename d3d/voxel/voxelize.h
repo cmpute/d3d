@@ -24,8 +24,11 @@ py::dict voxelize_3d(
 
 /*
  * This function has same functionality as voxelize_3d, but it returns sparse representation of points without discard and reduction.
+ * \param[out] coords Calculated coordinates for generated voxels
  * \param[out] points_mapping Each index of voxel that a point belongs to.
+ * \param[out] voxel_npoints Number of points in each voxel
  */
 py::dict voxelize_3d_sparse(
-    const torch::Tensor points, const torch::Tensor voxel_shape, const torch::Tensor voxel_bound
+    const torch::Tensor points, const torch::Tensor voxel_shape, const torch::Tensor voxel_bound,
+    const torch::optional<int> max_points, const torch::optional<int> max_voxels
 );

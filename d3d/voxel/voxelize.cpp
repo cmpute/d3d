@@ -52,11 +52,11 @@ py::dict voxelize_3d_templated(
     auto voxel_bound_ = voxel_bound.accessor<float, 1>();
 
     Tensor voxels = torch::zeros({max_voxels, max_points, points_.size(1)}, torch::dtype(torch::kFloat32));
-    Tensor coords = torch::empty({max_voxels, 3}, torch::dtype(torch::kInt32));
+    Tensor coords = torch::empty({max_voxels, 3}, torch::dtype(torch::kLong));
     Tensor voxel_pmask = torch::empty({max_voxels, max_points}, torch::dtype(torch::kBool));
     Tensor voxel_npoints = torch::zeros(max_voxels, torch::dtype(torch::kInt32));
     auto voxels_ = voxels.accessor<float, 3>();
-    auto coords_ = coords.accessor<int, 2>();
+    auto coords_ = coords.accessor<int64_t, 2>();
     auto voxel_pmask_ = voxel_pmask.accessor<bool, 2>();
     auto voxel_npoints_ = voxel_npoints.accessor<int, 1>();
 
@@ -197,15 +197,17 @@ py::dict voxelize_3d(
 }
 
 py::dict voxelize_3d_sparse(
-    const Tensor points, const Tensor voxel_shape, const Tensor voxel_bound
+    const Tensor points, const Tensor voxel_shape, const Tensor voxel_bound,
+    const torch::optional<int> max_points, const torch::optional<int> max_voxels
 )
 {
     auto points_ = points.accessor<float, 2>();
     auto voxel_shape_ = voxel_shape.accessor<int, 1>();
     auto voxel_bound_ = voxel_bound.accessor<float, 1>();
 
-    Tensor points_mapping = torch::empty(points_.size(0), torch::dtype(torch::kInt32));
-    auto points_mapping_ = points_mapping.accessor<int, 1>();
+    // fill points mapping with -1 (unassigned)
+    Tensor points_mapping = torch::full(points_.size(0), -1, torch::dtype(torch::kLong));
+    auto points_mapping_ = points_mapping.accessor<int64_t, 1>();
 
     // calculate voxel sizes and other variables
     float voxel_size_[3];
@@ -219,6 +221,7 @@ py::dict voxelize_3d_sparse(
     vector<Tensor> coords_list;
     int coord_temp[3];
     int nvoxels = 0;
+    bool need_mask = false;
     for (int i = 0; i < npoints; ++i)
     {
         // calculate voxel-wise coordinates
@@ -233,7 +236,11 @@ py::dict voxelize_3d_sparse(
             }
             coord_temp[d] = idx;
         }
-        if (out_of_range) continue;
+        if (out_of_range)
+        {
+            need_mask = true;
+            continue;
+        }
 
         // assign voxel
         int voxel_idx;
@@ -244,7 +251,7 @@ py::dict voxelize_3d_sparse(
             voxel_idx = nvoxels++;
             voxel_idmap[coord_tuple] = voxel_idx;
             voxel_npoints.push_back(1);
-            coords_list.push_back(torch::tensor({coord_temp[0], coord_temp[1], coord_temp[2]}, torch::kInt32));
+            coords_list.push_back(torch::tensor({coord_temp[0], coord_temp[1], coord_temp[2]}, torch::kLong));
         }
         else
         {
@@ -254,6 +261,24 @@ py::dict voxelize_3d_sparse(
         points_mapping_[i] = voxel_idx;
     }
 
-    return py::dict("points_mapping"_a=points_mapping, "coords"_a=torch::stack(coords_list),
+    // process mask
+    Tensor points_filtered = points;
+    Tensor masked;
+    if (need_mask)
+    {
+        masked = torch::where(points_mapping >= 0)[0];
+        points_filtered = torch::index_select(points, 0, masked);
+        points_mapping = torch::index_select(points_mapping, 0, masked);
+    }
+    else
+    {
+        masked = torch::arange(npoints);
+    }
+
+    return py::dict(
+        "points"_a=points_filtered,
+        "points_mask"_a=masked,
+        "points_mapping"_a=points_mapping,
+        "coords"_a=torch::stack(coords_list),
         "voxel_npoints"_a=torch::tensor(voxel_npoints, torch::kInt32));
 }

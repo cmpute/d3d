@@ -9,10 +9,14 @@ from d3d.voxel import VoxelGenerator
 class TestVoxelModule(unittest.TestCase):
     def test_generate_voxel(self):
         cloud = torch.rand((2000, 4), dtype=torch.float32)
+        cloud = torch.cat((cloud, torch.tensor([
+            [-1, -1, -1, -100], [-2, -2, -2, 100]
+        ], dtype=torch.float32)), axis=0) # outlier point
         gen = VoxelGenerator([0,1, 0,1, 0,1], [10,10,10], 5)
         data = gen(cloud)
         assert len(data.voxels) == len(data.coords)
         assert len(data.voxels) <= 1000
+        assert torch.all((data.voxels >= 0) & (data.voxels <= 1))
         assert torch.all((data.coords >= 0) & (data.coords <= 10))
 
         # ensure coordinate is correct
@@ -26,14 +30,17 @@ class TestVoxelModule(unittest.TestCase):
         assert len(data.voxels) == len(data.coords)
         assert 'aggregates' not in data
         assert len(data.voxels) <= 1000
+        assert torch.all((data.voxels >= 0) & (data.voxels <= 1))
         assert torch.all((data.coords >= 0) & (data.coords <= 10))
 
         gen = VoxelGenerator([0,1, 0,1, 0,1], [10,10,10], 5, sparse_repr=True)
         data = gen(cloud)
+        assert len(data.points) == 2000
         assert len(data.coords) <= 1000
+        assert torch.all((data.points >= 0) & (data.points <= 1))
         assert torch.all((data.coords >= 0) & (data.coords <= 10))
 
-        for i in range(len(cloud)):
+        for i in range(len(data.points)):
             vid = data.points_mapping[i]
             for k in range(3):
                 assert data.coords[vid, k] == int(cloud[i, k] * 10)

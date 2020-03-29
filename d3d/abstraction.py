@@ -119,3 +119,17 @@ class ObjectTarget3DArray(list):
 
     def __str__(self):
         return "<ObjectTarget3DArray with %d objects>" % len(self)
+
+class ParameterSet:
+    '''
+    This object load a collection of intrinsic and extrinsic parameters
+    '''
+    def __init__(self):
+        self.intrinsics = {}
+        self.extrinsics = {}
+        
+    def add_intrinsics(self, frame_id, projection_matrix):
+        pass
+
+    def add_extrinsics(self, frame_from, frame_to, projection_matrix):
+        pass

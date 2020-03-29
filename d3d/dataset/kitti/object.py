@@ -112,16 +112,16 @@ class ObjectLoader:
     def cam2(self, idx=None):
         source = self.cam2_data if self.inzip else self.data_path
         if idx is None:
-            return utils.yield_images(source, [osp.join('cam_2', '%06d.png' % fid) for fid in self.frames], gray=False)
+            return utils.yield_images(source, [osp.join('image_2', '%06d.png' % fid) for fid in self.frames], gray=False)
         else:
-            return utils.load_image(source, osp.join('cam_2', '%06d.png' % idx), gray=False)
+            return utils.load_image(source, osp.join('image_2', '%06d.png' % idx), gray=False)
 
     def cam3(self, idx=None):
         source = self.cam3_data if self.inzip else self.data_path
         if idx is None:
-            return utils.yield_images(source, [osp.join('cam_3', '%06d.png' % fid) for fid in self.frames], gray=False)
+            return utils.yield_images(source, [osp.join('image_2', '%06d.png' % fid) for fid in self.frames], gray=False)
         else:
-            return utils.load_image(source, osp.join('cam_3', '%06d.png' % idx), gray=False)
+            return utils.load_image(source, osp.join('image_2', '%06d.png' % idx), gray=False)
 
     def velo(self, idx=None):
         source = self.velo_data if self.inzip else self.data_path
