@@ -33,5 +33,10 @@ setup(
         'Topic :: Scientific/Engineering'
     ],
     keywords=['detection', '3d'],
+    entry_points={
+        'console_scripts': [
+            'd3d_waymo_convert = d3d.dataset.waymo.converter:main',
+        ],
+    },
     cmake_args=[f'-DCMAKE_PREFIX_PATH={torch_root}']
 )

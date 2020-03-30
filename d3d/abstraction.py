@@ -47,13 +47,14 @@ class ObjectTarget3D:
     '''
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
     '''
-    def __init__(self, position, orientation, dimension, tag):
+    def __init__(self, position, orientation, dimension, tag, id=None):
         '''
         :param position: Position of object center (x,y,z)
         :param orientation: Object heading (direction of x-axis attached on body)
             with regard to x-axis of the world at the object center.
         :param dimension: Length of the object in 3 dimensions (lx,ly,lz)
         :param tag: Classification information of the object
+        :param id: ID of the object used for tracking (optional)
         '''
 
         assert len(position) == 3, "Invalid position shape"
@@ -73,6 +74,8 @@ class ObjectTarget3D:
             self.tag = tag
         else:
             raise ValueError("Label should be of type ObjectTag")
+
+        self.id = id
 
     @property
     def tag_name(self):

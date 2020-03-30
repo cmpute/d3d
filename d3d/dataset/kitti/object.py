@@ -44,10 +44,17 @@ class ObjectLoader:
             - image_2
             - velodyne
 
-    :param phase: training or testing
+    TODO: disable iteration functionality and open zip file only when needed.
+          actually we should separate indexable dataset and iterable dataset in this condition
     """
 
     def __init__(self, base_path, frames=None, inzip=False, phase="training"):
+        """
+        :param base_path: directory containing the zip files, or the required data
+        :param frames: select which frames to load, can be use with fixed train val split
+        :param inzip: whether the dataset is store in original zip archives or unzipped
+        :param phase: training or testing
+        """
         self.base_path = base_path
         self.frames = frames
         self.inzip = inzip
@@ -123,7 +130,7 @@ class ObjectLoader:
         else:
             return utils.load_image(source, osp.join('image_2', '%06d.png' % idx), gray=False)
 
-    def velo(self, idx=None):
+    def velo(self, idx=None): # TODO: rename to lidar
         source = self.velo_data if self.inzip else self.data_path
         if idx is None:
             return utils.yield_velo_scans(source, [osp.join('velodyne', '%06d.bin' % fid) for fid in self.frames])
