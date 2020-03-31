@@ -13,7 +13,7 @@ from addict import Dict as edict
 from PIL import Image
 from scipy.spatial.transform import Rotation
 
-from d3d.abstraction import ObjectTarget3D, ObjectTarget3DArray, ObjectTag
+from d3d.abstraction import ObjectTarget3D, ObjectTarget3DArray, ObjectTag, TransformSet
 
 _logger = logging.getLogger("d3d")
 
@@ -47,18 +47,31 @@ class Loader:
         """
 
         self.base_path = osp.join(base_path, phase)
+        self.pahse = phase
         self._load_metadata()
 
     def _load_metadata(self):
-        self._metadata = OrderedDict()
-        for archive in os.listdir(self.base_path):
-            name, fext = osp.splitext(archive)
-            if fext != ".zip":
-                continue
+        meta_path = osp.join(self.base_path, "metadata.json")
+        if not osp.exists(meta_path):
+            _logger.info("Creating metadata of Waymo dataset (%s)...", self.pahse)
+            metadata = {}
 
-            with zipfile.ZipFile(osp.join(self.base_path, archive)) as ar:
-                with ar.open("context/stats.json") as fin:
-                    self._metadata[name] = edict(json.loads(fin.read().decode()))
+            for archive in os.listdir(self.base_path):
+                name, fext = osp.splitext(archive)
+                if fext != ".zip":
+                    continue
+
+                with zipfile.ZipFile(osp.join(self.base_path, archive)) as ar:
+                    with ar.open("context/stats.json") as fin:
+                        metadata[name] = json.loads(fin.read().decode())
+            with open(meta_path, "w") as fout:
+                json.dump(metadata, fout)
+
+        with open(meta_path) as fin:
+            self._metadata = OrderedDict()
+            meta_json = json.load(fin)
+            for k, v in meta_json.items():
+                self._metadata[k] = edict(v)
 
     def __len__(self):
         return sum(v.frame_count for v in self._metadata.values())
@@ -71,6 +84,7 @@ class Loader:
 
     def lidar_data(self, idx, names=None, concat=True):
         """
+        Return the lidar point cloud in vehicle frame (FLU)
         :param names: names of lidar to be loaded, options: top, front, side_left, side_right, rear
         :param concat: concatenate the points together
         """
@@ -152,3 +166,30 @@ class Loader:
             outputs.append(target)
 
         return outputs
+
+    def calibration_data(self, idx):
+        fname, _ = self._locate_frame(idx)
+        calib_params = TransformSet("vehicle")
+
+        with zipfile.ZipFile(osp.join(self.base_path, fname)) as ar:
+            # load camera calibration
+            with ar.open("context/calib_cams.json") as fin:
+                calib_cams = json.loads(fin.read().decode())
+                for frame, calib in calib_cams.items():
+                    frame = "camera_" + frame
+                    fu, fv, cu, cv, *distort = calib['intrinsic']
+                    transform = np.array(calib['extrinsic']).reshape(4,4)
+                    size = (calib['width'], calib['height'])
+                    calib_params.set_intrinsic_pinhole(frame, size, cu, cv, fu, fv, distort_coeffs=distort)
+                    calib_params.set_extrinsic(transform, frame_from=frame)
+
+            # load lidar calibration
+            with ar.open("context/calib_lidars.json") as fin:
+                calib_lidars = json.loads(fin.read().decode())
+                for frame, calib in calib_lidars.items():
+                    frame = "lidar_" + frame
+                    calib_params.set_intrinsic_lidar(frame)
+                    transform = np.array(calib['extrinsic']).reshape(4,4)
+                    calib_params.set_extrinsic(transform, frame_from=frame)
+
+        return calib_params
