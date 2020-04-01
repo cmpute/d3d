@@ -41,7 +41,7 @@ class Loader:
             - xxxxxxxxxxxxxxxxxxxx_xxx_xxx_xxx_xxx.zip
             - ...
     """
-    def __init__(self, base_path, phase="training"):
+    def __init__(self, base_path, phase="training", inzip=True):
         """
         :param phase: training, validation or testing
         """
@@ -49,6 +49,9 @@ class Loader:
         self.base_path = osp.join(base_path, phase)
         self.pahse = phase
         self._load_metadata()
+
+        if not inzip:
+            raise NotImplementedError("Currently only support load from zip files")
 
     def _load_metadata(self):
         meta_path = osp.join(self.base_path, "metadata.json")
@@ -93,7 +96,8 @@ class Loader:
         else: # sanity check
             for name in names:
                 if name not in Loader.VALID_LIDAR_NAMES:
-                    raise ValueError("Invalid lidar name, options are top, front, side_left, side_right, rear")
+                    raise ValueError("Invalid lidar name, options are " +
+                        ", ".join(Loader.VALID_LIDAR_NAMES))
 
         outputs = []
         fname, fidx = self._locate_frame(idx)
@@ -116,7 +120,8 @@ class Loader:
         else: # sanity check
             for name in names:
                 if name not in Loader.VALID_CAM_NAMES:
-                    raise ValueError("Invalid camera name, options are top, front, side_left, side_right, rear")
+                    raise ValueError("Invalid camera name, options are" +
+                        ", ".join(Loader.VALID_CAM_NAMES))
 
         outputs = []
         fname, fidx = self._locate_frame(idx)
@@ -139,7 +144,8 @@ class Loader:
         else: # sanity check
             for name in names:
                 if name not in Loader.VALID_CAM_NAMES:
-                    raise ValueError("Invalid camera name, options are top, front, side_left, side_right, rear")
+                    raise ValueError("Invalid camera name, options are " +
+                        ", ".join(Loader.VALID_CAM_NAMES))
 
         outputs = []
         fname, fidx = self._locate_frame(idx)
@@ -177,7 +183,7 @@ class Loader:
                 calib_cams = json.loads(fin.read().decode())
                 for frame, calib in calib_cams.items():
                     frame = "camera_" + frame
-                    fu, fv, cu, cv, *distort = calib['intrinsic']
+                    (fu, fv, cu, cv), distort = calib['intrinsic'][:4], calib['intrinsic'][4:]
                     transform = np.array(calib['extrinsic']).reshape(4,4)
                     size = (calib['width'], calib['height'])
                     calib_params.set_intrinsic_pinhole(frame, size, cu, cv, fu, fv, distort_coeffs=distort)

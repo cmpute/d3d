@@ -42,6 +42,8 @@ def load_calib_file(basepath, file):
         for line in fin.readlines():
             if not line.strip():
                 continue
+            if not isinstance(line, str):
+                line = line.decode()
 
             key, value = line.split(':', 1)
             # The only non-float values in these files are dates, which we don't care about anyway
@@ -59,11 +61,6 @@ def load_image(basepath, file, gray=False):
     else: # assume ZipFile object
         return Image.open(basepath.open(file)).convert('L' if gray else 'RGB')
 
-def yield_images(basepath, filelist, gray=False):
-    """Generator to read image files."""
-    for file in filelist:
-        yield load_image(basepath, file, gray)
-
 def load_velo_scan(basepath, file, binary=True):
     """Load and parse a kitti file. Accept path or file object as basepath"""
     if binary:
@@ -79,11 +76,6 @@ def load_velo_scan(basepath, file, binary=True):
         else:
             scan = np.loadtxt(basepath.open(file), dtype=np.float32)
     return scan.reshape((-1, 4))
-
-def yield_velo_scans(basepath, filelist, binary=True):
-    """Generator to parse velodyne files into arrays."""
-    for file in filelist:
-        yield load_velo_scan(basepath, file, binary=binary)
 
 class _TrackletPose(object):
     def __init__(self, xmlnode):

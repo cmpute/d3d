@@ -7,7 +7,7 @@ import numpy as np
 
 from scipy.spatial.transform import Rotation
 from d3d.dataset.kitti import utils
-from d3d.abstraction import ObjectTarget3D, ObjectTag, ObjectTarget3DArray
+from d3d.abstraction import ObjectTarget3D, ObjectTag, ObjectTarget3DArray, TransformSet
 
 class KittiObjectClass(Enum):
     DontCare = 0
@@ -48,6 +48,9 @@ class ObjectLoader:
           actually we should separate indexable dataset and iterable dataset in this condition
     """
 
+    VALID_CAM_NAMES = ["cam2", "cam3"]
+    VALID_LIDAR_NAMES = ["velo"]
+
     def __init__(self, base_path, frames=None, inzip=False, phase="training"):
         """
         :param base_path: directory containing the zip files, or the required data
@@ -60,133 +63,130 @@ class ObjectLoader:
         self.inzip = inzip
         self.phase = phase
 
-        self.cam2_data = None
-        self.cam3_data = None
-        self.velo_data = None
-        self.calib_data = None
-        self.label_data = None
-        total_count = None
-
         if phase not in ['training', 'testing']:
             raise ValueError("Invalid phase tag")
 
         # Open zipfiles and count total number of frames
+        total_count = None
         if self.inzip:
             if phase == 'training':
                 # label data is necessary when training
-                self.label_data = ZipFile(osp.join(base_path, "data_object_label_2.zip"))
-                total_count = sum(1 for name in self.label_data.namelist() if not name.endswith('/'))
-            if osp.exists(osp.join(base_path, "data_object_image_2.zip")):
-                self.cam2_data = ZipFile(osp.join(base_path, "data_object_image_2.zip"))
-                total_count = total_count or sum(1 for name in self.cam2_data.namelist() if not name.endswith('/'))
-            if osp.exists(osp.join(base_path, "data_object_image_3.zip")):
-                self.cam3_data = ZipFile(osp.join(base_path, "data_object_image_3.zip"))
-            if osp.exists(osp.join(base_path, "data_object_velodyne.zip")):
-                self.velo_data = ZipFile(osp.join(base_path, "data_object_velodyne.zip"))
-                total_count = total_count or sum(1 for name in self.velo_data.namelist() if not name.endswith('/'))
-            if osp.exists(osp.join(base_path, "data_object_calib.zip")):
-                self.calib_data = ZipFile(osp.join(base_path, "data_object_calib.zip"))
+                with ZipFile(osp.join(base_path, "data_object_label_2.zip")) as label_data:
+                    total_count = sum(1 for name in label_data.namelist() if not name.endswith('/'))
+            elif osp.exists(osp.join(base_path, "data_object_image_2.zip")):
+                with ZipFile(osp.join(base_path, "data_object_image_2.zip")) as cam2_data:
+                    total_count = total_count or sum(1 for name in cam2_data.namelist() if not name.endswith('/'))
+            elif osp.exists(osp.join(base_path, "data_object_velodyne.zip")):
+                with ZipFile(osp.join(base_path, "data_object_velodyne.zip")) as velo_data:
+                    total_count = total_count or sum(1 for name in velo_data.namelist() if not name.endswith('/'))
         else:
-            self.data_path = os.path.join(base_path, phase)
             if phase == 'training':
-                total_count = len(os.listdir(osp.join(self.data_path, 'label_2')))
-            elif os.path.exists(osp.join(self.data_path, 'image_2')):
-                total_count = len(os.listdir(osp.join(self.data_path, 'image_2')))
-            elif os.path.exists(osp.join(self.data_path, 'velodyne')):
-                total_count = len(os.listdir(osp.join(self.data_path, 'velodyne')))
+                total_count = len(os.listdir(osp.join(base_path, phase, 'label_2')))
+            elif os.path.exists(osp.join(base_path, phase, 'image_2')):
+                total_count = len(os.listdir(osp.join(base_path, phase, 'image_2')))
+            elif os.path.exists(osp.join(base_path, phase, 'velodyne')):
+                total_count = len(os.listdir(osp.join(base_path, phase, 'velodyne')))
 
         # Find all the data files
-        self.frames = self.frames or list(range(total_count))
+        self.frames = list(self.frames or range(total_count))
+
+        # used to store the image size
+        self._image_size_cache = {}
 
     def __len__(self):
         return len(self.frames)
 
-    def close(self):
-        if self.inzip:
-            if self.label_data is not None:
-                self.label_data.close()
-            if self.cam2_data is not None:
-                self.cam2_data.close()
-            if self.cam3_data is not None:
-                self.cam3_data.close()
-            if self.velo_data is not None:
-                self.velo_data.close()
-            if self.calib_data is not None:
-                self.calib_data.close()
+    def camera_data(self, idx, names=['cam2']):
+        if names is None:
+            names = ObjectLoader.VALID_CAM_NAMES
+        else: # sanity check
+            for name in names:
+                if name not in ObjectLoader.VALID_CAM_NAMES:
+                    raise ValueError("Invalid camera name, options are " +
+                        ", ".join(ObjectLoader.VALID_CAM_NAMES))
+        
+        outputs = []
+        for name in names:
+            if name == "cam2":
+                source = ZipFile(osp.join(self.base_path, "data_object_image_2.zip")) if self.inzip else self.base_path
+                image = utils.load_image(source, osp.join(self.phase, 'image_2', '%06d.png' % self.frames[idx]), gray=False)
+                outputs.append(image)
+                source.close()
+            elif name == "cam3":
+                source = ZipFile(osp.join(self.base_path, "data_object_image_3.zip")) if self.inzip else self.base_path
+                image = utils.load_image(source, osp.join(self.phase, 'image_3', '%06d.png' % self.frames[idx]), gray=False)
+                outputs.append(image)
+                source.close()
 
-    # ========== Generators ==========
+            if idx not in self._image_size_cache:
+                self._image_size_cache[idx] = image.size
 
-    def cam2(self, idx=None):
-        source = self.cam2_data if self.inzip else self.data_path
-        if idx is None:
-            return utils.yield_images(source, [osp.join('image_2', '%06d.png' % fid) for fid in self.frames], gray=False)
-        else:
-            return utils.load_image(source, osp.join('image_2', '%06d.png' % idx), gray=False)
+        return outputs
 
-    def cam3(self, idx=None):
-        source = self.cam3_data if self.inzip else self.data_path
-        if idx is None:
-            return utils.yield_images(source, [osp.join('image_2', '%06d.png' % fid) for fid in self.frames], gray=False)
-        else:
-            return utils.load_image(source, osp.join('image_2', '%06d.png' % idx), gray=False)
+    def lidar_data(self, idx, names=['velo']):
+        if names != ObjectLoader.VALID_LIDAR_NAMES:
+            raise "There's only one lidar in KITTI dataset"
 
-    def velo(self, idx=None): # TODO: rename to lidar
-        source = self.velo_data if self.inzip else self.data_path
-        if idx is None:
-            return utils.yield_velo_scans(source, [osp.join('velodyne', '%06d.bin' % fid) for fid in self.frames])
-        else:
-            return utils.load_velo_scan(source, osp.join('velodyne', '%06d.bin' % idx))
+        source = ZipFile(osp.join(self.base_path, "data_object_velodyne.zip")) if self.inzip else self.base_path
+        cloud = utils.load_velo_scan(source, osp.join(self.phase, 'velodyne', '%06d.bin' % idx))
+        source.close()
 
-    def calib(self, idx=None):
-        source = self.calib_data if self.inzip else self.data_path
-        if idx is None:
-            return self._yield_calibs(source, [osp.join('calib', '%06d.txt' % fid) for fid in self.frames])
-        else:
-            return self._load_calib(source, osp.join('calib', '%06d.txt' % idx))
+        return cloud
 
-    def label(self, idx=None):
+    def calibration_data(self, idx):
+        source = ZipFile(osp.join(self.base_path, "data_object_calib.zip")) if self.inzip else self.base_path
+        calib = self._load_calib(source, idx)
+        source.close()
+        
+        return calib
+
+    def lidar_label(self, idx):
         if self.phase == "testing":
             raise ValueError("Testing dataset doesn't contain label data")
-        source = self.label_data if self.inzip else self.data_path
-        if idx is None:
-            return self._yield_labels(source, [osp.join('label_2', '%06d.txt' % fid) for fid in self.frames])
-        else:
-            return self._load_label(source, osp.join('label_2', '%06d.txt' % idx))
 
-    def label_objects(self, idx=None):
+        source = ZipFile(osp.join(self.base_path, "data_object_label_2.zip")) if self.inzip else self.base_path
+        label = self._load_label(source, osp.join(self.phase, 'label_2', '%06d.txt' % self.frames[idx]))
+        source.close()
+
+        return label
+
+    def lidar_objects(self, idx=None):
         '''
         Return list of converted ground truth targets. Objects labelled as `DontCare` are removed
         '''
-        if idx is None:
-            return self._yield_objects()
-        else:
-            return self._generate_objects(self.label(idx), self.calib(idx))
+        return self._generate_objects(self.lidar_label(idx), self.calibration_data(idx))
 
-    # ========== Implementations ==========
+    def _load_calib(self, basepath, idx):
+        data = TransformSet("velo")
 
-    def _yield_calibs(self, basepath, filelist):
-        for file in filelist:
-            yield self._load_calib(basepath, file)
+        # load the calibration file
+        filename = osp.join(self.phase, 'calib', '%06d.txt' % self.frames[idx])
+        filedata = utils.load_calib_file(basepath, filename)
 
-    def _load_calib(self, basepath, file):
-        data = {}
+        # load image size, which could take additional time
+        if idx not in self._image_size_cache:
+            self.camera_data(idx) # fill image size cache
+        image_size = self._image_size_cache[idx]
 
-        # Load the calibration file
-        filedata = utils.load_calib_file(basepath, file)
+        # load matrics
+        rect = filedata['R0_rect'].reshape(3, 3)
+        velo_to_cam = filedata['Tr_velo_to_cam'].reshape(3, 4)
+        for i in range(4):
+            P = filedata['P%d' % i].reshape(3, 4)
+            intri, offset = P[:, :3], P[:, 3]
+            projection = intri.dot(rect)
+            offset_cartesian = np.linalg.inv(projection).dot(offset)
+            extri = np.vstack([velo_to_cam, np.array([0,0,0,1])])
+            extri[:3, 3] += offset_cartesian
 
-        # Reshape matrices
-        data['P0'] = filedata['P0'].reshape(3, 4)
-        data['P1'] = filedata['P1'].reshape(3, 4)
-        data['P2'] = filedata['P2'].reshape(3, 4)
-        data['P3'] = filedata['P3'].reshape(3, 4)
-        data['R0_rect'] = filedata['R0_rect'].reshape(3, 3)
-        data['Tr_velo_to_cam'] = filedata['Tr_velo_to_cam'].reshape(3, 4)
+            frame = "cam%d" % i
+            data.set_intrinsic_camera(frame, projection, image_size, rotate=False)
+            data.set_extrinsic(extri, frame_to=frame)
+
+        data.set_intrinsic_general("imu")
+        data.set_extrinsic(filedata['Tr_imu_to_velo'].reshape(3, 4), frame_from="imu")
 
         return data
-
-    def _yield_labels(self, basepath, filelist):
-        for file in filelist:
-            yield self._load_label(basepath, file)
 
     def _load_label(self, basepath, file):
         data = []
@@ -205,10 +205,6 @@ class ObjectLoader:
                 data.append(values)
 
         return data
-
-    def _yield_objects(self):
-        for label, calib in zip(self.label(), self,calib()):
-            yield self._generate_objects(label, calib)
 
     def _generate_objects(self, label, calib):
         Tr = calib['Tr_velo_to_cam']

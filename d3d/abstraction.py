@@ -142,8 +142,8 @@ class TransformSet:
         :param base_frame: name of base frame used by extrinsics
         '''
         self.base_frame = base_frame
-        self.intrinsics = {}
-        self.intrinsics_meta = {}
+        self.intrinsics = {} # projection matrics (mainly for camera)
+        self.intrinsics_meta = {} # sensor metadata
         self.extrinsics = {} # transforms from base frame
         
     def _assert_exist(self, frame_id, extrinsic=False):
@@ -154,6 +154,14 @@ class TransformSet:
         if extrinsic and frame_id not in self.extrinsics:
             raise ValueError("Frame {0} not found in extrinsic parameters, "
                 "please add extrinsic for {0} first!".format(frame_id))
+
+    def set_intrinsic_general(self, frame_id, metadata=None):
+        '''
+        Set intrinsic for a general sensor.
+        This is used for marking existence of a frame
+        '''
+        self.intrinsics[frame_id] = None
+        self.intrinsics_meta[frame_id] = metadata
 
     def set_intrinsic_camera(self, frame_id, transform, size, rotate=True, distort_coeffs=[], distort_intri=None):
         '''
