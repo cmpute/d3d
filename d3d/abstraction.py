@@ -81,10 +81,16 @@ class ObjectTarget3D:
 
     @property
     def tag_name(self):
+        '''
+        Return the name of the target's top tag
+        '''
         return self.tag.labels[0].name
 
     @property
     def tag_score(self):
+        '''
+        Return the score of the target's top tag
+        '''
         return self.tag.scores[0]
 
     @property
@@ -99,8 +105,9 @@ class ObjectTarget3D:
         return angles[0]
 
 class ObjectTarget3DArray(list):
-    def __init__(self, iterable=[]):
+    def __init__(self, iterable=[], frame=None):
         super().__init__(iterable)
+        self.frame = frame
 
     def to_numpy(self, box_type="ground"):
         '''
@@ -117,10 +124,7 @@ class ObjectTarget3DArray(list):
 
     def to_torch(self, box_type="ground"):
         import torch
-        return torch.tensor(self.to_numpy(), box_type=box_type)
-
-    def to_kitti(self):
-        pass
+        return torch.tensor(self.to_numpy(box_type=box_type))
 
     def __str__(self):
         return "<ObjectTarget3DArray with %d objects>" % len(self)
@@ -146,7 +150,13 @@ class TransformSet:
         self.intrinsics_meta = {} # sensor metadata
         self.extrinsics = {} # transforms from base frame
         
+    def _is_base(self, frame):
+        return frame is None or frame == self.base_frame
+
     def _assert_exist(self, frame_id, extrinsic=False):
+        if self._is_base(frame_id):
+            return
+
         if frame_id not in self.intrinsics:
             raise ValueError("Frame {0} not found in intrinsic parameters, "
                 "please add intrinsics for {0} first!".format(frame_id))
@@ -209,20 +219,23 @@ class TransformSet:
         elif transform.shape != (4, 4):
             raise ValueError("Invalid matrix shape for extrinsics!")
 
-        if frame_to is None:
+        if self._is_base(frame_to):
             self._assert_exist(frame_from)
             self.extrinsics[frame_from] = np.linalg.inv(transform)
             return
         else:
             self._assert_exist(frame_to)
 
-        if frame_from is None:
+        if self._is_base(frame_from):
             self._assert_exist(frame_to)
             self.extrinsics[frame_to] = transform
             return
         else:
             self._assert_exist(frame_from)
 
+        if frame_from in self.extrinsics and frame_to in self.extrinsics:
+            raise ValueError("Frame %s and %s are both registered in extrinsic, "
+                "please update one of them at one time" % (frame_to, frame_to))
         if frame_from in self.extrinsics:
             self.extrinsics[frame_to] = np.dot(transform, self.extrinsics[frame_from])
         elif frame_to in self.extrinsics:
@@ -238,26 +251,28 @@ class TransformSet:
         if frame_to == frame_from:
             return 1 # identity
 
-        if frame_from is not None:
+        if not self._is_base(frame_from):
             self._assert_exist(frame_from, extrinsic=True)
-            if frame_to is not None:
+            if not self._is_base(frame_to):
                 self._assert_exist(frame_to, extrinsic=True)
                 return np.dot(self.extrinsics[frame_to], np.linalg.inv(self.extrinsics[frame_from]))
             else:
                 return np.linalg.inv(self.extrinsics[frame_from])
         else:
-            if frame_to is not None:
+            if not self._is_base(frame_to):
                 self._assert_exist(frame_to, extrinsic=True)
                 return self.extrinsics[frame_to]
             else:
-                raise ValueError("All frames are not present in extrinsics! "
-                    "Please add extrinsics first!")
+                return 1 # identity
 
     @property
     def frames(self):
         return list(self.intrinsics.keys())
 
-    def project_points_to_camera(self, points, frame_to, frame_from=None):
+    def project_points_to_camera(self, points, frame_to, frame_from=None, remove_outlier=True):
+        '''
+        :param remove_outlier: If set to True, only points that fall into image view will be returned
+        '''
         width, height, distorts, distort_intri = self.intrinsics_meta[frame_to]
         tr = self.get_extrinsic(frame_to=frame_to, frame_from=frame_from)
         homo_xyz = np.insert(points[:, :3], 3, 1, axis=1)
@@ -269,7 +284,8 @@ class TransformSet:
         # mask points that are in camera view
         mask = (0 < u) & (u < width) & (0 < v) & (v < height) & (d > 0)
         mask, = np.where(mask)
-        u, v = u[mask], v[mask]
+        if remove_outlier:
+            u, v = u[mask], v[mask]
 
         distorts = np.array(distorts)
         if distorts.size > 0:
@@ -280,7 +296,10 @@ class TransformSet:
 
             # mask again
             dmask = (0 < u) & (u < width) & (0 < v) & (v < height)
-            u, v = u[dmask], v[dmask]
-            mask = mask[dmask]
+            if remove_outlier:
+                u, v = u[dmask], v[dmask]
+                mask = mask[dmask]
+            else:
+                mask = dmask
 
         return np.array([u, v]).T, mask

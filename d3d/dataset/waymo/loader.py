@@ -159,7 +159,7 @@ class Loader:
 
     def lidar_objects(self, idx):
         labels = self.lidar_label(idx)
-        outputs = ObjectTarget3DArray()
+        outputs = ObjectTarget3DArray(frame=None)
 
         for label in labels:
             target = ObjectTarget3D(

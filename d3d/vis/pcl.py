@@ -9,9 +9,13 @@ try:
 except:
     pass
 
-def visualize_detections(visualizer: pcl.Visualizer, targets: ObjectTarget3DArray, text_scale=0.8):
+def visualize_detections(visualizer: pcl.Visualizer, targets: ObjectTarget3DArray,
+    text_scale=0.8, box_color=(1, 1, 1), text_color=(1, 0.8, 1), id_prefix=""):
     if not _pcl_available:
         raise RuntimeError("pcl is not available, please check the installation of package pcl.py")
+
+    if id_prefix != "" and not id_prefix.endswith("/"):
+        id_prefix = id_prefix + "/"
 
     # convert coordinate
     for i, target in enumerate(targets):
@@ -19,19 +23,24 @@ def visualize_detections(visualizer: pcl.Visualizer, targets: ObjectTarget3DArra
         orientation = [orientation[3]] + orientation[:3].tolist() # To PCL quaternion
         lx, ly, lz = target.dimension
 
-        visualizer.addCube(target.position, orientation, lx, ly, lz, id="target%d" % i)
-        visualizer.setShapeRenderingProperties(pv.RenderingProperties.Opacity, 0.8, id="target%d" % i)
+        cube_id = (id_prefix + "target%d") % i
+        visualizer.addCube(target.position, orientation, lx, ly, lz, id=cube_id)
+        visualizer.setShapeRenderingProperties(pv.RenderingProperties.Opacity, 0.8, id=cube_id)
+        visualizer.setShapeRenderingProperties(pv.RenderingProperties.Color, box_color, id=cube_id)
 
         # draw tag
+        text_id = (id_prefix + "target%d/tag") % i
         disp_text = "#%d: %s" % (i, target.tag_name)
         if target.tag_score < 1:
             disp_text += " (%.2f)" % target.tag_score
         disp_pos = list(target.position)
         disp_pos[2] += lz / 2 # lift the text out of box
-        visualizer.addText3D(disp_text, disp_pos, text_scale=text_scale, color=(1, 0.8, 1), id="target%d/tag" % i)
+        visualizer.addText3D(disp_text, disp_pos,
+            text_scale=text_scale, color=text_color, id=text_id)
 
         # draw orientation
-        direction = target.orientation.as_dcm().dot([1,0,0])
+        arrow_id = (id_prefix + "target%d/direction") % i
+        direction = target.orientation.as_matrix().dot([1,0,0])
         pstart = target.position
         pend = target.position + direction * lx
-        visualizer.addLine(pstart, pend, id="target%d/direction" % i)
+        visualizer.addLine(pstart, pend, id=arrow_id)

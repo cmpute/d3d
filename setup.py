@@ -20,7 +20,7 @@ setup(
     download_url='https://github.com/cmpute/d3d/archive/master.zip',
     license='BSD-3-Clause',
     packages=find_packages(),
-    install_requires=['numpy', 'torch', 'py3nvml'],
+    install_requires=['numpy', 'torch', 'py3nvml', 'scipy>=1.4'],
     setup_requires=['pybind11', 'torch', 'scikit-build'],
     extras_require={'test': ['pytest']},
     classifiers=[
