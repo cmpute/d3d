@@ -1,0 +1,6 @@
+scikit-build
+pillow
+pcl-py
+addict
+pytorch
+scipy >= 1.4
