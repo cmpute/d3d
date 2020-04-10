@@ -1,5 +1,5 @@
 add_library(box_impl MODULE
-    impl.cpp
+    impl.cpp utils.cpp
     iou.cpp iou_cuda.cu
     nms.cpp nms_cuda.cu
 )

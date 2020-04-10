@@ -1,4 +1,4 @@
-#include <d3d/voxel/voxelize.h>
+#include "d3d/voxel/voxelize.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("voxelize_3d", &voxelize_3d, "3D voxelization of tensor");

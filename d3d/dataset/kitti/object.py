@@ -44,9 +44,6 @@ class ObjectLoader:
             - calib
             - image_2
             - velodyne
-
-    TODO: disable iteration functionality and open zip file only when needed.
-          actually we should separate indexable dataset and iterable dataset in this condition
     """
 
     VALID_CAM_NAMES = ["cam2", "cam3"]

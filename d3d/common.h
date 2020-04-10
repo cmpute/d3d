@@ -15,6 +15,7 @@
 #define _packed_accessor_typed(t,n) packed_accessor32<t,n,torch::RestrictPtrTraits>()
 
 #define DivUp(m,n) (((m)+(n)-1) / (n))
+#define THREADS_COUNT 1024
 
 #define CUDA_CHECK_ERROR_SYNC(errorMessage) {                                \
     cudaError_t err = cudaGetLastError();                                    \
