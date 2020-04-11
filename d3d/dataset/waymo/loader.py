@@ -47,7 +47,7 @@ class Loader:
         """
 
         self.base_path = osp.join(base_path, phase)
-        self.pahse = phase
+        self.phase = phase
         self._load_metadata()
 
         if not inzip:
@@ -56,7 +56,7 @@ class Loader:
     def _load_metadata(self):
         meta_path = osp.join(self.base_path, "metadata.json")
         if not osp.exists(meta_path):
-            _logger.info("Creating metadata of Waymo dataset (%s)...", self.pahse)
+            _logger.info("Creating metadata of Waymo dataset (%s)...", self.phase)
             metadata = {}
 
             for archive in os.listdir(self.base_path):
@@ -83,7 +83,7 @@ class Loader:
         for k, v in self._metadata.items():
             if idx < v.frame_count:
                 return k + ".zip", idx
-            idx -= v
+            idx -= v.frame_count
 
     def lidar_data(self, idx, names=None, concat=True):
         """
@@ -115,8 +115,12 @@ class Loader:
         """
         :param names: names of camera to be loaded, options: front, front_left, front_right, side_left, side_right, rear
         """
+        unpack_result = False
         if names is None:
             names = Loader.VALID_CAM_NAMES
+        elif isinstance(names, str):
+            names = [names]
+            unpack_result = True
         else: # sanity check
             for name in names:
                 if name not in Loader.VALID_CAM_NAMES:
@@ -130,7 +134,10 @@ class Loader:
                 with ar.open("camera_%s/%04d.jpg" % (name, fidx)) as fin:
                     outputs.append(Image.open(fin).convert('RGB'))
 
-        return outputs
+        if unpack_result:
+            return outputs[0]
+        else:
+            return outputs
 
     def lidar_label(self, idx):
         fname, fidx = self._locate_frame(idx)
@@ -139,8 +146,12 @@ class Loader:
                 return [edict(item) for item in json.loads(fin.read().decode())]
 
     def camera_label(self, idx, names=None):
+        unpack_result = False
         if names is None:
             names = Loader.VALID_CAM_NAMES
+        elif isinstance(names, str):
+            names = [names]
+            unpack_result = True
         else: # sanity check
             for name in names:
                 if name not in Loader.VALID_CAM_NAMES:
@@ -155,7 +166,10 @@ class Loader:
                     objects = [edict(item) for item in json.loads(fin.read().decode())]
                     outputs.append(objects)
 
-        return outputs
+        if unpack_result:
+            return outputs[0]
+        else:
+            return outputs
 
     def lidar_objects(self, idx):
         labels = self.lidar_label(idx)

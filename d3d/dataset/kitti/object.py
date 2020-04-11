@@ -94,9 +94,13 @@ class ObjectLoader:
     def __len__(self):
         return len(self.frames)
 
-    def camera_data(self, idx, names=['cam2']):
+    def camera_data(self, idx, names='cam2'):
+        unpack_result = False
         if names is None:
             names = ObjectLoader.VALID_CAM_NAMES
+        elif isinstance(names, str):
+            names = [names]
+            unpack_result = True
         else: # sanity check
             for name in names:
                 if name not in ObjectLoader.VALID_CAM_NAMES:
@@ -121,9 +125,14 @@ class ObjectLoader:
             if idx not in self._image_size_cache:
                 self._image_size_cache[idx] = image.size
 
-        return outputs
+        if unpack_result:
+            return outputs[0]
+        else:
+            return outputs
 
-    def lidar_data(self, idx, names=['velo']):
+    def lidar_data(self, idx, names='velo'):
+        if isinstance(names, str):
+            names = [names]
         if names != ObjectLoader.VALID_LIDAR_NAMES:
             raise "There's only one lidar in KITTI dataset"
 

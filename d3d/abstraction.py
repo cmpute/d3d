@@ -132,7 +132,7 @@ class ObjectTarget3DArray(list):
 CameraMetadata = namedtuple('CameraMetadata', [
     'width', 'height',
     'distort_coeffs', # coefficients of camera distortion model, follow OpenCV format
-    'distort_intri' # original intrinsic matrix used for cv2.undistortPoints
+    'intri_matrix' # original intrinsic matrix used for cv2.undistortPoints
 ])
 LidarMetadata = namedtuple('LidarMetadata', [])
 class TransformSet:
@@ -173,7 +173,7 @@ class TransformSet:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = metadata
 
-    def set_intrinsic_camera(self, frame_id, transform, size, rotate=True, distort_coeffs=[], distort_intri=None):
+    def set_intrinsic_camera(self, frame_id, transform, size, rotate=True, distort_coeffs=[], intri_matrix=None):
         '''
         Set camera intrinsics
         :param size: (width, height)
@@ -188,7 +188,7 @@ class TransformSet:
             ]))
 
         self.intrinsics[frame_id] = transform
-        self.intrinsics_meta[frame_id] = CameraMetadata(width, height, distort_coeffs, distort_intri)
+        self.intrinsics_meta[frame_id] = CameraMetadata(width, height, distort_coeffs, intri_matrix)
 
     def set_intrinsic_lidar(self, frame_id):
         self.intrinsics[frame_id] = None
@@ -201,7 +201,7 @@ class TransformSet:
         '''
         P = np.array([[fx, s, cx], [0, fy, cy], [0, 0, 1]])
         self.set_intrinsic_camera(frame_id, P, size,
-            rotate=True, distort_coeffs=distort_coeffs, distort_intri=P)
+            rotate=True, distort_coeffs=distort_coeffs, intri_matrix=P)
 
     def set_extrinsic(self, transform, frame_to=None, frame_from=None):
         '''
@@ -273,7 +273,10 @@ class TransformSet:
         '''
         :param remove_outlier: If set to True, only points that fall into image view will be returned
         '''
-        width, height, distorts, distort_intri = self.intrinsics_meta[frame_to]
+        self._assert_exist(frame_from)
+        self._assert_exist(frame_to)
+
+        width, height, distorts, intri_matrix = self.intrinsics_meta[frame_to]
         tr = self.get_extrinsic(frame_to=frame_to, frame_from=frame_from)
         homo_xyz = np.insert(points[:, :3], 3, 1, axis=1)
 
@@ -290,8 +293,9 @@ class TransformSet:
         distorts = np.array(distorts)
         if distorts.size > 0:
             import cv2
-            undistort = cv2.undistortPoints(np.array([u, v]).T,
-                distort_intri, np.array(distorts), None, None, distort_intri)
+            # cv2.undistortPoints requires input and output to be of Nx1x2 shape
+            undistort = cv2.undistortPoints(np.array([u, v]).T.reshape(-1, 1, 2),
+                intri_matrix, distorts, P=intri_matrix)
             u, v = undistort[:, 0, 0], undistort[:, 0, 1]
 
             # mask again
