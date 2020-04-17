@@ -263,12 +263,7 @@ def print_detection_result(detections: ObjectTarget3DArray, calib:TransformSet, 
     output_format = "%s 0 0 0" + " %.2f" * 12
     for box in detections:
         # calculate bounding box 2D
-        offsets = [[-d/2, d/2] for d in box.dimension]
-        offsets = np.array(np.meshgrid(*offsets)).T.reshape(-1, 3)
-        offsets = offsets.dot(box.orientation.as_matrix().T)
-        points = box.position + offsets
-
-        uv, mask = calib.project_points_to_camera(points, frame_to="cam2", frame_from="velo", remove_outlier=False)
+        uv, mask = calib.project_points_to_camera(box.corners, frame_to="cam2", frame_from="velo", remove_outlier=False)
         if np.sum(mask) < 4: continue # ignore boxes that is outside the image
         umin, vmin = np.min(uv, axis=0)
         umax, vmax = np.max(uv, axis=0)

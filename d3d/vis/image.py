@@ -12,10 +12,7 @@ def visualize_detections(image, image_frame, targets: ObjectTarget3DArray, calib
     '''
     for target in targets:
         # calculate corner points
-        offsets = [[-d/2, d/2] for d in target.dimension]
-        offsets = np.array(np.meshgrid(*offsets)).T.reshape(-1, 3)
-        offsets = offsets.dot(target.orientation.as_matrix().T)
-        points = target.position + offsets
+        points = target.corners
         points = np.vstack([points, # add points for direction indicator
             target.position + [0, 0, -target.dimension[2]/2],
             target.position + [target.dimension[0]/2, 0, -target.dimension[2]/2]])

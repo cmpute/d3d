@@ -5,9 +5,6 @@ import weakref
 import logging
 
 import torch
-from py3nvml import py3nvml
-
-# TODO: compare functions in this module with ones in Pytorch-Lightning
 
 _timers = {}
 _logger = logging.getLogger('d3d.profiler')
@@ -68,20 +65,3 @@ def tap_tensors(report=False):
         _tensors.remove(ref)
 
     return tensor_new, tensor_del
-
-_gpu_connected = False
-def report_gpumem(gpus=None):
-    global _gpu_connected
-    if not _gpu_connected:
-        py3nvml.nvmlInit()
-        _gpu_connected = True
-
-    gpus = gpus or range(py3nvml.nvmlDeviceGetCount())
-    total_mem = 0
-    for gidx in gpus:
-        handle = py3nvml.nvmlDeviceGetHandleByIndex(gidx)
-        procs = py3nvml.nvmlDeviceGetComputeRunningProcesses(handle)
-        cproc = next(p for p in procs if p.pid == os.getpid())
-        total_mem += cproc.usedGpuMemory
-
-    return total_mem

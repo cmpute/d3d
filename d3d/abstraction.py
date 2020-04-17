@@ -104,6 +104,16 @@ class ObjectTarget3D:
                 angles[2], angles[1])
         return angles[0]
 
+    @property
+    def corners(self):
+        '''
+        Convert the bounding box representation to coorindate of 8 corner points
+        '''
+        offsets = [[-d/2, d/2] for d in self.dimension]
+        offsets = np.array(np.meshgrid(*offsets)).T.reshape(-1, 3)
+        offsets = offsets.dot(self.orientation.as_matrix().T)
+        return self.position + offsets
+
 class ObjectTarget3DArray(list):
     def __init__(self, iterable=[], frame=None):
         super().__init__(iterable)
@@ -289,6 +299,8 @@ class TransformSet:
         mask, = np.where(mask)
         if remove_outlier:
             u, v = u[mask], v[mask]
+        if u.size == 0 or v.size == 0:
+            return np.array([u, v]).T, mask
 
         distorts = np.array(distorts)
         if distorts.size > 0:
