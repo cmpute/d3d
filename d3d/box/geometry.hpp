@@ -95,8 +95,8 @@ template <int MaxPoints> struct Poly2 // Convex polygon with no holes
 
     template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
     Poly2<MaxPoints + MaxPointsOther> intersect(const Poly2<MaxPointsOther> &other) const
-    // TODO: to make the intersection differentialble, need to store which points are selected
-    //       e.g. self points are indexed from 1 to n, other points are indexed from -1 to -n, 0 is reserved for tensor padding
+    // XXX: if to make the intersection differentialble, need to store which points are selected
+    //      e.g. self points are indexed from 1 to n, other points are indexed from -1 to -n, 0 is reserved for tensor padding
     {
         Poly2<MaxPoints + MaxPointsOther> intersection, temp; // start with original polygon
         intersection = *this;

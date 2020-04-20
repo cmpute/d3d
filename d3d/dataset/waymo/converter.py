@@ -158,6 +158,15 @@ def save_context(frame, frame_count, output_zip):
             calibs[lidar_name_map[calib_object.name]] = calib_dict
         fout.write(json.dumps(calibs).encode())
 
+def save_timestamp(frame, frame_idx, output_zip):
+    with output_zip.open("timestamp/%04d.txt" % frame_idx, "w") as fout:
+        fout.write(str(frame.timestamp_micros).encode())
+
+def save_pose(frame, frame_idx, output_zip):
+    values = np.array(frame.pose.transform).reshape(4, 4)
+    with output_zip.open("pose/%04d.npy" % frame_idx, "w") as fout:
+        np.save(fout, values)
+
 def save_image(frame, frame_idx, output_zip):
     for image in frame.images:
         with output_zip.open("camera_%s/%04d.jpg" % (camera_name_map[image.name], frame_idx), "w") as fout:
@@ -232,9 +241,11 @@ def convert_tfrecord(input_file, output_path, delele_input=True):
                 os.makedirs(output_path)
             archive = zipfile.ZipFile(os.path.join(output_path, frame.context.name + ".zip"), "w")
 
+        save_timestamp(frame, idx, archive)
         save_image(frame, idx, archive)
         save_point_cloud(frame, idx, archive)
         save_labels(frame, idx, archive)
+        save_pose(frame, idx, archive)
     save_context(frame, idx, archive) # save metadata at last
 
     if archive is not None:
@@ -296,7 +307,7 @@ def convert_dataset_inpath(input_path, output_path, nworkers=8, debug=False):
 def main():
     from argparse import ArgumentParser
 
-    parser = ArgumentParser(description='Convert waymo dataset to normal zip files with numpy arrays.')
+    parser = ArgumentParser(description='Convert waymo dataset tarballs to normal zip files with numpy arrays.')
 
     parser.add_argument('input', type=str,
         help='Input directory')

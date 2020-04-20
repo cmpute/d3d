@@ -3,7 +3,11 @@ import json
 import logging
 import os
 import os.path as osp
+import shutil
+import subprocess
+import tempfile
 import zipfile
+import tarfile
 from collections import OrderedDict
 from enum import Enum
 from io import BytesIO
@@ -13,7 +17,9 @@ from addict import Dict as edict
 from PIL import Image
 from scipy.spatial.transform import Rotation
 
-from d3d.abstraction import ObjectTarget3D, ObjectTarget3DArray, ObjectTag, TransformSet
+from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
+                             TransformSet)
+from d3d.dataset.base import DetectionDatasetBase, ZipCache
 
 _logger = logging.getLogger("d3d")
 
@@ -24,7 +30,7 @@ class WaymoObjectClass(Enum):
     Sign = 3
     Cyclist = 4
 
-class Loader:
+class WaymoObjectLoader(DetectionDatasetBase):
     VALID_CAM_NAMES = ["front", "front_left", "front_right", "side_left", "side_right"]
     VALID_LIDAR_NAMES = ["top", "front", "side_left", "side_right", "rear"]
 
@@ -41,17 +47,22 @@ class Loader:
             - xxxxxxxxxxxxxxxxxxxx_xxx_xxx_xxx_xxx.zip
             - ...
     """
-    def __init__(self, base_path, phase="training", inzip=True):
+    def __init__(self, base_path, phase="training", inzip=True, trainval_split=None):
         """
         :param phase: training, validation or testing
+        :param trainval_split: placeholder for interface compatibility with other loaders
         """
+
+        if not inzip:
+            raise NotImplementedError("Currently only support load from zip files")
+        if phase not in ['training', 'validation', 'testing']:
+            raise ValueError("Invalid phase tag")
 
         self.base_path = osp.join(base_path, phase)
         self.phase = phase
         self._load_metadata()
 
-        if not inzip:
-            raise NotImplementedError("Currently only support load from zip files")
+        self._zip_cache = ZipCache()
 
     def _load_metadata(self):
         meta_path = osp.join(self.base_path, "metadata.json")
@@ -82,8 +93,9 @@ class Loader:
     def _locate_frame(self, idx):
         for k, v in self._metadata.items():
             if idx < v.frame_count:
-                return k + ".zip", idx
+                return k, idx
             idx -= v.frame_count
+        raise ValueError("Index larger than dataset size")
 
     def lidar_data(self, idx, names=None, concat=True):
         """
@@ -92,20 +104,20 @@ class Loader:
         :param concat: concatenate the points together
         """
         if names is None:
-            names = Loader.VALID_LIDAR_NAMES
+            names = self.VALID_LIDAR_NAMES
         else: # sanity check
             for name in names:
-                if name not in Loader.VALID_LIDAR_NAMES:
+                if name not in self.VALID_LIDAR_NAMES:
                     raise ValueError("Invalid lidar name, options are " +
-                        ", ".join(Loader.VALID_LIDAR_NAMES))
+                        ", ".join(self.VALID_LIDAR_NAMES))
 
         outputs = []
         fname, fidx = self._locate_frame(idx)
-        with zipfile.ZipFile(osp.join(self.base_path, fname)) as ar:
-            for name in names:
-                with ar.open("lidar_%s/%04d.npy" % (name, fidx)) as fin:
-                    buffer = BytesIO(fin.read())
-                    outputs.append(np.load(buffer))
+        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
+        for name in names:
+            with ar.open("lidar_%s/%04d.npy" % (name, fidx)) as fin:
+                buffer = BytesIO(fin.read())
+                outputs.append(np.load(buffer))
 
         if concat:
             outputs = np.vstack(outputs)
@@ -117,22 +129,22 @@ class Loader:
         """
         unpack_result = False
         if names is None:
-            names = Loader.VALID_CAM_NAMES
+            names = self.VALID_CAM_NAMES
         elif isinstance(names, str):
             names = [names]
             unpack_result = True
         else: # sanity check
             for name in names:
-                if name not in Loader.VALID_CAM_NAMES:
+                if name not in self.VALID_CAM_NAMES:
                     raise ValueError("Invalid camera name, options are" +
-                        ", ".join(Loader.VALID_CAM_NAMES))
+                        ", ".join(self.VALID_CAM_NAMES))
 
         outputs = []
         fname, fidx = self._locate_frame(idx)
-        with zipfile.ZipFile(osp.join(self.base_path, fname)) as ar:
-            for name in names:
-                with ar.open("camera_%s/%04d.jpg" % (name, fidx)) as fin:
-                    outputs.append(Image.open(fin).convert('RGB'))
+        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
+        for name in names:
+            with ar.open("camera_%s/%04d.jpg" % (name, fidx)) as fin:
+                outputs.append(Image.open(fin).convert('RGB'))
 
         if unpack_result:
             return outputs[0]
@@ -141,30 +153,30 @@ class Loader:
 
     def lidar_label(self, idx):
         fname, fidx = self._locate_frame(idx)
-        with zipfile.ZipFile(osp.join(self.base_path, fname)) as ar:
-            with ar.open("label_lidars/%04d.json" % fidx) as fin:
-                return [edict(item) for item in json.loads(fin.read().decode())]
+        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
+        with ar.open("label_lidars/%04d.json" % fidx) as fin:
+            return [edict(item) for item in json.loads(fin.read().decode())]
 
     def camera_label(self, idx, names=None):
         unpack_result = False
         if names is None:
-            names = Loader.VALID_CAM_NAMES
+            names = self.VALID_CAM_NAMES
         elif isinstance(names, str):
             names = [names]
             unpack_result = True
         else: # sanity check
             for name in names:
-                if name not in Loader.VALID_CAM_NAMES:
+                if name not in self.VALID_CAM_NAMES:
                     raise ValueError("Invalid camera name, options are " +
-                        ", ".join(Loader.VALID_CAM_NAMES))
+                        ", ".join(self.VALID_CAM_NAMES))
 
         outputs = []
         fname, fidx = self._locate_frame(idx)
-        with zipfile.ZipFile(osp.join(self.base_path, fname)) as ar:
-            for name in names:
-                with ar.open("label_camera_%s/%04d.json" % (name, fidx)) as fin:
-                    objects = [edict(item) for item in json.loads(fin.read().decode())]
-                    outputs.append(objects)
+        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
+        for name in names:
+            with ar.open("label_camera_%s/%04d.json" % (name, fidx)) as fin:
+                objects = [edict(item) for item in json.loads(fin.read().decode())]
+                outputs.append(objects)
 
         if unpack_result:
             return outputs[0]
@@ -190,26 +202,145 @@ class Loader:
     def calibration_data(self, idx):
         fname, _ = self._locate_frame(idx)
         calib_params = TransformSet("vehicle")
+        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
 
-        with zipfile.ZipFile(osp.join(self.base_path, fname)) as ar:
-            # load camera calibration
-            with ar.open("context/calib_cams.json") as fin:
-                calib_cams = json.loads(fin.read().decode())
-                for frame, calib in calib_cams.items():
-                    frame = "camera_" + frame
-                    (fu, fv, cu, cv), distort = calib['intrinsic'][:4], calib['intrinsic'][4:]
-                    transform = np.array(calib['extrinsic']).reshape(4,4)
-                    size = (calib['width'], calib['height'])
-                    calib_params.set_intrinsic_pinhole(frame, size, cu, cv, fu, fv, distort_coeffs=distort)
-                    calib_params.set_extrinsic(transform, frame_from=frame)
+        # load camera calibration
+        with ar.open("context/calib_cams.json") as fin:
+            calib_cams = json.loads(fin.read().decode())
+            for frame, calib in calib_cams.items():
+                frame = "camera_" + frame
+                (fu, fv, cu, cv), distort = calib['intrinsic'][:4], calib['intrinsic'][4:]
+                transform = np.array(calib['extrinsic']).reshape(4,4)
+                size = (calib['width'], calib['height'])
+                calib_params.set_intrinsic_pinhole(frame, size, cu, cv, fu, fv, distort_coeffs=distort)
+                calib_params.set_extrinsic(transform, frame_from=frame)
 
-            # load lidar calibration
-            with ar.open("context/calib_lidars.json") as fin:
-                calib_lidars = json.loads(fin.read().decode())
-                for frame, calib in calib_lidars.items():
-                    frame = "lidar_" + frame
-                    calib_params.set_intrinsic_lidar(frame)
-                    transform = np.array(calib['extrinsic']).reshape(4,4)
-                    calib_params.set_extrinsic(transform, frame_from=frame)
+        # load lidar calibration
+        with ar.open("context/calib_lidars.json") as fin:
+            calib_lidars = json.loads(fin.read().decode())
+            for frame, calib in calib_lidars.items():
+                frame = "lidar_" + frame
+                calib_params.set_intrinsic_lidar(frame)
+                transform = np.array(calib['extrinsic']).reshape(4,4)
+                calib_params.set_extrinsic(transform, frame_from=frame)
 
         return calib_params
+
+    def identity(self, idx):
+        fname, fidx = self._locate_frame(idx)
+        return self.phase, fname, fidx
+
+    def timestamp(self, idx):
+        fname, fidx = self._locate_frame(idx)
+        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
+        with ar.open("timestamp/%04d.txt" % fidx) as fin:
+            return int(fin.read().decode())
+
+
+def dump_detection_output(detections: ObjectTarget3DArray, context: str, timestamp: int):
+    '''
+    :param detections: detection result
+    :param ids: auxiliary information for output, each item contains context name and timestamp
+    '''
+    from waymo_open_dataset import label_pb2
+    from waymo_open_dataset.protos import metrics_pb2
+
+    label_map = {
+        WaymoObjectClass.Unknown: label_pb2.Label.TYPE_UNKNOWN,
+        WaymoObjectClass.Vehicle: label_pb2.Label.TYPE_VEHICLE,
+        WaymoObjectClass.Pedestrian: label_pb2.Label.TYPE_PEDESTRIAN,
+        WaymoObjectClass.Sign: label_pb2.Label.TYPE_SIGN,
+        WaymoObjectClass.Cyclist: label_pb2.Label.TYPE_CYCLIST
+    }
+
+    waymo_array = metrics_pb2.Objects()
+    for target in detections:
+        waymo_target = metrics_pb2.Object()
+
+        # convert box parameters
+        box = label_pb2.Label.Box()
+        box.center_x = target.position[0]
+        box.center_y = target.position[1]
+        box.center_z = target.position[2]
+        box.length = target.dimension[0]
+        box.width = target.dimension[1]
+        box.height = target.dimension[2]
+        box.heading = target.yaw
+        waymo_target.object.box.CopyFrom(box)
+
+        # convert label
+        waymo_target.object.type = label_map[target.tag.labels[0]]
+        waymo_target.score = target.tag.scores[0]
+
+        waymo_target.context_name = context
+        waymo_target.frame_timestamp_micros = timestamp
+        waymo_array.objects.append(waymo_target)
+
+    return waymo_array
+
+def execute_official_evaluator(exec_path, label_path, result_path, output_path, model_name=None, show_output=True):
+    '''
+    Execute compute_detection_metrics_main from waymo_open_dataset
+    :param exec_path: path to compute_detection_metrics_main
+    '''
+    raise NotImplementedError()
+
+def create_submission(exec_path, result_path, output_path, meta_path, model_name=None):
+    '''
+    Execute create_submission from waymo_open_dataset
+    :param exec_path: path to create_submission
+    :param meta_path: path to the metadata file (example: waymo_open_dataset/metrics/tools/submission.txtpb)
+    '''
+    temp_path = tempfile.mkdtemp() + '/'
+    model_name = model_name or "noname"
+    cwd_path = result_path
+
+    # combine some of the files
+    input_files_list = os.listdir(result_path)
+    input_files = ','.join(input_files_list)
+    if len(input_files) >= 65536:
+        print("Too many files, combining outputs...")
+
+        from waymo_open_dataset.protos.metrics_pb2 import Objects
+        cwd_path = temp_path + 'input' # change input directory
+        os.mkdir(cwd_path)
+        
+        # merge objects
+        counter = 0
+        combined_objects = Objects()
+        for f in input_files_list:
+            with open(osp.join(result_path, f), "rb") as fin:
+                objects = Objects()
+                objects.ParseFromString(fin.read())
+                combined_objects.MergeFrom(objects)
+            
+            if len(combined_objects.objects) > 1024:
+                with open(osp.join(cwd_path, "%x.bin" % counter), "wb") as fout:
+                    fout.write(combined_objects.SerializeToString())
+                combined_objects = Objects()
+                counter += 1
+
+        # write remaining objects
+        if len(combined_objects.objects) > 0:
+            with open(osp.join(cwd_path, "%x.bin" % counter), "wb") as fout:
+                fout.write(combined_objects.SerializeToString())
+        input_files = ','.join(os.listdir(cwd_path))
+
+    # create submissions
+    proc = subprocess.Popen([exec_path,
+        "--input_filenames=%s" % input_files,
+        "--output_filename=%s" % (temp_path + model_name),
+        "--submission_filename=%s" % meta_path
+    ], cwd=cwd_path)
+    proc.wait()
+
+    # create tarball
+    if cwd_path != result_path: # remove combined files before zipping
+        shutil.rmtree(cwd_path)
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+    with tarfile.open(osp.join(output_path, model_name + ".tgz"), "w:gz") as tar:
+        tar.add(temp_path, arcname=os.path.basename(temp_path))
+
+    # clean
+    shutil.rmtree(temp_path)

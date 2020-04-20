@@ -2,7 +2,7 @@ import unittest
 
 import pcl
 
-from d3d.dataset.kitti.object import ObjectLoader, print_detection_result, KittiObjectClass
+from d3d.dataset.kitti.object import KittiObjectLoader, print_detection_result, KittiObjectClass
 from d3d.vis.pcl import visualize_detections
 
 kitti_location = "/home/jacobz/PointCloud/detection3/data"
@@ -10,7 +10,7 @@ kitti_location = "/home/jacobz/PointCloud/detection3/data"
 class TestKittiDataset(unittest.TestCase):
     def test_ground_truth_visualizer(self):
         idx = 7
-        loader = ObjectLoader(kitti_location)
+        loader = KittiObjectLoader(kitti_location)
         cloud = loader.velo(idx)
         cloud = pcl.create_xyzi(cloud)
         targets = loader.lidar_objects(idx)
@@ -24,7 +24,7 @@ class TestKittiDataset(unittest.TestCase):
 
     def test_detection_output(self):
         idx = 7
-        loader = ObjectLoader(kitti_location)
+        loader = KittiObjectLoader(kitti_location)
 
         targets = loader.lidar_objects(idx)
         label = loader.lidar_label(idx)
