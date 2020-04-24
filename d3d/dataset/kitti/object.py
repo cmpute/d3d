@@ -229,6 +229,8 @@ class KittiObjectLoader(DetectionDatasetBase):
             for line in fin.readlines():
                 if not line.strip():
                     continue
+                if isinstance(line, bytes):
+                    line = line.decode()
 
                 values = [KittiObjectClass[value] if idx == 0 else float(value)
                     for idx, value in enumerate(line.split(' '))]

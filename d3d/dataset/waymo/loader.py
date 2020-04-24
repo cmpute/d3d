@@ -54,7 +54,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
         """
 
         if not inzip:
-            raise NotImplementedError("Currently only support load from zip files")
+            raise NotImplementedError("Currently only support load from zip files in Waymo dataset")
         if phase not in ['training', 'validation', 'testing']:
             raise ValueError("Invalid phase tag")
 
