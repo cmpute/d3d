@@ -390,6 +390,7 @@ py::dict voxelize_filter(
             }
             break;
         case MaxVoxelsFilterType::TRIM:
+            cout << "In trim" << endl;
             for (int i = 0; i < nvoxels; i++)
             {
                 if (nvoxel_filtered >= max_voxels_)
@@ -403,7 +404,7 @@ py::dict voxelize_filter(
             break;
         case MaxVoxelsFilterType::DESCENDING:
             auto order = torch::argsort(voxel_npoints, 0, true);
-            auto ordered_ = order.accessor<int, 1>();
+            auto ordered_ = order.accessor<long, 1>();
             for (int i = 0; i < nvoxels; i++)
             {
                 if (nvoxel_filtered >= max_voxels_)

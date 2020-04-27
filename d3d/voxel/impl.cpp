@@ -2,9 +2,8 @@
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("voxelize_3d_dense", &voxelize_3d_dense, "3D voxelization of tensor");
-    m.def("voxelize_3d_sparse", &voxelize_3d_sparse, "3D voxelization of tensor in sparse point representation");
-    m.def("voxelize_3d_sparse_coord", &voxelize_sparse, "3D voxelization of point cloud");
-    m.def("voxelize_3d_sparse_filter", &voxelize_filter, "Filter generated voxels");
+    m.def("voxelize_3d_sparse", &voxelize_sparse, "3D voxelization of point cloud");
+    m.def("voxelize_3d_filter", &voxelize_filter, "Filter generated voxels");
 
     py::enum_<ReductionType>(m, "ReductionType")
         .value("NONE", ReductionType::NONE)

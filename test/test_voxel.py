@@ -55,21 +55,25 @@ class TestVoxelModule(unittest.TestCase):
         cloud = torch.rand((2000, 3), dtype=torch.float32)
         cloud = (cloud - 0.5) * 4
 
-        gen = VoxelGenerator([0,1, 0,1, 0,1], [10,10,10])
+        gen = VoxelGenerator([-1,1, -1,1, -1,1], [20,20,20])
         data = gen(cloud)
-        assert torch.all((data.points >= 0) & (data.points <= 1))
-        assert torch.all((data.coords >= 0) & (data.coords <= 10))
+        assert torch.all((data.points >= -1) & (data.points <= 1))
+        assert torch.all((data.coords >= 0) & (data.coords <= 20))
 
         for i in range(len(data.points)):
             vid = data.points_mapping[i]
             for k in range(3):
-                assert data.coords[vid, k] == int(data.points[i, k] * 10)
+                assert data.coords[vid, k] == int((data.points[i, k]+1) * 10)
 
-        gen = VoxelGenerator([0,1, 0,1, 0,1], [10,10,10], max_voxels=10)
+        gen = VoxelGenerator([0,1, 0,1, 0,1], [10,10,10], max_voxels=10, max_voxels_filter="trim")
         data = gen(cloud)
         assert len(data.coords) <= 10
 
-        gen = VoxelGenerator([0,1, 0,1, 0,1], [10,10,10], min_points=2, max_points=4)
+        gen = VoxelGenerator([0,1, 0,1, 0,1], [10,10,10], max_voxels=10, max_voxels_filter="descending")
+        data = gen(cloud)
+        assert len(data.coords) <= 10
+
+        gen = VoxelGenerator([0,1, 0,1, 0,1], [10,10,10], min_points=2, max_points=4, max_points_filter="trim")
         data = gen(cloud)
         assert torch.all((data.voxel_npoints >= 2) & (data.voxel_npoints <= 4))
 
@@ -82,20 +86,6 @@ class TestVoxelModule(unittest.TestCase):
 
         assert np.allclose(ret.voxels.numpy(), data['voxels'])
         assert np.allclose(ret.coords.numpy(), data['coords'])
-
-    def test_compare(self):
-        from d3d.voxel import VoxelGeneratorOld
-        oldgen = VoxelGeneratorOld([0,1, 0,1, 0,1], [10,10,10], 5, sparse_repr=True)
-        newgen = VoxelGenerator([0,1, 0,1, 0,1], [10,10,10])
-
-        cloud = torch.rand((2000, 4), dtype=torch.float32)
-        cloud = (cloud - 0.5) * 4
-
-        oresult = oldgen(cloud)
-        nresult = newgen(cloud)
-        
-        mask = torch.all((oresult.points[:, :3] <= 1) & (oresult.points[:, :3] >= 0), dim=1)
-        assert torch.sum(mask) == len(nresult.points)
 
 if __name__ == "__main__":
     TestVoxelModule().test_generate_voxel()

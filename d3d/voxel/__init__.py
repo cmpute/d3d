@@ -1,48 +1,30 @@
 import torch
-from .voxel_impl import voxelize_3d_dense, voxelize_3d_sparse, ReductionType, MaxPointsFilterType, MaxVoxelsFilterType
 from addict import Dict as edict
 
-class VoxelGeneratorOld:
-    # TODO: directly output tensors with type long
-    # TODO: support max_points, max_voxels for sparse representation (default for max_voxels should be changed to -1 (not set)), and sampling strategy should be implemented
-    # TODO: support min_points to filter out voxels with less points
-    # TODO: bounds and shape are not actually necessary, we can generate infinite voxels in sparse representation, so the generator can be divided into BoundedVoxelGenerator and SparseVoxelGenerator
-    def __init__(self, bounds, shape,
-        max_points, max_voxels=20000, reduction="mean", sparse_repr=False):
+from .voxel_impl import (MaxPointsFilterType, MaxVoxelsFilterType,
+                         ReductionType, voxelize_3d_dense, voxelize_3d_filter,
+                         voxelize_3d_sparse)
 
-        self._bounds = torch.tensor(bounds, dtype=torch.float)
-        self._shape = torch.tensor(shape, dtype=torch.int32)
-        self._max_points = max_points
-        self._max_voxels = max_voxels
-        self._sparse_repr = sparse_repr
-
-        if reduction.lower() == "none":
-            self._reduction = 0
-        elif reduction.lower() == "mean":
-            self._reduction = 1
-        elif reduction.lower() == "max":
-            self._reduction = 2
-        elif reduction.lower() == "min":
-            self._reduction = 3
-        else:
-            raise ValueError("Unsupported reduction type in VoxelGenerator!")
-
-    def __call__(self, points):
-        
-        if self._sparse_repr:
-            ret = voxelize_3d_sparse(points, self._shape, self._bounds,
-                self._max_points, self._max_voxels)
-        else:
-            ret = voxelize_3d_dense(points, self._shape, self._bounds,
-                self._max_points, self._max_voxels, self._reduction)
-
-        return edict(ret)
 
 class VoxelGenerator:
+    '''
+    Convert point cloud to voxels
+    '''
     def __init__(self, bounds, shape,
         min_points=0, max_points=30, max_voxels=20000,
         max_points_filter=None, max_voxels_filter=None,
         reduction=None, dense=False):
+        '''
+        :param shape: The shape of the voxel grid
+        :param bouds: The boundary of the voxel grid, in format [xmin, xmax, ymin, ymax, zmin, zmax]
+        :param min_points: Minimum number of points per voxel
+        :param max_points: Maximum number of points per voxel
+        :param max_voxels: Maximum total number of voxels
+        :param reduction: Type of reduction to apply, {none, mean, max, min}. Only for dense representation
+        :param dense: Whether the output is in dense representation.
+        :param max_voxels_filter: Filter to be applied to filter voxels
+        :param max_points_filter: Filter to be applied to filter points in a voxel
+        '''
 
         self._bounds = torch.tensor(bounds, dtype=torch.float)
         self._shape = torch.tensor(shape, dtype=torch.int32)
@@ -78,7 +60,7 @@ class VoxelGenerator:
 
         max_voxels_filter = (max_voxels_filter or "NONE").upper()
         if max_voxels_filter in MaxVoxelsFilterType.__dict__:
-            self._max_voxels_filter = getattr(MaxVoxelsFilterType, max_points_filter)
+            self._max_voxels_filter = getattr(MaxVoxelsFilterType, max_voxels_filter)
         else:
             raise ValueError("Unsupported maximum voxels filter in VoxelGenerator!")
 
@@ -92,17 +74,28 @@ class VoxelGenerator:
                 raise NotImplementedError("Only trim is implemented for max voxels filtering")
 
     def __call__(self, points):
+        '''
+        :param points: Original point cloud with certain features. The first three columns will be considered as xyz coordinates
+
+        :return: A dictionary of data
+            voxels: Generated features for each voxel (dense only)
+            points: Filtered point cloud (sparse only)
+            coords: Calculated coordinates for generated voxels
+            aggregates: Aggregated feature of each voxel, only applicable when reduction_type != 0 (dense only)
+            voxel_pmask: Point mask of each voxel (dense only)
+            voxel_npoints: Actual number of points in each voxel (Note: this could be larger than max_npoints when dense)
+            points_mapping: Map from points to voxel index
+        '''
         if self._dense:
             ret = edict(voxelize_3d_dense(points, self._shape, self._bounds,
                 self._max_points, self._max_voxels, self._reduction))
         else:
-            from .voxel_impl import voxelize_3d_sparse_coord, voxelize_3d_sparse_filter
-            sparse = edict(voxelize_3d_sparse_coord(points, self._size, 3))
-            ret = edict(voxelize_3d_sparse_filter(
+            sparse = edict(voxelize_3d_sparse(points, self._size, 3))
+            ret = edict(voxelize_3d_filter(
                 points, sparse.points_mapping,
                 sparse.coords, sparse.voxel_npoints, self._vbounds,
                 self._min_points, self._max_points, self._max_voxels,
                 self._max_points_filter, self._max_voxels_filter
             ))
-            ret.coords = ret.coords + self._offset
+            ret.coords = ret.coords - self._offset
         return ret

@@ -2,7 +2,7 @@ import unittest
 
 import pcl
 
-from d3d.dataset.kitti.object import KittiObjectLoader, print_detection_result, KittiObjectClass
+from d3d.dataset.kitti.object import KittiObjectLoader, dump_detection_output, KittiObjectClass
 from d3d.vis.pcl import visualize_detections
 
 kitti_location = "/home/jacobz/PointCloud/detection3/data"
@@ -28,7 +28,7 @@ class TestKittiDataset(unittest.TestCase):
 
         targets = loader.lidar_objects(idx)
         label = loader.lidar_label(idx)
-        output = print_detection_result(targets,
+        output = dump_detection_output(targets,
             loader.calibration_data(idx), loader.calibration_data(idx, raw=True))
 
         output_list = []
