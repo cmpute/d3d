@@ -74,15 +74,16 @@ class KittiObjectLoader(DetectionDatasetBase):
         if self.inzip:
             if phase in ['training', 'validation']:
                 # label data is necessary when training
-                # TODO: total count is incorrect, need phase. Tests needed
                 with ZipFile(osp.join(base_path, "data_object_label_2.zip")) as label_data:
                     total_count = sum(1 for name in label_data.namelist() if not name.endswith('/'))
             elif osp.exists(osp.join(base_path, "data_object_image_2.zip")):
                 with ZipFile(osp.join(base_path, "data_object_image_2.zip")) as cam2_data:
-                    total_count = total_count or sum(1 for name in cam2_data.namelist() if not name.endswith('/'))
+                    total_count = total_count or sum(1 for name in cam2_data.namelist() \
+                        if name.startswith(self.phase_path) and not name.endswith('/'))
             elif osp.exists(osp.join(base_path, "data_object_velodyne.zip")):
                 with ZipFile(osp.join(base_path, "data_object_velodyne.zip")) as velo_data:
-                    total_count = total_count or sum(1 for name in velo_data.namelist() if not name.endswith('/'))
+                    total_count = total_count or sum(1 for name in velo_data.namelist() \
+                        if name.startswith(self.phase_path) and not name.endswith('/'))
         else:
             if phase in ['training', 'validation']:
                 total_count = len(os.listdir(osp.join(base_path, self.phase_path, 'label_2')))
