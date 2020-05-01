@@ -47,7 +47,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
             - xxxxxxxxxxxxxxxxxxxx_xxx_xxx_xxx_xxx.zip
             - ...
     """
-    def __init__(self, base_path, phase="training", inzip=True, trainval_split=None):
+    def __init__(self, base_path, phase="training", inzip=True, trainval_split=None, trainval_random=False):
         """
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders

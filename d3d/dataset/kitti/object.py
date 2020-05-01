@@ -54,12 +54,13 @@ class KittiObjectLoader(DetectionDatasetBase):
     VALID_CAM_NAMES = ["cam2", "cam3"]
     VALID_LIDAR_NAMES = ["velo"]
 
-    def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8):
+    def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8, trainval_random=False):
         """
         :param base_path: directory containing the zip files, or the required data
         :param inzip: whether the dataset is store in original zip archives or unzipped
         :param phase: training or testing
         :param trainval_split: the ratio to split training dataset. If set to 1, then the validation dataset is empty
+        :param trainval_random: whether select the train/val split randomly
         """
         self.base_path = base_path
         self.inzip = inzip
@@ -93,7 +94,7 @@ class KittiObjectLoader(DetectionDatasetBase):
                 total_count = len(os.listdir(osp.join(base_path, self.phase_path, 'velodyne')))
 
         # Assign numbers
-        self.frames = list(range(total_count))
+        self.frames = np.random.permutation(total_count) if trainval_random else np.arange(total_count)
         if phase == 'training':
             self.frames = self.frames[:int(total_count * trainval_split)]
         elif phase == 'validation':
@@ -143,8 +144,8 @@ class KittiObjectLoader(DetectionDatasetBase):
     def lidar_data(self, idx, names='velo'):
         if isinstance(names, str):
             names = [names]
-        if names != KittiObjectLoader.VALID_LIDAR_NAMES:
-            raise "There's only one lidar in KITTI dataset"
+        if names != self.VALID_LIDAR_NAMES:
+            raise ValueError("There's only one lidar in KITTI dataset")
 
         fname = osp.join(self.phase_path, 'velodyne', '%06d.bin' % idx)
         if self.inzip:
