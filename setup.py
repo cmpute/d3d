@@ -36,6 +36,7 @@ setup(
     entry_points={
         'console_scripts': [
             'd3d_waymo_convert = d3d.dataset.waymo.converter:main',
+            'd3d_nuscenes_convert = d3d.dataset.nuscenes.converter:main',
         ],
     },
     cmake_args=[f'-DCMAKE_PREFIX_PATH={torch_root}']

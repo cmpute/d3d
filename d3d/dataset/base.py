@@ -1,9 +1,11 @@
 import os.path as osp
-from typing import List, Union, Any, Optional
+from multiprocessing import Manager, Pool
+from typing import Any, List, Optional, Union
 from zipfile import ZipFile
 
 from numpy import ndarray as NdArray
 from PIL.Image import Image
+from tqdm import tqdm
 
 from d3d.abstraction import ObjectTarget3DArray, TransformSet
 
@@ -55,3 +57,42 @@ class ZipCache:
             self._cache = ZipFile(path, **kvargs)
             self._cache_path = path
         return self._cache
+
+
+def _wrap_func(func, args, pool, nlock, offset):
+    n = -1
+    with nlock:
+        n = next(i for i,v in enumerate(pool) if v == 0)
+        pool[n] = 1
+    ret = func(n + offset, *args)
+    return (n, ret)
+
+class NumberPool:
+    '''
+    This class is a utility for multiprocessing using tqdm
+    '''
+    def __init__(self, processes, offset=0, *args, **kargs):
+        self._ppool = Pool(processes, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),), *args, **kargs)
+        self._npool = Manager().Array('B', [0] * processes)
+        self._nlock = Manager().Lock()
+        self._offset = offset
+
+    def apply_async(self, func, args=(), callback=None):
+        def _wrap_cb(ret):
+            n, oret = ret
+            with self._nlock:
+                self._npool[n] = 0
+            if callback is not None:
+                callback(oret)
+
+        self._ppool.apply_async(_wrap_func,
+            (func, args, self._npool, self._nlock, self._offset),
+            callback=_wrap_cb,
+            error_callback=lambda e: print(f"{type(e).__name__}: {e}")
+        )
+
+    def close(self):
+        self._ppool.close()
+
+    def join(self):
+        self._ppool.join()

@@ -1,16 +1,22 @@
+'''
+This script convert Waymo dataset tarballs to zipfiles or regular directory split by collection segments.
+'''
+
 import json
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # disable logging
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1' # disable GPU usage
 import shutil
 import tarfile
 import tempfile
 import zipfile
-from multiprocessing import Pool, Value
 
 import numpy as np
+from tqdm import tqdm
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # disable logging
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1' # disable GPU usage
+
 import tensorflow as tf
-import tqdm
+from d3d.dataset.base import NumberPool
 from waymo_open_dataset import dataset_pb2, label_pb2
 from waymo_open_dataset.utils import (frame_utils, range_image_utils,
                                       transform_utils)
@@ -225,11 +231,13 @@ def save_labels(frame, frame_idx, output_zip):
 
     # no_label_zones are ignored
 
-def convert_tfrecord(input_file, output_path, delele_input=True):
+def convert_tfrecord(ntqdm, input_file, output_path, delele_input=True):
     dataset = tf.data.TFRecordDataset(input_file, compression_type='')
     archive = None
 
-    for idx, data in enumerate(dataset):
+    disp = os.path.split(input_file)[1]
+    disp = "Converting %s..." % disp[8:disp.find("_")]
+    for idx, data in tqdm(enumerate(dataset), desc=disp, position=ntqdm, unit="frames"):
         if idx > 9999:
             raise RuntimeError("Frame index is larger than file name capacity!")
 
@@ -256,34 +264,25 @@ def convert_tfrecord(input_file, output_path, delele_input=True):
     return idx
 
 def convert_dataset_inpath(input_path, output_path, nworkers=8, debug=False):
-    pool = Pool(processes=nworkers)
+    pool = NumberPool(processes=nworkers, offset=1)
     temp_dir = tempfile.mkdtemp()
-    print("Temporary directory: %s" % temp_dir)
-
-    progress_state = {"bar": None, "cur": 0}
     total_records = 0
-    def callback(result):
-        if progress_state["bar"] is not None:
-            progress_state["bar"].update(1)
-        progress_state["cur"] += 1
-    def err_callback(err):
-        raise err
+    print("Extracting tfrecords from tarballs to %s..." % temp_dir)
 
     try:
-        for tar_name in tqdm.tqdm(os.listdir(input_path), desc="Loading tarballs", dynamic_ncols=True):
+        for tar_name in tqdm(os.listdir(input_path), desc="Extract tfrecords", position=0, unit="tars", leave=False):
             if os.path.splitext(tar_name)[1] != ".tar":
                 continue
 
             phase = tar_name.split('_')[0]
-            tarf = tarfile.open(name=os.path.join(input_path, tar_name), mode='r|*', bufsize=2**24) # 4MB cache
+            tarf = tarfile.open(name=os.path.join(input_path, tar_name), mode='r|*')
             for member in tarf:
                 if os.path.splitext(member.name)[1] != ".tfrecord":
                     continue
 
                 tarf.extract(member, temp_dir)
-                task = pool.apply_async(convert_tfrecord,
-                    (os.path.join(temp_dir, member.name), os.path.join(output_path, phase)),
-                    callback=callback, error_callback=err_callback
+                pool.apply_async(convert_tfrecord,
+                    (os.path.join(temp_dir, member.name), os.path.join(output_path, phase))
                 )
                 total_records += 1
 
@@ -294,11 +293,8 @@ def convert_dataset_inpath(input_path, output_path, nworkers=8, debug=False):
             if debug: # only convert one tarball when debugging
                 break
 
-        progress_state["bar"] = tqdm.tqdm(desc="Process tfrecords",
-            total=total_records, initial=progress_state['cur'])
         pool.close()
         pool.join()
-        progress_state["bar"].close()
 
     finally:
         shutil.rmtree(temp_dir)
@@ -317,7 +313,12 @@ def main():
         help='Run the script in debug mode, only convert part of the tarballs')
     parser.add_argument('-p', '--parallel-workers', type=int, dest="workers", default=8,
         help="Number of parallet workers to convert tfrecord")
+    parser.add_argument('-u', '--unzip', action="store_true",
+        help="Convert the result into directory rather than zip files")
     args = parser.parse_args()
+
+    if args.unzip: # XXX: implement this
+        raise NotImplementedError("Converting into directories is not implemented")
 
     convert_dataset_inpath(args.input, args.output or args.input, nworkers=args.workers, debug=args.debug)
 
