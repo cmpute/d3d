@@ -9,16 +9,23 @@ try:
 except:
     pass
 
-def visualize_detections(visualizer: pcl.Visualizer, targets: ObjectTarget3DArray,
+def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targets: ObjectTarget3DArray, calib,
     text_scale=0.8, box_color=(1, 1, 1), text_color=(1, 0.8, 1), id_prefix=""):
+    '''
+    Note: To use this visualizer, targets should be in the same frame as the visualizer frame (lidar frame)
+    '''
     if not _pcl_available:
         raise RuntimeError("pcl is not available, please check the installation of package pcl.py")
 
     if id_prefix != "" and not id_prefix.endswith("/"):
         id_prefix = id_prefix + "/"
 
-    # convert coordinate
+    # change frame to the same
+    if targets.frame != visualizer_frame:
+        targets = calib.transform_objects(targets, frame_to=visualizer_frame)
+
     for i, target in enumerate(targets):
+        # convert coordinate
         orientation = target.orientation.as_quat()
         orientation = [orientation[3]] + orientation[:3].tolist() # To PCL quaternion
         lx, ly, lz = target.dimension
@@ -30,7 +37,10 @@ def visualize_detections(visualizer: pcl.Visualizer, targets: ObjectTarget3DArra
 
         # draw tag
         text_id = (id_prefix + "target%d/tag") % i
-        disp_text = "#%d: %s" % (i, target.tag_name)
+        if target.id:
+            disp_text = "%s: %s" % (str(target.id)[:6], target.tag_name)
+        else:
+            disp_text = "#%d: %s" % (i, target.tag_name)
         if target.tag_score < 1:
             disp_text += " (%.2f)" % target.tag_score
         disp_pos = list(target.position)

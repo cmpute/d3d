@@ -43,7 +43,7 @@ class ObjectTag:
         self.scores = [self.scores[i] for i in order]
 
     def __str__(self):
-        return "<ObjectTag, top class: %s>" % self.labels[0].name
+        return "<ObjectTag, top class: %s>" % self.labels[0].uname
 
 class ObjectTarget3D:
     '''
@@ -84,7 +84,7 @@ class ObjectTarget3D:
         '''
         Return the name of the target's top tag
         '''
-        return self.tag.labels[0].name
+        return self.tag.labels[0].uname
 
     @property
     def tag_score(self):
@@ -116,6 +116,9 @@ class ObjectTarget3D:
 
 class ObjectTarget3DArray(list):
     def __init__(self, iterable=[], frame=None):
+        '''
+        :param frame: Frame that the box parameters used. None means base frame (in TransformSet)
+        '''
         super().__init__(iterable)
         self.frame = frame
 
@@ -145,6 +148,7 @@ CameraMetadata = namedtuple('CameraMetadata', [
     'intri_matrix' # original intrinsic matrix used for cv2.undistortPoints
 ])
 LidarMetadata = namedtuple('LidarMetadata', [])
+RadarMetadata = namedtuple('RadarMetadata', [])
 class TransformSet:
     '''
     This object load a collection of intrinsic and extrinsic parameters
@@ -162,6 +166,9 @@ class TransformSet:
         
     def _is_base(self, frame):
         return frame is None or frame == self.base_frame
+
+    def _is_same(self, frame1, frame2):
+        return (frame1 == frame2) or (self._is_base(frame1) and self._is_base(frame2))
 
     def _assert_exist(self, frame_id, extrinsic=False):
         if self._is_base(frame_id):
@@ -204,6 +211,10 @@ class TransformSet:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = LidarMetadata()
 
+    def set_intrinsic_radar(self, frame_id):
+        self.intrinsics[frame_id] = None
+        self.intrinsics_meta[frame_id] = RadarMetadata()
+
     def set_intrinsic_pinhole(self, frame_id, size, cx, cy, fx, fy, s=0, distort_coeffs=[]):
         '''
         Set camera intrinsics with pinhole model parameters
@@ -219,7 +230,7 @@ class TransformSet:
         :param frame_from: If set to None, then the source frame is base frame
         :param frame_to: If set to None, then the target frame is base frame
         '''
-        if frame_to == frame_from: # including the case when frame_to=frame_from=None
+        if self._is_same(frame_to, frame_from): # including the case when frame_to=frame_from=None
             # the projection matrix need to be indentity
             assert np.allclose(np.diag(transform) == 1)
             assert np.sum(transform) == np.sum(np.diag(transform))
@@ -258,7 +269,7 @@ class TransformSet:
         '''
         :param frame_from: If set to None, then the source frame is base frame
         '''
-        if frame_to == frame_from:
+        if self._is_same(frame_to, frame_from):
             return 1 # identity
 
         if not self._is_base(frame_from):
@@ -279,6 +290,23 @@ class TransformSet:
     def frames(self):
         return list(self.intrinsics.keys())
 
+    def transform_objects(self, objects: ObjectTarget3DArray, frame_to=None):
+        '''
+        Change the representing frame of a object array
+        '''
+        if self._is_same(objects.frame, frame_to):
+            return
+
+        rt = self.get_extrinsic(frame_from=objects.frame, frame_to=frame_to)
+        r, t = Rotation.from_matrix(rt[:3, :3]), rt[:3, 3]
+        new_objs = ObjectTarget3DArray(frame=frame_to)
+        for obj in objects:
+            position = np.dot(r.as_matrix(), obj.position) + t
+            orientation = r * obj.orientation
+            new_obj = ObjectTarget3D(position, orientation, obj.dimension, obj.tag, obj.id)
+            new_objs.append(new_obj)
+        return new_objs
+
     def project_points_to_camera(self, points, frame_to, frame_from=None, remove_outlier=True):
         '''
         :param remove_outlier: If set to True, only points that fall into image view will be returned
@@ -287,10 +315,10 @@ class TransformSet:
         self._assert_exist(frame_to)
 
         width, height, distorts, intri_matrix = self.intrinsics_meta[frame_to]
-        tr = self.get_extrinsic(frame_to=frame_to, frame_from=frame_from)
+        rt = self.get_extrinsic(frame_to=frame_to, frame_from=frame_from)
         homo_xyz = np.insert(points[:, :3], 3, 1, axis=1)
 
-        homo_uv = self.intrinsics[frame_to].dot(tr.dot(homo_xyz.T)[:3])
+        homo_uv = self.intrinsics[frame_to].dot(rt.dot(homo_xyz.T)[:3])
         d = homo_uv[2, :]
         u, v = homo_uv[0, :] / d, homo_uv[1, :] / d
 

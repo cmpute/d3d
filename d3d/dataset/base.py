@@ -38,6 +38,23 @@ class DetectionDatasetBase:
         '''
         pass
 
+def _check_frames(names, valid):
+    unpack_result = False
+    if names is None:
+        names = valid
+    elif isinstance(names, str):
+        names = [names]
+        unpack_result = True
+
+    # sanity check
+    for name in names:
+        if name not in valid:
+            message = "Invalid frame name %s, " % name
+            message += "valid options are " + ", ".join(valid)
+            raise ValueError(message)
+
+    return unpack_result, names
+
 class ZipCache:
     '''
     This class is a utility for zip reading. It will retain the reference

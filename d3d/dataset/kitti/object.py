@@ -3,7 +3,7 @@ import os.path as osp
 import shutil
 import subprocess
 import tempfile
-from enum import Enum
+from enum import Enum, auto
 from zipfile import ZipFile
 
 import numpy as np
@@ -11,20 +11,24 @@ from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
                              TransformSet)
-from d3d.dataset.base import DetectionDatasetBase
+from d3d.dataset.base import DetectionDatasetBase, _check_frames
 from d3d.dataset.kitti import utils
 
 
 class KittiObjectClass(Enum):
     DontCare = 0
-    Car = 1
-    Van = 2
-    Truck = 3
-    Pedestrian = 4
-    Person_sitting = 5
-    Cyclist = 6
-    Tram = 7
-    Misc = 255
+    Car = auto()
+    Van = auto()
+    Truck = auto()
+    Pedestrian = auto()
+    Person_sitting = auto()
+    Cyclist = auto()
+    Tram = auto()
+    Misc = auto()
+
+    @property
+    def uname(self):
+        return self.name
 
 class KittiObjectLoader(DetectionDatasetBase):
     """
@@ -106,17 +110,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         return len(self.frames)
 
     def camera_data(self, idx, names='cam2'):
-        unpack_result = False
-        if names is None:
-            names = self.VALID_CAM_NAMES
-        elif isinstance(names, str):
-            names = [names]
-            unpack_result = True
-        else: # sanity check
-            for name in names:
-                if name not in self.VALID_CAM_NAMES:
-                    raise ValueError("Invalid camera name, options are " +
-                        ", ".join(self.VALID_CAM_NAMES))
+        unpack_result, names = _check_frames(names, self.VALID_CAM_NAMES)
         
         outputs = []
         for name in names:
@@ -242,8 +236,8 @@ class KittiObjectLoader(DetectionDatasetBase):
 
     def _generate_objects(self, label, calib):
         Tr = calib['Tr_velo_to_cam'].reshape(3, 4)
-        RRect = Rotation.from_dcm(calib['R0_rect'].reshape(3, 3))
-        HR, HT = Rotation.from_dcm(Tr[:,:3]), Tr[:,3]
+        RRect = Rotation.from_matrix(calib['R0_rect'].reshape(3, 3))
+        HR, HT = Rotation.from_matrix(Tr[:,:3]), Tr[:,3]
         objects = ObjectTarget3DArray()
         objects.frame = "velo"
 
@@ -274,8 +268,8 @@ def dump_detection_output(detections: ObjectTarget3DArray, calib:TransformSet, r
     '''
     assert detections.frame == "velo"
     Tr = raw_calib['Tr_velo_to_cam'].reshape(3, 4)
-    RRect = Rotation.from_dcm(raw_calib['R0_rect'].reshape(3, 3))
-    HR, HT = Rotation.from_dcm(Tr[:,:3]), Tr[:,3]
+    RRect = Rotation.from_matrix(raw_calib['R0_rect'].reshape(3, 3))
+    HR, HT = Rotation.from_matrix(Tr[:,:3]), Tr[:,3]
 
     output_lines = []
     output_format = "%s 0 0 0" + " %.2f" * 12

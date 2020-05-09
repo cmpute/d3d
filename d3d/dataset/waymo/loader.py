@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import zipfile
 import tarfile
+from pathlib import Path
 from collections import OrderedDict
 from enum import Enum
 from io import BytesIO
@@ -19,7 +20,7 @@ from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
                              TransformSet)
-from d3d.dataset.base import DetectionDatasetBase, ZipCache
+from d3d.dataset.base import DetectionDatasetBase, ZipCache, _check_frames
 
 _logger = logging.getLogger("d3d")
 
@@ -30,10 +31,11 @@ class WaymoObjectClass(Enum):
     Sign = 3
     Cyclist = 4
 
-class WaymoObjectLoader(DetectionDatasetBase):
-    VALID_CAM_NAMES = ["front", "front_left", "front_right", "side_left", "side_right"]
-    VALID_LIDAR_NAMES = ["top", "front", "side_left", "side_right", "rear"]
+    @property
+    def uname(self):
+        return self.name
 
+class WaymoObjectLoader(DetectionDatasetBase):
     """
     Load waymo dataset into a usable format.
     Please use the d3d_waymo_convert command to convert the dataset first into following formats
@@ -47,6 +49,9 @@ class WaymoObjectLoader(DetectionDatasetBase):
             - xxxxxxxxxxxxxxxxxxxx_xxx_xxx_xxx_xxx.zip
             - ...
     """
+    VALID_CAM_NAMES = ["camera_front", "camera_front_left", "camera_front_right", "camera_side_left", "camera_side_right"]
+    VALID_LIDAR_NAMES = ["lidar_top", "lidar_front", "lidar_side_left", "lidar_side_right", "lidar_rear"]
+
     def __init__(self, base_path, phase="training", inzip=True, trainval_split=None, trainval_random=False):
         """
         :param phase: training, validation or testing
@@ -58,24 +63,23 @@ class WaymoObjectLoader(DetectionDatasetBase):
         if phase not in ['training', 'validation', 'testing']:
             raise ValueError("Invalid phase tag")
 
-        self.base_path = osp.join(base_path, phase)
+        self.base_path = Path(base_path) / phase
         self.phase = phase
         self._load_metadata()
 
         self._zip_cache = ZipCache()
 
     def _load_metadata(self):
-        meta_path = osp.join(self.base_path, "metadata.json")
-        if not osp.exists(meta_path):
+        meta_path = self.base_path / "metadata.json"
+        if not meta_path.exists():
             _logger.info("Creating metadata of Waymo dataset (%s)...", self.phase)
             metadata = {}
 
-            for archive in os.listdir(self.base_path):
-                name, fext = osp.splitext(archive)
-                if fext != ".zip":
+            for archive in self.base_path.iterdir():
+                if archive.is_dir() or archive.suffix != ".zip":
                     continue
 
-                with zipfile.ZipFile(osp.join(self.base_path, archive)) as ar:
+                with zipfile.ZipFile(archive) as ar:
                     with ar.open("context/stats.json") as fin:
                         metadata[name] = json.loads(fin.read().decode())
             with open(meta_path, "w") as fout:
@@ -97,27 +101,28 @@ class WaymoObjectLoader(DetectionDatasetBase):
             idx -= v.frame_count
         raise ValueError("Index larger than dataset size")
 
+    def _locate_file(self, idx, folders, suffix):
+        fname, fidx = self._locate_frame(idx)
+        ar = self._zip_cache.open(self.base_path / (fname + ".zip"))
+        if isinstance(folders, list):
+            return [ar.open("%s/%04d.%s" % (f, fidx, suffix)) for f in folders]
+        else:
+            return ar.open("%s/%04d.%s" % (folders, fidx, suffix))
+
     def lidar_data(self, idx, names=None, concat=True):
         """
         Return the lidar point cloud in vehicle frame (FLU)
-        :param names: names of lidar to be loaded, options: top, front, side_left, side_right, rear
+        TODO: this is inconsistent behavior... Consider return the lidar points in lidar frames and concatenate afterwards
+        :param names: frame names of lidar to be loaded
         :param concat: concatenate the points together
-        """
-        if names is None:
-            names = self.VALID_LIDAR_NAMES
-        else: # sanity check
-            for name in names:
-                if name not in self.VALID_LIDAR_NAMES:
-                    raise ValueError("Invalid lidar name, options are " +
-                        ", ".join(self.VALID_LIDAR_NAMES))
 
-        outputs = []
-        fname, fidx = self._locate_frame(idx)
-        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
-        for name in names:
-            with ar.open("lidar_%s/%04d.npy" % (name, fidx)) as fin:
-                buffer = BytesIO(fin.read())
-                outputs.append(np.load(buffer))
+        XXX: support return ri2 data
+        """
+        _, names = _check_frames(names, self.VALID_LIDAR_NAMES)
+
+        handles = self._locate_file(idx, names, "npy")
+        outputs = [np.load(BytesIO(h.read())) for h in handles]
+        map(lambda h: h.close(), handles)
 
         if concat:
             outputs = np.vstack(outputs)
@@ -125,26 +130,13 @@ class WaymoObjectLoader(DetectionDatasetBase):
 
     def camera_data(self, idx, names=None):
         """
-        :param names: names of camera to be loaded, options: front, front_left, front_right, side_left, side_right, rear
+        :param names: frame names of camera to be loaded
         """
-        unpack_result = False
-        if names is None:
-            names = self.VALID_CAM_NAMES
-        elif isinstance(names, str):
-            names = [names]
-            unpack_result = True
-        else: # sanity check
-            for name in names:
-                if name not in self.VALID_CAM_NAMES:
-                    raise ValueError("Invalid camera name, options are" +
-                        ", ".join(self.VALID_CAM_NAMES))
+        unpack_result, names = _check_frames(names, self.VALID_CAM_NAMES)
 
-        outputs = []
-        fname, fidx = self._locate_frame(idx)
-        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
-        for name in names:
-            with ar.open("camera_%s/%04d.jpg" % (name, fidx)) as fin:
-                outputs.append(Image.open(fin).convert('RGB'))
+        handles = self._locate_file(idx, names, "jpg")
+        outputs = [Image.open(h).convert('RGB') for h in handles]
+        map(lambda h: h.close(), handles)
 
         if unpack_result:
             return outputs[0]
@@ -152,31 +144,14 @@ class WaymoObjectLoader(DetectionDatasetBase):
             return outputs
 
     def lidar_label(self, idx):
-        fname, fidx = self._locate_frame(idx)
-        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
-        with ar.open("label_lidars/%04d.json" % fidx) as fin:
-            return [edict(item) for item in json.loads(fin.read().decode())]
+        with self._locate_file(idx, "label_lidars", "json") as fin:
+            return list(map(edict, json.loads(fin.read().decode())))
 
     def camera_label(self, idx, names=None):
-        unpack_result = False
-        if names is None:
-            names = self.VALID_CAM_NAMES
-        elif isinstance(names, str):
-            names = [names]
-            unpack_result = True
-        else: # sanity check
-            for name in names:
-                if name not in self.VALID_CAM_NAMES:
-                    raise ValueError("Invalid camera name, options are " +
-                        ", ".join(self.VALID_CAM_NAMES))
+        unpack_result, names = _check_frames(names, self.VALID_CAM_NAMES)
 
-        outputs = []
-        fname, fidx = self._locate_frame(idx)
-        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
-        for name in names:
-            with ar.open("label_camera_%s/%04d.json" % (name, fidx)) as fin:
-                objects = [edict(item) for item in json.loads(fin.read().decode())]
-                outputs.append(objects)
+        handles = self._locate_file(idx, names, "jpg")
+        outputs = [list(map(edict, json.loads(h.read().decode()))) for h in handles]
 
         if unpack_result:
             return outputs[0]
@@ -185,7 +160,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
 
     def lidar_objects(self, idx):
         labels = self.lidar_label(idx)
-        outputs = ObjectTarget3DArray(frame=None)
+        outputs = ObjectTarget3DArray(frame="vehicle") # or frame=None
 
         for label in labels:
             target = ObjectTarget3D(
@@ -202,7 +177,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
     def calibration_data(self, idx):
         fname, _ = self._locate_frame(idx)
         calib_params = TransformSet("vehicle")
-        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
+        ar = self._zip_cache.open(self.base_path / (fname + ".zip"))
 
         # load camera calibration
         with ar.open("context/calib_cams.json") as fin:
@@ -231,11 +206,8 @@ class WaymoObjectLoader(DetectionDatasetBase):
         return self.phase, fname, fidx
 
     def timestamp(self, idx):
-        fname, fidx = self._locate_frame(idx)
-        ar = self._zip_cache.open(osp.join(self.base_path, fname + ".zip"))
-        with ar.open("timestamp/%04d.txt" % fidx) as fin:
+        with self._locate_file(idx, "timestamp", txt) as fin:
             return int(fin.read().decode())
-
 
 def dump_detection_output(detections: ObjectTarget3DArray, context: str, timestamp: int):
     '''
