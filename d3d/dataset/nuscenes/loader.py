@@ -159,7 +159,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
     VALID_CAM_NAMES = ["cam_front", "cam_front_left", "cam_front_right", "cam_back", "cam_back_left", "cam_back_right"]
     VALID_LIDAR_NAMES = ["lidar_top"]
 
-    def __init__(self, base_path, phase="training", inzip=True, trainval_split=None, trainval_random=False):
+    def __init__(self, base_path, inzip=True, phase="training", trainval_split=1, trainval_random=False):
         """
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders
@@ -173,6 +173,10 @@ class NuscenesObjectLoader(DetectionDatasetBase):
         self.base_path = Path(base_path) / ("trainval" if phase in ["training", "validation"] else "test")
         self.phase = phase
         self._load_metadata()
+
+        # split trainval
+        total_count = sum(v.nbr_samples for v in self._metadata.values())
+        self._split_trainval(phase, total_count, trainval_split, trainval_random)
 
         self._zip_cache = ZipCache()
 
@@ -199,9 +203,13 @@ class NuscenesObjectLoader(DetectionDatasetBase):
                 self._metadata[k] = edict(v)
 
     def __len__(self):
-        return sum(v.nbr_samples for v in self._metadata.values())
+        return len(self.frames)
 
     def _locate_frame(self, idx):
+        # use underlying frame index
+        idx = self.frames[idx]
+
+        # find corresponding sample
         for k, v in self._metadata.items():
             if idx < v.nbr_samples:
                 return k, idx

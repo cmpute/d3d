@@ -59,13 +59,6 @@ class KittiObjectLoader(DetectionDatasetBase):
     VALID_LIDAR_NAMES = ["velo"]
 
     def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8, trainval_random=False):
-        """
-        :param base_path: directory containing the zip files, or the required data
-        :param inzip: whether the dataset is store in original zip archives or unzipped
-        :param phase: training or testing
-        :param trainval_split: the ratio to split training dataset. If set to 1, then the validation dataset is empty
-        :param trainval_random: whether select the train/val split randomly
-        """
         self.base_path = base_path
         self.inzip = inzip
         self.phase = phase
@@ -97,13 +90,7 @@ class KittiObjectLoader(DetectionDatasetBase):
             elif os.path.exists(osp.join(base_path, self.phase_path, 'velodyne')):
                 total_count = len(os.listdir(osp.join(base_path, self.phase_path, 'velodyne')))
 
-        # Assign numbers
-        self.frames = np.random.permutation(total_count) if trainval_random else np.arange(total_count)
-        if phase == 'training':
-            self.frames = self.frames[:int(total_count * trainval_split)]
-        elif phase == 'validation':
-            self.frames = self.frames[int(total_count * trainval_split):]
-
+        self._split_trainval(phase, total_count, trainval_split, trainval_random)
         self._image_size_cache = {} # used to store the image size
 
     def __len__(self):

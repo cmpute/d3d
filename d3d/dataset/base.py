@@ -3,6 +3,8 @@ from multiprocessing import Manager, Pool
 from typing import Any, List, Optional, Union
 from zipfile import ZipFile
 
+import numpy as np
+import numpy.random as npr
 from numpy import ndarray as NdArray
 from PIL.Image import Image
 from tqdm import tqdm
@@ -14,8 +16,44 @@ class DetectionDatasetBase:
     VALID_CAM_NAMES: list
     VALID_LIDAR_NAMES: list
 
-    def __init__(self):
+    def __init__(self, base_path, inzip=False, phase="training", trainval_split=1, trainval_random=False):
+        """
+        :param base_path: directory containing the zip files, or the required data
+        :param inzip: whether the dataset is store in original zip archives or unzipped
+        :param phase: training or testing
+        :param trainval_split: the ratio to split training dataset. If set to 1, then the validation dataset is empty
+            If it's a number, then it's the ratio to split training dataset.
+            If it's 1, then the validation set is empty, if it's 0, then training set is empty
+            If it's a list of number, then it directly defines the indices to report (ignoring trainval_random)
+        :param trainval_random: whether select the train/val split randomly.
+            If it's a bool, then trainval is split with or without shuffle
+            If it's a number, then it's used as the seed for random shuffling
+            If it's a string, then predefined order is used. {r: reverse}
+        """
         raise NotImplementedError("This is a base class, should not be initialized!")
+
+    def _split_trainval(self, phase, total_count, trainval_split, trainval_random):
+        '''
+        split frames for training or validation set
+        '''
+        if isinstance(trainval_split, list):
+            self.frames = trainval_split
+        else: # trainval_split is a number
+            if isinstance(trainval_random, bool):
+                self.frames = npr.default_rng().permutation(total_count) \
+                    if trainval_random else np.arange(total_count)
+            elif isinstance(trainval_random, int):
+                gen = npr.default_rng(seed=trainval_random)
+                self.frames = gen.permutation(total_count)
+            elif trainval_random == "r": # predefined shuffle type
+                self.frames = np.arange(total_count)[::-1]
+            else:
+                raise ValueError("Invalid trainval_random type!")
+
+            if phase == 'training':
+                self.frames = self.frames[:int(total_count * trainval_split)]
+            elif phase == 'validation':
+                self.frames = self.frames[int(total_count * trainval_split):]
 
     def lidar_data(self, idx: int, names:Optional[Union[str, List[str]]] = None) -> Union[NdArray, List[NdArray]]:
         pass
