@@ -122,6 +122,10 @@ class ObjectTarget3DArray(list):
         super().__init__(iterable)
         self.frame = frame
 
+        # copy frame value
+        if isinstance(iterable, ObjectTarget3DArray) and not frame:
+            self.frame = iterable.frame
+
     def to_numpy(self, box_type="ground"):
         '''
         :param box_type: Decide how to represent the box

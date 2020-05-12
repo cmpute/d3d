@@ -128,7 +128,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         if names != self.VALID_LIDAR_NAMES:
             raise ValueError("There's only one lidar in KITTI dataset")
 
-        fname = osp.join(self.phase_path, 'velodyne', '%06d.bin' % idx)
+        fname = osp.join(self.phase_path, 'velodyne', '%06d.bin' % self.frames[idx])
         if self.inzip:
             with ZipFile(osp.join(self.base_path, "data_object_velodyne.zip")) as source:
                 return utils.load_velo_scan(source, fname)
