@@ -129,7 +129,7 @@ dmypy.json
 .pyre/
 
 # VSCode
-.vscode/
+.vscode/settings.json
 
 # Build
 _skbuild/

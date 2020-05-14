@@ -1,0 +1,32 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Test (Kitti)",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test/test_dataset.py"],
+            "env": {"KITTI": "/media/jacobz/Storage/KITTI/"}
+        },
+        {
+            "name": "Test (Waymo)",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test/test_dataset.py"],
+            "env": {"WAYMO": "/media/jacobz/Storage/Waymo/"}
+        },
+        {
+            "name": "Test (Nuscenes)",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test/test_dataset.py"],
+            "env": {"NUSCENES": "/media/jacobz/Storage/Nuscenes/"}
+        }
+    ]
+}

@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "/home/jacobz/PointCloud/d3d",
+                "/home/jacobz/.conda/envs/lidar/include/python3.7m/",
+                "/home/jacobz/.conda/envs/lidar/lib/python3.7/site-packages/torch/include",
+                "/home/jacobz/.conda/envs/lidar/lib/python3.7/site-packages/torch/include/torch/csrc/api/include",
+                "/home/jacobz/.conda/envs/lidar/lib/python3.7/site-packages/torch/include/TH",
+                "/home/jacobz/.conda/envs/lidar/lib/python3.7/site-packages/torch/include/THC"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "clang-x64"
+        }
+    ],
+    "version": 4
+}

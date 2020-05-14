@@ -109,16 +109,14 @@ class WaymoObjectLoader(DetectionDatasetBase):
         else:
             return ar.open("%s/%04d.%s" % (folders, fidx, suffix))
 
-    def lidar_data(self, idx, names=None, concat=True):
+    def lidar_data(self, idx, names=None, concat=False):
         """
-        Return the lidar point cloud in vehicle frame (FLU)
-        TODO: this is inconsistent behavior... Consider return the lidar points in lidar frames and concatenate afterwards
         :param names: frame names of lidar to be loaded
-        :param concat: concatenate the points together
+        :param concat: concatenate the points together. If concatenated, point cloud will be in vehicle frame (FLU)
 
         XXX: support return ri2 data
         """
-        _, names = _check_frames(names, self.VALID_LIDAR_NAMES)
+        unpack_result, names = _check_frames(names, self.VALID_LIDAR_NAMES)
 
         handles = self._locate_file(idx, names, "npy")
         outputs = [np.load(BytesIO(h.read())) for h in handles]
@@ -126,6 +124,16 @@ class WaymoObjectLoader(DetectionDatasetBase):
 
         if concat:
             outputs = np.vstack(outputs)
+        else:
+            calib = self.calibration_data(idx)
+            for i, name in enumerate(names):
+                rt = calib.extrinsics[name]
+                outputs[i][:,:3] = outputs[i][:,:3].dot(rt[:3,:3].T) + rt[:3, 3]
+
+            if unpack_result:
+                return outputs[0]
+            else:
+                return outputs
         return outputs
 
     def camera_data(self, idx, names=None):

@@ -249,21 +249,84 @@ class KittiObjectLoader(DetectionDatasetBase):
 
         return objects
 
+def _line_box_intersect(p0, p1, width, height):
+    # p0: inlier point
+    # p1: outlier point
+    k = (p1[1] - p0[1]) / (p1[0] - p0[0])
+    
+    # find which border
+    case = None
+    if p1[0] < p0[0]:
+        if p1[1] < p0[1]:
+            k0 = p0[1] / p0[0]
+            case = 2 if k > k0 else 3
+        else:
+            k0 = - (height - p0[1]) / p0[0]
+            case = 3 if k > k0 else 0
+    else:
+        if p1[1] < p0[1]:
+            k0 = - p0[1] / (width - p0[0])
+            case = 1 if k > k0 else 2
+        else:
+            k0 = (height - p0[1]) / (width - p0[0])
+            case = 0 if k > k0 else 1
+
+    # do intersection
+    if case == 0: # y > height border
+        x = p0[0] + (height - p0[1]) / k
+        y = height
+    elif case == 1: # x > width border
+        x = width
+        y = p0[1] + (width - p0[0]) * k
+    elif case == 2: # y < 0 border
+        x = p1[0] + (-p1[1]) / k
+        y = 0
+    elif case == 3: # x < 0 border
+        x = 0
+        y = p1[1] + (-p1[0]) * k
+
+    assert 0 <= x <= width, "x = %.2f" % x
+    assert 0 <= y <= height, "y = %.2f" % y
+    return (x, y)
+
 def dump_detection_output(detections: ObjectTarget3DArray, calib:TransformSet, raw_calib: dict):
     '''
     Save the detection in KITTI output format. We need raw calibration for R0_rect
     '''
+    # get intrinsics
     assert detections.frame == "velo"
     Tr = raw_calib['Tr_velo_to_cam'].reshape(3, 4)
     RRect = Rotation.from_matrix(raw_calib['R0_rect'].reshape(3, 3))
     HR, HT = Rotation.from_matrix(Tr[:,:3]), Tr[:,3]
 
+    meta = calib.intrinsics_meta['cam2']
+    width, height = meta.width, meta.height
+
+    # process detections
     output_lines = []
     output_format = "%s 0 0 0" + " %.2f" * 12
     for box in detections:
         # calculate bounding box 2D
-        uv, mask = calib.project_points_to_camera(box.corners, frame_to="cam2", frame_from="velo", remove_outlier=False)
-        if np.sum(mask) < 4: continue # ignore boxes that is outside the image
+        uv, mask, dmask = calib.project_points_to_camera(box.corners,
+            frame_to="cam2", frame_from="velo", remove_outlier=False, return_dmask=True)
+        if len(uv[mask]) < 1: continue # ignore boxes that is outside the image
+
+        bdpoints = []
+        pairs = [(0, 1), (2, 3), (4, 5), (6, 7), # box lines
+                 (0, 4), (1, 5), (2, 6), (3, 7),
+                 (0, 2), (1, 3), (4, 6), (5, 7)]
+        inlier = [i in mask for i in range(len(uv))]
+        for i, j in pairs:
+            if not inlier[i] and not inlier[j]:
+                continue
+            if i not in dmask or j not in dmask: # only calculate for points ahead
+                continue
+            if not inlier[i]:
+                bdpoints.append(_line_box_intersect(uv[j], uv[i], width, height))
+            if not inlier[j]:
+                bdpoints.append(_line_box_intersect(uv[i], uv[j], width, height))
+
+        uv = np.array(uv[mask].tolist() + bdpoints)
         umin, vmin = np.min(uv, axis=0)
         umax, vmax = np.max(uv, axis=0)
 
@@ -274,7 +337,7 @@ def dump_detection_output(detections: ObjectTarget3DArray, calib:TransformSet, r
         orientation = box.orientation * Rotation.from_euler("x", np.pi/2)
         orientation = RRect * HR * orientation
         yaw = orientation.as_euler("YZX")[0]
-        
+
         output_values = (box.tag_name,)
         output_values += (umin, vmin, umax, vmax)
         output_values += (h, w, l)

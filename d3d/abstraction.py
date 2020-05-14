@@ -311,9 +311,11 @@ class TransformSet:
             new_objs.append(new_obj)
         return new_objs
 
-    def project_points_to_camera(self, points, frame_to, frame_from=None, remove_outlier=True):
+    def project_points_to_camera(self, points, frame_to, frame_from=None, remove_outlier=True, return_dmask=False):
         '''
         :param remove_outlier: If set to True, only points that fall into image view will be returned
+        :param return_dmask: also return the mask for z > 0 only
+        :return: return points, mask and dmask if required. The masks are array of indices
         '''
         self._assert_exist(frame_from)
         self._assert_exist(frame_to)
@@ -327,12 +329,8 @@ class TransformSet:
         u, v = homo_uv[0, :] / d, homo_uv[1, :] / d
 
         # mask points that are in camera view
-        mask = (0 < u) & (u < width) & (0 < v) & (v < height) & (d > 0)
-        mask, = np.where(mask)
-        if remove_outlier:
-            u, v = u[mask], v[mask]
-        if u.size == 0 or v.size == 0:
-            return np.array([u, v]).T, mask
+        dmask = d > 0
+        mask = (0 < u) & (u < width) & (0 < v) & (v < height) & dmask
 
         distorts = np.array(distorts)
         if distorts.size > 0:
@@ -343,11 +341,21 @@ class TransformSet:
             u, v = undistort[:, 0, 0], undistort[:, 0, 1]
 
             # mask again
-            dmask = (0 < u) & (u < width) & (0 < v) & (v < height)
+            nmask = (0 < u) & (u < width) & (0 < v) & (v < height)
             if remove_outlier:
-                u, v = u[dmask], v[dmask]
-                mask = mask[dmask]
+                u, v = u[nmask], v[nmask]
+                mask = mask[nmask]
             else:
-                mask = dmask
+                mask = nmask & dmask
 
-        return np.array([u, v]).T, mask
+        # filter points and return mask
+        if remove_outlier:
+            u, v = u[mask], v[mask]
+        if mask.dtype == np.dtype(bool):
+            mask, = np.where(mask)
+        dmask, = np.where(dmask)
+
+        if return_dmask:
+            return np.array([u, v]).T, mask, dmask
+        else:
+            return np.array([u, v]).T, mask
