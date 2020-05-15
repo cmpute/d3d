@@ -1,5 +1,5 @@
 # TODOs
-- [ ] Fix Nuscenes and Waymo image projection error
+- [ ] Fix Nuscenes and Waymo image projection error (add motion compensation?)
 - [ ] Fix Kitti detection output and add output for nuscenes
 - [ ] port in https://github.com/poodarchu/Det3D
 - [ ] Include visualization based on [pptk (nvidia/kaolin has example), pcl-py, open3d]

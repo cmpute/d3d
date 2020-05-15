@@ -81,7 +81,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
 
                 with zipfile.ZipFile(archive) as ar:
                     with ar.open("context/stats.json") as fin:
-                        metadata[name] = json.loads(fin.read().decode())
+                        metadata[archive.stem] = json.loads(fin.read().decode())
             with open(meta_path, "w") as fout:
                 json.dump(metadata, fout)
 

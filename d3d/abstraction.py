@@ -334,25 +334,30 @@ class TransformSet:
 
         distorts = np.array(distorts)
         if distorts.size > 0:
-            import cv2
-            # cv2.undistortPoints requires input and output to be of Nx1x2 shape
-            undistort = cv2.undistortPoints(np.array([u, v]).T.reshape(-1, 1, 2),
-                intri_matrix, distorts, P=intri_matrix)
-            u, v = undistort[:, 0, 0], undistort[:, 0, 1]
+            # save old mask with tolerance
+            tolerance = 20
+            mask = (-tolerance < u) & (u < width + tolerance) & (-tolerance < v) & (v < height + tolerance)
+
+            # do distortion
+            fx, fy, cx, cy = intri_matrix[0,0], intri_matrix[1,1], intri_matrix[0,2], intri_matrix[1,2]
+            k1, k2, p1, p2, k3 = distorts
+            u, v = (u - cx) / fx, (v - cy) / fy
+            r2 = u*u + v*v
+            auv, au, av = 2*u*v, r2 + 2*u*u, r2 + 2*v*v
+            cdist = 1 + k1*r2 + k2*r2*r2 + k3*r2*r2*r2
+            icdist2 = 1 # 1./(1 + k[5]*r2 + k[6]*r4 + k[7]*r6)
+            ud0 = u*cdist*icdist2 + p1*auv + p2*au # + k[8]*r2 + k[9]*r4
+            vd0 = v*cdist*icdist2 + p1*av + p2*auv # + k[10]*r2 + k[11]*r4
+            u, v = ud0 * fx + cx, vd0 * fy + cy
 
             # mask again
             nmask = (0 < u) & (u < width) & (0 < v) & (v < height)
-            if remove_outlier:
-                u, v = u[nmask], v[nmask]
-                mask = mask[nmask]
-            else:
-                mask = nmask & dmask
+            mask = mask & nmask & dmask
 
         # filter points and return mask
         if remove_outlier:
             u, v = u[mask], v[mask]
-        if mask.dtype == np.dtype(bool):
-            mask, = np.where(mask)
+        mask, = np.where(mask)
         dmask, = np.where(dmask)
 
         if return_dmask:
