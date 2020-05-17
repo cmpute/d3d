@@ -352,6 +352,8 @@ def execute_official_evaluator(exec_path, label_path, result_path, output_path, 
     '''
     Execute official evaluator from KITTI devkit
     :param model_name: unique name of your model. KITTI tool requires sha1 as model name, but that's not mandatory.
+
+    Note: to install prerequisites `sudo apt install gnuplot texlive-extra-utils
     '''
     model_name = model_name or "noname"
 
@@ -366,18 +368,20 @@ def execute_official_evaluator(exec_path, label_path, result_path, output_path, 
     if not osp.exists(output_path):
         os.makedirs(output_path)
 
-    # execute
-    os.symlink(label_path, osp.join(temp_label_path, "label_2"), target_is_directory=True)
-    os.symlink(result_path, osp.join(temp_result_path, "data"), target_is_directory=True)
-    proc = subprocess.Popen([exec_path, model_name], cwd=temp_path, stdout=None if show_output else subprocess.PIPE)
-    proc.wait()
+    try:
+        # execute
+        os.symlink(label_path, osp.join(temp_label_path, "label_2"), target_is_directory=True)
+        os.symlink(result_path, osp.join(temp_result_path, "data"), target_is_directory=True)
+        proc = subprocess.Popen([exec_path, model_name], cwd=temp_path, stdout=None if show_output else subprocess.PIPE)
+        proc.wait()
 
-    # move result files
-    for dirname in os.listdir(temp_result_path):
-        if dirname == "data":
-            continue
+        # move result files
+        for dirname in os.listdir(temp_result_path):
+            if dirname == "data":
+                continue
 
-        shutil.move(osp.join(temp_result_path, dirname), output_path)
+            shutil.move(osp.join(temp_result_path, dirname), output_path)
 
-    # clean
-    shutil.rmtree(temp_path)
+    finally:
+        # clean
+        shutil.rmtree(temp_path)

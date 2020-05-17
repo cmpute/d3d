@@ -214,7 +214,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
         return self.phase, fname, fidx
 
     def timestamp(self, idx):
-        with self._locate_file(idx, "timestamp", txt) as fin:
+        with self._locate_file(idx, "timestamp", "txt") as fin:
             return int(fin.read().decode())
 
 def dump_detection_output(detections: ObjectTarget3DArray, context: str, timestamp: int):
