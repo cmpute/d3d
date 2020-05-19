@@ -26,10 +26,6 @@ class KittiObjectClass(Enum):
     Tram = auto()
     Misc = auto()
 
-    @property
-    def uname(self):
-        return self.name
-
 class KittiObjectLoader(DetectionDatasetBase):
     """
     Load and parse odometry benchmark data into a usable format.

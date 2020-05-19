@@ -135,7 +135,7 @@ class NuscenesDetectionClass(Enum):
     bicycle = auto()
     bus = auto()
     car = auto()
-    contruction_vehicle = auto()
+    construction_vehicle = auto()
     motorcycle = auto()
     pedestrian = auto()
     traffic_cone = auto()
@@ -228,7 +228,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
         # XXX: see https://jdhao.github.io/2019/02/23/crop_rotated_rectangle_opencv/ for image cropping
         raise NotImplementedError()
 
-    def lidar_data(self, idx, names='lidar_top'):
+    def lidar_data(self, idx, names='lidar_top', concat=False):
         if isinstance(names, str):
             names = [names]
         if names != self.VALID_LIDAR_NAMES:
@@ -237,7 +237,14 @@ class NuscenesObjectLoader(DetectionDatasetBase):
         with self._locate_file(idx, "lidar_top", "pcd") as fin:
             buffer = fin.read()
         scan = np.frombuffer(buffer, dtype=np.float32)
-        return scan.reshape(-1, 5) # (x, y, z, intensity, ring index)
+        scan = np.copy(scan.reshape(-1, 5)) # (x, y, z, intensity, ring index)
+
+        if concat: # convert lidar to base frame
+            calib = self.calibration_data(idx)
+            rt = np.linalg.inv(calib.extrinsics[names[0]])
+            scan[:,:3] = scan[:,:3].dot(rt[:3,:3].T) + rt[:3, 3]
+
+        return scan
 
     def camera_data(self, idx, names=None):
         unpack_result, names = _check_frames(names, self.VALID_CAM_NAMES)
@@ -255,6 +262,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
         with self._locate_file(idx, "annotation", "json") as fin:
             return list(map(edict, json.loads(fin.read().decode())))
 
+    # @snoop
     def lidar_objects(self, idx):
         labels = self.lidar_label(idx)
         outputs = ObjectTarget3DArray(frame="ego")

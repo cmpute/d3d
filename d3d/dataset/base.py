@@ -55,7 +55,12 @@ class DetectionDatasetBase:
             elif phase == 'validation':
                 self.frames = self.frames[int(total_count * trainval_split):]
 
-    def lidar_data(self, idx: int, names:Optional[Union[str, List[str]]] = None) -> Union[NdArray, List[NdArray]]:
+    def lidar_data(self, idx: int, names:Optional[Union[str, List[str]]] = None, concat: bool = False) -> Union[NdArray, List[NdArray]]:
+        '''
+        :param names: name of requested lidar frames
+        :param concat: whether to convert the point clouds to base frame and concat them.
+                       If only one frame requested, the conversion to base frame will still be performed.
+        '''
         pass
 
     def camera_data(self, idx: int, names: Optional[Union[str, List[str]]] = None) -> Union[Image, List[Image]]:

@@ -43,7 +43,11 @@ class ObjectTag:
         self.scores = [self.scores[i] for i in order]
 
     def __str__(self):
-        return "<ObjectTag, top class: %s>" % self.labels[0].uname
+        if hasattr(self.labels[0], "uname"):
+            name = self.labels[0].uname
+        else:
+            name = self.labels[0].name
+        return "<ObjectTag, top class: %s>" % name
 
 class ObjectTarget3D:
     '''
@@ -84,7 +88,10 @@ class ObjectTarget3D:
         '''
         Return the name of the target's top tag
         '''
-        return self.tag.labels[0].uname
+        if hasattr(self.tag.labels[0], "uname"):
+            return self.tag.labels[0].uname
+        else:
+            return self.tag.labels[0].name
 
     @property
     def tag_score(self):

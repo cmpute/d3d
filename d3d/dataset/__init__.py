@@ -1,1 +1,1 @@
-from . import kitti, waymo
+from . import kitti, waymo, nuscenes

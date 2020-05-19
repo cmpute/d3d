@@ -31,10 +31,6 @@ class WaymoObjectClass(Enum):
     Sign = 3
     Cyclist = 4
 
-    @property
-    def uname(self):
-        return self.name
-
 class WaymoObjectLoader(DetectionDatasetBase):
     """
     Load waymo dataset into a usable format.
