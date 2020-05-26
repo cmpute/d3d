@@ -1,15 +1,35 @@
 import torch
 
-from .point_impl import aligned_scatter_forward, aligned_scatter_forward_cuda, AlignType
+from .point_impl import (AlignType, aligned_scatter_backward,
+                         aligned_scatter_backward_cuda,
+                         aligned_scatter_forward, aligned_scatter_forward_cuda)
+
 
 class AlignedScatter(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, coords, image_feature):
+    def forward(ctx, image_feature, coords, atype):
         ctx.save_for_backward(coords)
+        ctx.atype = atype
+        ctx.image_shape = image_feature.shape
+        ctx.image_dtype = image_feature.dtype
+        ctx.image_device = image_feature.device
+
+        if image_feature.is_cuda:
+            return aligned_scatter_forward_cuda(coords, image_feature, atype)
+        else:
+            return aligned_scatter_forward(coords, image_feature, atype)
 
     @staticmethod
     def backward(ctx, grad):
-        coords = ctx.saved_variables
+        coords, = ctx.saved_tensors
+
+        image_grad = torch.zeros(ctx.image_shape, dtype=ctx.image_dtype, device=ctx.image_device)
+        if grad.is_cuda:
+            aligned_scatter_backward_cuda(coords, grad, ctx.atype, image_grad)
+        else:
+            aligned_scatter_backward(coords, grad, ctx.atype, image_grad)
+        return image_grad, None, None
+
 
 def aligned_scatter(coordinates, feature_map, method="drop"):
     '''
@@ -37,7 +57,4 @@ def aligned_scatter(coordinates, feature_map, method="drop"):
         return feature_map[indexing]
     else:
         align_type = getattr(AlignType, method)
-        if feature_map.is_cuda:
-            return aligned_scatter_forward_cuda(coordinates, feature_map, align_type)
-        else:
-            return aligned_scatter_forward(coordinates, feature_map, align_type)
+        return AlignedScatter.apply(feature_map, coordinates, align_type)

@@ -2,6 +2,7 @@
 
 #include <torch/extension.h>
 
+// define dispatch macros
 #define _SCATTER_DISPATCH_ALIGNTYPE_CASE(ALIGNTYPE, ...) \
     case ALIGNTYPE:{                            \
         const AlignType Atype = ALIGNTYPE;      \
@@ -29,20 +30,23 @@
     _SCATTER_DISPATCH_DIM_CASE(2, __VA_ARGS__)                  \
     _SCATTER_DISPATCH_DIM_CASE(3, __VA_ARGS__)                  \
     default:                                                    \
-        throw py::value_error("Unsupported dimension size!");   \
+        throw py::value_error("Unsupported dimension size: " + to_string(dim)); \
     }}()
 
+// define function definitions
 enum class AlignType : int { DROP=0, MEAN=1, LINEAR=2, MAX=3, NEAREST=4 };
 
 torch::Tensor aligned_scatter_forward(
     const torch::Tensor coord, const torch::Tensor image_feature, const AlignType atype
 );
-torch::Tensor aligned_scatter_backward(
-    const torch::Tensor coord, const torch::Tensor grad, const AlignType atype
+void aligned_scatter_backward(
+    const torch::Tensor coord, const torch::Tensor grad, const AlignType atype,
+    torch::Tensor image_grad
 );
 torch::Tensor aligned_scatter_forward_cuda(
     const torch::Tensor coord, const torch::Tensor image_feature, const AlignType atype
 );
-torch::Tensor aligned_scatter_backward_cuda(
-    const torch::Tensor coord, const torch::Tensor grad, const AlignType atype
+void aligned_scatter_backward_cuda(
+    const torch::Tensor coord, const torch::Tensor grad, const AlignType atype,
+    torch::Tensor image_grad
 );
