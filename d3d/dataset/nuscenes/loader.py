@@ -262,8 +262,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
         with self._locate_file(idx, "annotation", "json") as fin:
             return list(map(edict, json.loads(fin.read().decode())))
 
-    # @snoop
-    def lidar_objects(self, idx):
+    def lidar_objects(self, idx, convert_tag=False):
         labels = self.lidar_label(idx)
         outputs = ObjectTarget3DArray(frame="ego")
 
@@ -273,7 +272,10 @@ class NuscenesObjectLoader(DetectionDatasetBase):
             tag = NuscenesObjectClass.parse(label.category)
             for attr in label.attribute:
                 tag = tag | NuscenesObjectClass.parse(attr)
-            tag = ObjectTag(tag, NuscenesObjectClass)
+            if convert_tag:
+                tag = ObjectTag(tag.to_detection(), NuscenesDetectionClass)
+            else:
+                tag = ObjectTag(tag, NuscenesObjectClass)
 
             # caculate relative pose
             r = Rotation.from_quat(label.rotation[1:] + [label.rotation[0]])

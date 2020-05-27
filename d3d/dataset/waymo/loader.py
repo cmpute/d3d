@@ -265,44 +265,47 @@ def create_submission(exec_path, result_path, output_path, meta_path, model_name
     '''
     Execute create_submission from waymo_open_dataset
     :param exec_path: path to create_submission
+    :param result_path: path (or list of path) to detection result in binary protobuf
     :param meta_path: path to the metadata file (example: waymo_open_dataset/metrics/tools/submission.txtpb)
+    :param output_path: output path for the created submission archive
     '''
     temp_path = tempfile.mkdtemp() + '/'
     model_name = model_name or "noname"
-    cwd_path = result_path
+    cwd_path = temp_path + 'input' # change input directory
+    os.mkdir(cwd_path)
 
-    # combine some of the files
-    input_files_list = os.listdir(result_path)
-    input_files = ','.join(input_files_list)
-    if len(input_files) >= 65536:
-        print("Too many files, combining outputs...")
-
+    # combine single results
+    if isinstance(result_path, str):
+        result_path = [result_path]
+    else:
+        assert isinstance(result_path, (list, tuple))
+    input_files, counter = [], 0
+    print("Combining outputs into %s..." % temp_path)
+    for rpath in result_path:
         from waymo_open_dataset.protos.metrics_pb2 import Objects
-        cwd_path = temp_path + 'input' # change input directory
-        os.mkdir(cwd_path)
         
         # merge objects
-        counter = 0
         combined_objects = Objects()
-        for f in input_files_list:
-            with open(osp.join(result_path, f), "rb") as fin:
+        for f in os.listdir(rpath):
+            with open(osp.join(rpath, f), "rb") as fin:
                 objects = Objects()
                 objects.ParseFromString(fin.read())
                 combined_objects.MergeFrom(objects)
             
-            if len(combined_objects.objects) > 1024:
+            if len(combined_objects.objects) > 1024: # create binary file every 1024 objects
                 with open(osp.join(cwd_path, "%x.bin" % counter), "wb") as fout:
                     fout.write(combined_objects.SerializeToString())
                 combined_objects = Objects()
                 counter += 1
 
-        # write remaining objects
-        if len(combined_objects.objects) > 0:
-            with open(osp.join(cwd_path, "%x.bin" % counter), "wb") as fout:
-                fout.write(combined_objects.SerializeToString())
-        input_files = ','.join(os.listdir(cwd_path))
+    # write remaining objects
+    if len(combined_objects.objects) > 0:
+        with open(osp.join(cwd_path, "%x.bin" % counter), "wb") as fout:
+            fout.write(combined_objects.SerializeToString())
+    input_files = ','.join(os.listdir(cwd_path))
 
     # create submissions
+    print("Creating submission...")
     proc = subprocess.Popen([exec_path,
         "--input_filenames=%s" % input_files,
         "--output_filename=%s" % (temp_path + model_name),
@@ -311,6 +314,7 @@ def create_submission(exec_path, result_path, output_path, meta_path, model_name
     proc.wait()
 
     # create tarball
+    print("Clean up...")
     if cwd_path != result_path: # remove combined files before zipping
         shutil.rmtree(cwd_path)
     if not os.path.exists(output_path):

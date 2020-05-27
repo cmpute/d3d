@@ -118,7 +118,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         else:
             return outputs
 
-    def lidar_data(self, idx, names='velo'):
+    def lidar_data(self, idx, names='velo', concat=True):
         if isinstance(names, str):
             names = [names]
         if names != self.VALID_LIDAR_NAMES:

@@ -65,9 +65,9 @@ class KeyFrameConverter:
         self.filename_table = None # filename -> (sample_data token, scene token, sensor name, order, file extension)
         self.scene_sensor_table = None # scene -> calibrated_sensor
         self.scene_map_table = None # scene -> {map category: map file}
-        self.ohandles = {} # output zipfile handles
+        self.ohandles = {} # scene -> zipfile handle
         self.oscenes = set() # mark output scenes
-        self.oframes = set() # mark output frames
+        self.oframes = defaultdict(set) # mark output frames
 
     def _parse_scenes(self):
         self.log_table = _load_table(self.table_path / "log.json")
@@ -170,7 +170,7 @@ class KeyFrameConverter:
             while True:
                 adata = self.annotation_table[cur]
                 scene, order = self.sample_order[adata['sample_token']]
-                if (scene, order) in self.oframes:
+                if order in self.oframes[scene]:
                     # save this annotation if the sample has corresponding sensor data
                     anno = dict(
                         category=instance_category,
@@ -269,8 +269,8 @@ class KeyFrameConverter:
                 # tag the scene to be filled
                 if scene not in self.oscenes:
                     self.oscenes.add(scene)
-                if (scene, order) not in self.oframes:
-                    self.oframes.add((scene, order))
+                if order not in self.oframes[scene]:
+                    self.oframes[scene].add(order)
 
                 # only convert 2 files in debug
                 counter +=1
@@ -285,11 +285,24 @@ class KeyFrameConverter:
         self._save_definitions()
 
     def clean_up(self):
-        # close all the zip handles and remove those without sensor data
+        # clean zip files and close handles
         for scene, handle in self.ohandles.items():
-            handle.close()
-            if scene not in self.oscenes:
+            nsamples = self.scene_table[scene]['nbr_samples']
+
+            # remove archives where the data is incomplete
+            if scene not in self.oscenes or len(self.oframes[scene]) < nsamples:
+                handle.close()
                 os.remove(handle.filename)
+            
+            # fill scene samples without annotation
+            else:
+                nlist = set(handle.namelist())
+                for i in range(nsamples):
+                    aname = "annotation/%03d.json" % i
+                    if aname not in nlist:
+                        with self.ohandles[scene].open(aname, "w") as fout:
+                            fout.write(b"[]")
+                handle.close()
 
     def convert(self, debug=False):
         try:
