@@ -14,7 +14,7 @@ Tensor box_2d_iou(
 
     auto N = boxes1_.size(0);
     auto M = boxes2_.size(0);
-    for (int i = 0; i < N; i++)
+    for (int i = 0; i < N; i++) // TODO: use parallel for // TODO: dispatch tensor types
     {
         AABox2 bi = Box2(boxes1_[i][0], boxes1_[i][1], boxes1_[i][2],
             boxes1_[i][3], boxes1_[i][4]).bbox();

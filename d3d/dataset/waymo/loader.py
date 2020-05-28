@@ -245,7 +245,7 @@ def dump_detection_output(detections: ObjectTarget3DArray, context: str, timesta
         waymo_target.object.box.CopyFrom(box)
 
         # convert label
-        waymo_target.object.type = label_map[target.tag.labels[0]]
+        waymo_target.object.type = label_map[target.tag_top]
         waymo_target.score = target.tag.scores[0]
 
         waymo_target.context_name = context

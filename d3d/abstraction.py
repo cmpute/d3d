@@ -84,14 +84,15 @@ class ObjectTarget3D:
         self.id = id
 
     @property
+    def tag_top(self):
+        return self.tag.labels[0]
+
+    @property
     def tag_name(self):
         '''
         Return the name of the target's top tag
         '''
-        if hasattr(self.tag.labels[0], "uname"):
-            return self.tag.labels[0].uname
-        else:
-            return self.tag.labels[0].name
+        return self.tag_top.uname if hasattr(self.tag_top, "uname") else self.tag_top.name
 
     @property
     def tag_score(self):
@@ -140,10 +141,10 @@ class ObjectTarget3DArray(list):
         if len(self) == 0:
             return np.empty((0, 8))
 
-        def to_ground(box):
-            cls_value = box.tag.labels[0].value
+        def to_ground(box): # store only 3D box and label
+            cls_value = box.tag_top.value
             arr = np.concatenate([box.position, box.dimension, [box.yaw, cls_value]])
-            return arr # store only 3D box and label
+            return arr
         return np.stack([to_ground(box) for box in self])
 
     def to_torch(self, box_type="ground"):
