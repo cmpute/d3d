@@ -1,8 +1,12 @@
+import math
+
 import numpy as np
 import torch
 from addict import Dict as edict
+
 from d3d.abstraction import ObjectTarget3DArray
 from d3d.box import box2d_iou
+
 
 class ObjectBenchmark:
     def __init__(self, classes, min_overlaps, pr_sample_count=40, min_score=0, pr_sample_scale="log10"):
@@ -15,6 +19,8 @@ class ObjectBenchmark:
         :param min_score: Min score for precision-recall samples
         :param pr_sample_count: Number of precision-recall sample points (expect for p=1,r=0 and p=0,r=1)
         :param pr_sample_scale: PR sample type, {lin: linspace, log: logspace 1~10, logX: logspace 1~X}
+
+        TODO: add support for other threshold (e.g. center distance)
         '''
         # parse parameters
         if isinstance(classes, (list, tuple)):
@@ -40,12 +46,20 @@ class ObjectBenchmark:
         else:
             raise ValueError("Unrecognized PR sample type")
 
+        self.reset()
+
+    def reset(self):
         # aggregated statistics
         self._total_gt = {k: 0 for k in self._classes}
-        self._total_dt = {k: [0] * pr_sample_count for k in self._classes}
-        self._tp = {k: [0] * pr_sample_count for k in self._classes}
-        self._fp = {k: [0] * pr_sample_count for k in self._classes}
-        self._fn = {k: [0] * pr_sample_count for k in self._classes}
+        self._total_dt = {k: [0] * self._pr_nsamples for k in self._classes}
+        self._tp = {k: [0] * self._pr_nsamples for k in self._classes}
+        self._fp = {k: [0] * self._pr_nsamples for k in self._classes}
+        self._fn = {k: [0] * self._pr_nsamples for k in self._classes}
+
+        self._acc_angular = {k: [0] * self._pr_nsamples for k in self._classes}
+        self._acc_iou = {k: [0] * self._pr_nsamples for k in self._classes}
+        self._acc_box = {k: [0] * self._pr_nsamples for k in self._classes}
+        self._acc_dist = {k: [0] * self._pr_nsamples for k in self._classes}
 
     def get_stats(self, gt_boxes: ObjectTarget3DArray, dt_boxes: ObjectTarget3DArray):
         assert gt_boxes.frame == dt_boxes.frame        
@@ -56,8 +70,14 @@ class ObjectBenchmark:
         fn = {k: [0] * self._pr_nsamples for k in self._classes}
         ngt = {k: 0 for k in self._classes}
         ndt = {k: [0] * self._pr_nsamples for k in self._classes}
+
         dt_assignment = [{} for _ in range(self._pr_nsamples)]
         gt_assignment = [{} for _ in range(self._pr_nsamples)]
+
+        iou_acc = [{} for _ in range(self._pr_nsamples)]
+        angular_acc = [{} for _ in range(self._pr_nsamples)]
+        dist_acc = [{} for _ in range(self._pr_nsamples)]
+        box_acc = [{} for _ in range(self._pr_nsamples)]
 
         # calculate iou and sort by score
         gt_array = gt_boxes.to_torch().float() # TODO: implement type dispatching
@@ -89,6 +109,17 @@ class ObjectBenchmark:
 
                         dt_assignment[score_idx][dt_idx] = gt_idx
                         gt_assignment[score_idx][gt_idx] = dt_idx
+
+                        # caculate accuracy values for various criteria
+                        iou_acc[score_idx][gt_idx] = iou[gt_idx, dt_idx]
+                        dist_acc[score_idx][gt_idx] = np.linalg.norm(
+                            gt_boxes[gt_idx].position - dt_boxes[dt_idx].position)
+                        box_acc[score_idx][gt_idx] = np.linalg.norm(
+                            gt_boxes[gt_idx].dimension - dt_boxes[dt_idx].dimension)
+
+                        angular_acc_cur = abs(gt_boxes[gt_idx].yaw - dt_boxes[dt_idx].yaw)
+                        angular_acc_cur = min(angular_acc_cur, 2*math.pi - angular_acc_cur) / math.pi
+                        angular_acc[score_idx][gt_idx] = angular_acc_cur
                     break
 
             ngt[gt_tag] += 1
@@ -109,18 +140,54 @@ class ObjectBenchmark:
                 if dt_idx not in dt_assignment[score_idx]:
                     fp[dt_box.tag_top][score_idx] += 1
 
-        # TODO: calculate angle similarity
-        # TODO: calculate box similarity
-        # TODO: calculate center distance
-        return edict(tp=tp, fp=fp, fn=fn, ngt=ngt, ndt=ndt)
+        # compute accuracy metrics
+        def aggregate(acc):
+            aggregated = {k: [[] for _ in range(self._pr_nsamples)] for k in self._classes}
+            for score_idx, score_acc in enumerate(acc):
+                for gt_idx, gt_acc in score_acc.items():
+                    aggregated[gt_boxes[gt_idx].tag_top][score_idx].append(gt_acc)
+            for k in self._classes:
+                for score_idx in range(self._pr_nsamples):
+                    # assert len(aggregated[k][score_idx]) == tp[k][score_idx]
+                    if len(aggregated[k][score_idx]) > 0:
+                        aggregated[k][score_idx] = np.mean(aggregated[k][score_idx])
+                    else:
+                        aggregated[k][score_idx] = np.nan
+            return aggregated
+
+        return edict(ngt=ngt, ndt=ndt,
+            tp=tp, fp=fp, fn=fn,
+            acc_iou=aggregate(iou_acc),
+            acc_angular=aggregate(angular_acc),
+            acc_dist=aggregate(dist_acc),
+            acc_box=aggregate(box_acc)
+        )
 
     def add_stats(self, stats):
         '''
         Add statistics from get_stats into database
         '''
+        def weighted_mean(a, wa, b, wb):
+            if wa == 0 and wb == 0: return 0
+            elif wa == 0: return b
+            elif wb == 0: return a
+            else: return (a * wa + b * wb) / (wa + wb)
+
         for k in self._classes:
             self._total_gt[k] += stats.ngt[k]
             for i in range(self._pr_nsamples):
+                # aggregate accuracies
+                otp, ntp = self._tp[k][i], stats.tp[k][i]
+                self._acc_angular[k][i] = weighted_mean(
+                    self._acc_angular[k][i], otp, stats.acc_angular[k][i], ntp)
+                self._acc_box[k][i] = weighted_mean(
+                    self._acc_box[k][i], otp, stats.acc_box[k][i], ntp)
+                self._acc_iou[k][i] = weighted_mean(
+                    self._acc_iou[k][i], otp, stats.acc_iou[k][i], ntp)
+                self._acc_dist[k][i] = weighted_mean(
+                    self._acc_dist[k][i], otp, stats.acc_dist[k][i], ntp)
+
+                # aggregate common stats
                 self._total_dt[k][i] += stats.ndt[k][i]
                 self._tp[k][i] += stats.tp[k][i]
                 self._fp[k][i] += stats.fp[k][i]
@@ -195,30 +262,50 @@ class ObjectBenchmark:
         '''Calculate (mean) average precision'''
         p, r = self.precision(), self.recall()
         # usually pr curve grows from bottom right to top left as score threshold
-        # increases, so the area will be negative
+        # increases, so the area can be negative
         area = {k: -np.trapz(p[k], r[k]) for k in self._classes}
         return area
+
+    def acc_iou(self, score=None):
+        score_idx = self._get_score_idx(score)
+        return {k: v[score_idx] for k, v in self._acc_iou.items()}
+    def acc_box(self, score=None):
+        score_idx = self._get_score_idx(score)
+        return {k: v[score_idx] for k, v in self._acc_box.items()}
+    def acc_dist(self, score=None):
+        score_idx = self._get_score_idx(score)
+        return {k: v[score_idx] for k, v in self._acc_dist.items()}
+    def acc_angular(self, score=None):
+        score_idx = self._get_score_idx(score)
+        return {k: v[score_idx] for k, v in self._acc_angular.items()}
 
     def summary(self):
         '''
         Print default summary (into returned string)
         '''
+        score_thres = 0.8
+
         lines = [''] # prepend an empty line
         lines.append("========== Benchmark Summary ==========")
-        precision = self.precision(0.8)
-        recall = self.recall(0.8)
-        fscore = self.fscore(0.8)
-        ap = self.ap()
+        precision, recall = self.precision(score_thres), self.recall(score_thres)
+        fscore, ap = self.fscore(score_thres), self.ap()
+        acc_iou, acc_angular = self.acc_iou(score_thres), self.acc_angular(score_thres)
+        acc_dist, acc_box = self.acc_dist(score_thres), self.acc_box(score_thres)
 
         for k in self._classes:
             lines.append("Results for %s:" % k.name)
             lines.append("\tTotal processed targets:\t%d gt boxes, %d dt boxes" % (
                 self._total_gt[k], max(self._total_dt[k])
             ))
-            lines.append("\tPrecision (score > 0.8):\t%.3f" % precision[k])
-            lines.append("\tRecall (score > 0.8):\t\t%.3f" % recall[k])
-            lines.append("\tF1 max (score > 0.8):\t\t%.3f" % max(fscore[k]))
-            lines.append("\tAP:\t\t\t%.3f" % ap[k])
+            lines.append("\tPrecision (score > %.2f):\t%.3f" % (score_thres, precision[k]))
+            lines.append("\tRecall (score > %.2f):\t\t%.3f" % (score_thres, recall[k]))
+            lines.append("\tMax F1:\t\t\t\t%.3f" % max(fscore[k]))
+            lines.append("\tAP:\t\t\t\t%.3f" % ap[k])
+            lines.append("")
+            lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, acc_iou[k]))
+            lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, acc_angular[k]))
+            lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, acc_dist[k]))
+            lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, acc_box[k]))
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)
