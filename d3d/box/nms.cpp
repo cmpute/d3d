@@ -4,16 +4,14 @@
 using namespace std;
 using namespace torch;
 
-Tensor box_2d_nms(
-    const Tensor boxes, const Tensor order, const float threshold
+template <typename scalar_t>
+void box_2d_nms_templated(
+    const _CpuAccessor(2) boxes_,
+    const _CpuAccessorT(long, 1) order_,
+    const float threshold,
+    _CpuAccessorT(bool, 1) suppressed_
 ) {
-    Tensor suppressed = torch::zeros({boxes.size(0)}, torch::dtype(torch::kBool));
-
-    auto boxes_ = boxes.accessor<float, 2>();
-    auto suppressed_ = suppressed.accessor<bool, 1>();
-    auto order_ = order.accessor<long, 1>();
-
-    int N = boxes_.size(0);
+    const int N = boxes_.size(0);
     for (int _i = 0; _i < N; _i++)
     {
         int i = order_[_i];
@@ -34,21 +32,30 @@ Tensor box_2d_nms(
                 suppressed_[j] = true;
         }
     }
-
-    return suppressed;
 }
 
-
-Tensor rbox_2d_nms(
+Tensor box_2d_nms(
     const Tensor boxes, const Tensor order, const float threshold
 ) {
     Tensor suppressed = torch::zeros({boxes.size(0)}, torch::dtype(torch::kBool));
+    AT_DISPATCH_FLOATING_TYPES(boxes.scalar_type(), "box_2d_nms", ([&] {
+        box_2d_nms_templated<scalar_t>(
+            boxes._cpu_accessor(2),
+            order._cpu_accessor_t(long, 1),
+            threshold,
+            suppressed._cpu_accessor_t(bool, 1));
+    }));
+    return suppressed;
+}
 
-    auto boxes_ = boxes.accessor<float, 2>();
-    auto suppressed_ = suppressed.accessor<bool, 1>();
-    auto order_ = order.accessor<long, 1>();
-
-    int N = boxes_.size(0);
+template <typename scalar_t>
+void rbox_2d_nms_templated(
+    const _CpuAccessor(2) boxes_,
+    const _CpuAccessorT(long, 1) order_,
+    const float threshold,
+    _CpuAccessorT(bool, 1) suppressed_
+) {
+    const int N = boxes_.size(0);
     for (int _i = 0; _i < N; _i++)
     {
         int i = order_[_i];
@@ -69,7 +76,19 @@ Tensor rbox_2d_nms(
                 suppressed_[j] = true;
         }
     }
+}
 
+Tensor rbox_2d_nms(
+    const Tensor boxes, const Tensor order, const float threshold
+) {
+    Tensor suppressed = torch::zeros({boxes.size(0)}, torch::dtype(torch::kBool));
+    AT_DISPATCH_FLOATING_TYPES(boxes.scalar_type(), "rbox_2d_nms", ([&] {
+        rbox_2d_nms_templated<scalar_t>(
+            boxes._cpu_accessor(2),
+            order._cpu_accessor_t(long, 1),
+            threshold,
+            suppressed._cpu_accessor_t(bool, 1));
+    }));
     return suppressed;
 }
 

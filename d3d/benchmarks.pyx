@@ -162,9 +162,9 @@ cdef class ObjectBenchmark:
             box_acc.resize(self._pr_nsamples)
 
         # calculate iou and sort by score
-        gt_array = gt_boxes.to_torch().float() # TODO: implement type dispatching
+        gt_array = gt_boxes.to_torch().float()
         dt_array = dt_boxes.to_torch().float()
-        cdef np.ndarray[ndim=2, dtype=float] iou = box2d_iou(gt_array[:, [0,1,3,4,6]], dt_array[:, [0,1,3,4,6]], method="rbox").numpy() # TODO: method "box" has negative values...
+        cdef np.ndarray[ndim=2, dtype=float] iou = box2d_iou(gt_array[:, [0,1,3,4,6]], dt_array[:, [0,1,3,4,6]], method="rbox").numpy()
         cdef np.ndarray[ndim=1, dtype=long] order = np.argsort([box.tag_score for box in dt_boxes])[::-1] # match from best score
 
         for gt_idx in range(len(gt_boxes)):

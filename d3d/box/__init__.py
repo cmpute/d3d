@@ -1,7 +1,7 @@
 import torch
 from .box_impl import (
     box_2d_iou as box_2d_iou_cc, box_2d_iou_cuda,
-    box_2d_nms as box_2d_nms, box_2d_nms_cuda,
+    box_2d_nms as box_2d_nms_cc, box_2d_nms_cuda,
     rbox_2d_iou as rbox_2d_iou_cc, rbox_2d_iou_cuda,
     rbox_2d_nms as rbox_2d_nms_cc, rbox_2d_nms_cuda,
     rbox_2d_crop as rbox_2d_crop_cc)
@@ -42,10 +42,19 @@ def box2d_nms(boxes, scores, method="box", threshold=0):
         return torch.tensor([], dtype=torch.bool)
 
     order = scores.argsort(descending=True)
+
     if boxes.is_cuda and scores.is_cuda:
-        suppressed = rbox_2d_nms_cuda(boxes, order, threshold) 
+        if method == "box":
+            impl = box_2d_nms_cuda
+        elif method == "rbox":
+            impl = rbox_2d_nms_cuda
     else:
-        suppressed = rbox_2d_nms_cc(boxes, order, threshold)
+        if method == "box":
+            impl = box_2d_nms_cc
+        elif method == "rbox":
+            impl = rbox_2d_nms_cc
+
+    suppressed = impl(boxes, order, threshold)
     return ~suppressed
 
 # TODO: implement softnms

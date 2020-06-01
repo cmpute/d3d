@@ -9,12 +9,16 @@
 #endif 
 
 // abbreviated pytorch accessors
-#define _PackedAccessor(n) torch::PackedTensorAccessor32<scalar_t,n,torch::RestrictPtrTraits>
-#define _PackedAccessorT(t,n) torch::PackedTensorAccessor32<t,n,torch::RestrictPtrTraits>
-#define _packed_accessor(n) packed_accessor32<scalar_t,n,torch::RestrictPtrTraits>()
-#define _packed_accessor_typed(t,n) packed_accessor32<t,n,torch::RestrictPtrTraits>()
+#define _CpuAccessor(n) torch::TensorAccessor<scalar_t, n>
+#define _CpuAccessorT(t,n) torch::TensorAccessor<t, n>
+#define _cpu_accessor(n) accessor<scalar_t, n>()
+#define _cpu_accessor_t(t,n) accessor<t, n>()
 
-#define DivUp(m,n) (((m)+(n)-1) / (n))
+#define _CudaAccessor(n) torch::PackedTensorAccessor32<scalar_t,n,torch::RestrictPtrTraits>
+#define _CudaAccessorT(t,n) torch::PackedTensorAccessor32<t,n,torch::RestrictPtrTraits>
+#define _cuda_accessor(n) packed_accessor32<scalar_t,n,torch::RestrictPtrTraits>()
+#define _cuda_accessor_t(t,n) packed_accessor32<t,n,torch::RestrictPtrTraits>()
+
 #define THREADS_COUNT 1024
 
 #define CUDA_CHECK_ERROR_SYNC(errorMessage) {                                \

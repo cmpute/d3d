@@ -34,8 +34,9 @@ template<typename scalar_t> __device__ inline int _ceil(scalar_t value)
     else return i;
 }
 
-template<typename scalar_t, int Dim, AlignType AType> __device__ inline void _fill_lcoords(
-    const _PackedAccessor(Dim+2)& image_feature_,
+template<typename scalar_t, int Dim, AlignType AType> __device__ inline
+void _fill_lcoords(
+    const _CudaAccessor(Dim+2)& image_feature_,
     const TensorAccessor<scalar_t, 1, RestrictPtrTraits, int32_t>& coord_,
     int lcoord[][Dim], scalar_t lweights[]
 ) {
@@ -89,11 +90,10 @@ template<typename scalar_t, int Dim, AlignType AType> __device__ inline void _fi
 
 template <typename scalar_t, int Dim, AlignType AType>
 __global__ void aligned_scatter_forward_kernel(
-    const _PackedAccessor(2) coord_,
-    const _PackedAccessor(Dim+2) image_feature_,
-    _PackedAccessor(2) scatter_feature_
-)
-{
+    const _CudaAccessor(2) coord_,
+    const _CudaAccessor(Dim+2) image_feature_,
+    _CudaAccessor(2) scatter_feature_
+) {
     constexpr int Neighbor = 1 << Dim;
     __shared__ int lcoord[Neighbor][Dim]; // store neighbor coordinates
     __shared__ scalar_t lweights[Neighbor]; // store neighbor weights
@@ -144,9 +144,9 @@ __global__ void aligned_scatter_forward_kernel(
 
 template <typename scalar_t, int Dim, AlignType AType>
 __global__ void aligned_scatter_backward_kernel(
-    const _PackedAccessor(2) coord_,
-    const _PackedAccessor(2) grad_,
-    _PackedAccessor(Dim+2) image_grad_
+    const _CudaAccessor(2) coord_,
+    const _CudaAccessor(2) grad_,
+    _CudaAccessor(Dim+2) image_grad_
 ) {
     constexpr int Neighbor = 1 << Dim;
     __shared__ int lcoord[Neighbor][Dim]; // store neighbor coordinates
@@ -194,13 +194,13 @@ void aligned_scatter_forward_templated(
     const int nchannels = image_feature.size(1);
 
     const int threads = THREADS_COUNT;
-    const dim3 blocks(npoints, DivUp(nchannels, THREADS_COUNT));
+    const dim3 blocks(npoints, divup(nchannels, THREADS_COUNT));
 
-    AT_DISPATCH_FLOATING_TYPES(image_feature.type(), "aligned_scatter_forward_cuda", [&] {
+    AT_DISPATCH_FLOATING_TYPES(image_feature.scalar_type(), "aligned_scatter_forward_cuda", [&] {
         aligned_scatter_forward_kernel<scalar_t, Dim, AType><<<blocks, threads>>>(
-            coord._packed_accessor(2),
-            image_feature._packed_accessor(Dim+2),
-            scatter_feature._packed_accessor(2));
+            coord._cuda_accessor(2),
+            image_feature._cuda_accessor(Dim+2),
+            scatter_feature._cuda_accessor(2));
     });
 }
 
@@ -212,13 +212,13 @@ void aligned_scatter_backward_templated(
     const int nchannels = image_grad.size(1);
 
     const int threads = THREADS_COUNT;
-    const dim3 blocks(npoints, DivUp(nchannels, THREADS_COUNT));
+    const dim3 blocks(npoints, divup(nchannels, THREADS_COUNT));
 
-    AT_DISPATCH_FLOATING_TYPES(grad.type(), "aligned_scatter_backward_cuda", [&] {
+    AT_DISPATCH_FLOATING_TYPES(grad.scalar_type(), "aligned_scatter_backward_cuda", [&] {
         aligned_scatter_backward_kernel<scalar_t, Dim, AType><<<blocks, threads>>>(
-            coord._packed_accessor(2),
-            grad._packed_accessor(2),
-            image_grad._packed_accessor(Dim+2));
+            coord._cuda_accessor(2),
+            grad._cuda_accessor(2),
+            image_grad._cuda_accessor(Dim+2));
     });
 }
 

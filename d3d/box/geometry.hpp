@@ -1,6 +1,8 @@
 /*
- * This file contains implementations of algorithms of simple geometries, which are suitable for using in GPU
+ * This file contains implementations of algorithms of simple geometries on stack instead of heap, which are suitable for using in GPU.
  * One can turn to boost.geometry or CGAL for a complete functionality of geometry operations.
+ * 
+ * TODO: make precision templated
  */
 
 #ifndef D3D_GEOMETRY_HPP
@@ -21,8 +23,8 @@ struct Box2;
 // implementations
 struct Point2
 {
-    float x = 0, y = 0;
-    CUDA_CALLABLE_MEMBER Point2() {}
+    float x, y;
+    CUDA_CALLABLE_MEMBER Point2() : x(0), y(0) {}
     CUDA_CALLABLE_MEMBER Point2(const float& x_, const float& y_) : x(x_), y(y_) {}
     CUDA_CALLABLE_MEMBER inline Point2 operator+(const Point2& v2) { return Point2(x + v2.x, y + v2.y); }
     CUDA_CALLABLE_MEMBER inline Point2 operator-(const Point2& v2) { return Point2(x - v2.x, y - v2.y); }
@@ -192,6 +194,12 @@ CUDA_CALLABLE_MEMBER inline bool AABox2::contains(const Point2& p) const
 CUDA_CALLABLE_MEMBER inline AABox2 AABox2::intersect(const AABox2& other) const
 {
     AABox2 result;
+    // return empty aabox if no intersection
+    if (max_x < other.min_x || min_x > other.max_x)
+        return result;
+    if (max_y < other.min_y || min_y > other.max_y)
+        return result;
+
     result.min_x = fmaxf(min_x, other.min_x);
     result.min_y = fmaxf(min_y, other.min_y);
     result.max_x = fminf(max_x, other.max_x);
