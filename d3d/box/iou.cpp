@@ -19,9 +19,9 @@ void box_2d_iou_templated(
             const int i = nm % N;
             const int j = nm / N;
 
-            AABox2 bi = Box2(boxes1_[i][0], boxes1_[i][1], boxes1_[i][2],
+            AABox2 bi = make_box2(boxes1_[i][0], boxes1_[i][1], boxes1_[i][2],
                 boxes1_[i][3], boxes1_[i][4]).bbox();
-            AABox2 bj = Box2(boxes2_[j][0], boxes2_[j][1], boxes2_[j][2],
+            AABox2 bj = make_box2(boxes2_[j][0], boxes2_[j][1], boxes2_[j][2],
                 boxes2_[j][3], boxes2_[j][4]).bbox();
             ious_[i][j] = bi.iou(bj);
         }
@@ -55,9 +55,9 @@ void rbox_2d_iou_templated(
         {
             const int i = nm % N;
             const int j = nm / N;
-            Box2 bi(boxes1_[i][0], boxes1_[i][1], boxes1_[i][2],
+            Poly2 bi = make_box2(boxes1_[i][0], boxes1_[i][1], boxes1_[i][2],
                 boxes1_[i][3], boxes1_[i][4]);
-            Box2 bj(boxes2_[j][0], boxes2_[j][1], boxes2_[j][2],
+            Poly2 bj = make_box2(boxes2_[j][0], boxes2_[j][1], boxes2_[j][2],
                 boxes2_[j][3], boxes2_[j][4]);
             ious_[i][j] = bi.iou(bj);
         }

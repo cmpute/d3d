@@ -16,7 +16,7 @@
 struct Point2;
 struct Line2;
 struct AABox2;
-template <int MaxPoints> struct Poly2;
+struct Poly2;
 struct Box2;
 
 
@@ -60,27 +60,34 @@ struct AABox2 // Axis-aligned 2D box for quick calculation
     CUDA_CALLABLE_MEMBER inline bool contains(const Point2& p) const;
     CUDA_CALLABLE_MEMBER inline AABox2 intersect(const AABox2& other) const;
     CUDA_CALLABLE_MEMBER inline float area() const;
-    CUDA_CALLABLE_MEMBER inline Box2 box() const;
+    CUDA_CALLABLE_MEMBER inline Poly2 poly() const;
     CUDA_CALLABLE_MEMBER inline float iou(const AABox2 &other) const;
 };
 
-template <int MaxPoints> struct Poly2 // Convex polygon with no holes
+struct Poly2 // Convex polygon with no holes
 {
-    Point2 vertices[MaxPoints]; // vertices in counter-clockwise order
-    size_t nvertices = 0; // actual number of vertices
+    Point2 *vertices; // vertices in counter-clockwise order
+    int64_t nvertices = 0; // actual number of vertices
     CUDA_CALLABLE_MEMBER Poly2() {}
-
-    template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
-    void operator=(const Poly2<MaxPointsOther> &other)
+    CUDA_CALLABLE_MEMBER ~Poly2()
     {
-        assert(other.nvertices <= MaxPoints);
+        if (vertices != nullptr)
+        {
+            free(vertices);
+            vertices = nullptr;
+        }
+    }
+
+    CUDA_CALLABLE_MEMBER void operator=(const Poly2 &other)
+    {
+        vertices = (Point2*)malloc(other.nvertices * sizeof(Point2));
         nvertices = other.nvertices;
-        for(size_t i = 0; i < other.nvertices; i++)
+        for (size_t i = 0; i < other.nvertices; i++)
             vertices[i] = other.vertices[i];
     }
 
     // Calculate inner area
-    CUDA_CALLABLE_MEMBER virtual float area() const
+    CUDA_CALLABLE_MEMBER float area() const
     {
         if (nvertices <= 2)
             return 0;
@@ -88,45 +95,65 @@ template <int MaxPoints> struct Poly2 // Convex polygon with no holes
         float sum = 0;
         for (size_t i = 0; i < nvertices; i++)
         {
-            int j = (i+1) % nvertices;
+            int j = (i+1) % nvertices; // TODO: optimize
             sum += (vertices[i].x*vertices[j].y - vertices[j].x*vertices[i].y);
         }
         return sum / 2;
     }
 
-    template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
-    Poly2<MaxPoints + MaxPointsOther> intersect(const Poly2<MaxPointsOther> &other) const
+    CUDA_CALLABLE_MEMBER Poly2 intersect(const Poly2 &other) const
     // XXX: if to make the intersection differentialble, need to store which points are selected
     //      e.g. self points are indexed from 1 to n, other points are indexed from -1 to -n, 0 is reserved for tensor padding
     {
-        Poly2<MaxPoints + MaxPointsOther> intersection, temp; // start with original polygon
-        intersection = *this;
+        Point2 *intersection_p, *temp_p; // start with original polygon
+        int intersection_n = nvertices, temp_n = 0;
+        const int max_nvertices = nvertices + other.nvertices;
+
+        intersection_p = (Point2*)malloc(max_nvertices * sizeof(Point2));
+        temp_p = (Point2*)malloc(max_nvertices * sizeof(Point2));
+        float *signs = (float*)malloc(max_nvertices * sizeof(float));
+        for (size_t i = 0; i < nvertices; i++)
+            intersection_p[i] = vertices[i];
+
         for (size_t j = 0; j < other.nvertices; j++) // loop over edges of polygon doing cut
         {
             Line2 edge(other.vertices[j], other.vertices[(j+1) % other.nvertices]);
 
-            float signs[MaxPoints + MaxPointsOther];
-            for (size_t i = 0; i < intersection.nvertices; i++) // caculate
-                signs[i] = edge.dist(intersection.vertices[i]);
+            for (size_t i = 0; i < intersection_n; i++) // caculate
+                signs[i] = edge.dist(intersection_p[i]);
 
-            for (size_t i = 0; i < intersection.nvertices; i++) // loop over edges of polygon to be cut
+            for (size_t i = 0; i < intersection_n; i++) // loop over edges of polygon to be cut
             {
                 if (signs[i] <= 0)
-                    temp.vertices[temp.nvertices++] = intersection.vertices[i];
-                if (signs[i] * signs[(i+1) % intersection.nvertices] < 0)
+                    temp_p[temp_n++] = intersection_p[i];
+                if (signs[i] * signs[(i+1) % intersection_n] < 0)
                 {
-                    Line2 cut(intersection.vertices[i], intersection.vertices[(i+1) % intersection.nvertices]);
-                    temp.vertices[temp.nvertices++] = edge.intersect(cut);
+                    Line2 cut(intersection_p[i], intersection_p[(i+1) % intersection_n]);
+                    temp_p[temp_n++] = edge.intersect(cut);
                 }
             }
-            intersection = temp; // TODO: implement swap protocol to prevent copy
-            temp = Poly2<MaxPoints + MaxPointsOther>();
+
+            Point2 *t = intersection_p;
+            intersection_p = temp_p;
+            temp_p = t;
+            intersection_n = temp_n;
+            temp_n = 0;
         }
+
+        Poly2 intersection;
+        intersection.nvertices = intersection_n;
+        intersection.vertices = (Point2*)malloc(intersection_n * sizeof(Point2));
+        for (size_t i = 0; i < intersection_n; i++)
+            intersection.vertices[i] = intersection_p[i];
+
+        free(intersection_p);
+        free(temp_p);
+        free(signs);
+        
         return intersection;
     }
 
-    template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
-    inline float iou(const Poly2<MaxPointsOther> &other) const
+    CUDA_CALLABLE_MEMBER inline float iou(const Poly2 &other) const
     {
         float area_i = intersect(other).area();
         float area_u = area() + other.area() - area_i;
@@ -160,28 +187,22 @@ template <int MaxPoints> struct Poly2 // Convex polygon with no holes
     }
 };
 
-
-struct Box2 : Poly2<4>
+CUDA_CALLABLE_MEMBER inline Poly2 make_box2(const float& x, const float& y,
+    const float& w, const float& h, const float& r)
 {
-    float _area = 0;
-    CUDA_CALLABLE_MEMBER Box2() {}
-    CUDA_CALLABLE_MEMBER Box2(const float& x, const float& y,
-        const float& w, const float& h, const float& r)
-    {
-        _area = w * h;
-        float dxsin = w*sin(r)/2, dxcos = w*cos(r)/2;
-        float dysin = h*sin(r)/2, dycos = h*cos(r)/2;
-        
-        nvertices = 4;
-        vertices[0] = Point2(x - dxcos + dysin, y - dxsin - dycos);
-        vertices[1] = Point2(x + dxcos + dysin, y + dxsin - dycos);
-        vertices[2] = Point2(x + dxcos - dysin, y + dxsin + dycos);
-        vertices[3] = Point2(x - dxcos - dysin, y - dxsin + dycos);
-    }
+    Poly2 poly;
+    float dxsin = w*sin(r)/2, dxcos = w*cos(r)/2;
+    float dysin = h*sin(r)/2, dycos = h*cos(r)/2;
+    
+    poly.nvertices = 4;
+    poly.vertices = (Point2*)malloc(4 * sizeof(Point2));
+    poly.vertices[0] = Point2(x - dxcos + dysin, y - dxsin - dycos);
+    poly.vertices[1] = Point2(x + dxcos + dysin, y + dxsin - dycos);
+    poly.vertices[2] = Point2(x + dxcos - dysin, y + dxsin + dycos);
+    poly.vertices[3] = Point2(x - dxcos - dysin, y - dxsin + dycos);
 
-    CUDA_CALLABLE_MEMBER float area() const { return _area; }
-};
-
+    return poly;
+}
 
 // ---------- AABox2 implementations ----------
 
@@ -211,15 +232,15 @@ CUDA_CALLABLE_MEMBER inline float AABox2::area() const
     return (max_x - min_x) * (max_y - min_y);
 }
 
-CUDA_CALLABLE_MEMBER inline Box2 AABox2::box() const
+CUDA_CALLABLE_MEMBER inline Poly2 AABox2::poly() const
 {
-    Box2 result;
+    Poly2 result;
     result.nvertices = 4;
+    result.vertices = (Point2*)malloc(4 * sizeof(Point2));
     result.vertices[0] = Point2(min_x, min_y);
     result.vertices[1] = Point2(max_x, min_y);
     result.vertices[2] = Point2(max_x, max_y);
     result.vertices[3] = Point2(min_x, max_y);
-    result._area = area();
     return result;
 }
 

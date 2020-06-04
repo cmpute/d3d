@@ -9,11 +9,11 @@ using namespace torch;
 template <typename scalar_t, typename TBox>
 struct _BoxUtil { static TBox make_box(const _CpuAccessor(1) data); };
 template <typename scalar_t>
-struct _BoxUtil<scalar_t, Box2>
+struct _BoxUtil<scalar_t, Poly2>
 {
-    static Box2 make_box(const _CpuAccessor(1) data)
+    static Poly2 make_box(const _CpuAccessor(1) data)
     {
-        return Box2(data[0], data[1], data[2], data[3], data[4]);
+        return make_box2(data[0], data[1], data[2], data[3], data[4]);
     }
 };
 template <typename scalar_t>
@@ -21,7 +21,7 @@ struct _BoxUtil<scalar_t, AABox2>
 {
     static AABox2 make_box(const _CpuAccessor(1) data)
     {
-        return Box2(data[0], data[1], data[2], data[3], data[4]).bbox();
+        return make_box2(data[0], data[1], data[2], data[3], data[4]).bbox();
     }
 };
 
@@ -35,7 +35,7 @@ void nms2d_templated(
     const float supression_param, // parameter for supression
     _CpuAccessorT(bool, 1) suppressed_
 ) {
-    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2, Box2>::type;
+    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2, Poly2>::type;
     const int N = boxes_.size(0);
 
     // remove box under score threshold

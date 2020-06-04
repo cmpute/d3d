@@ -20,15 +20,11 @@ struct _BoxUtil
     static CUDA_CALLABLE_MEMBER TBox make_box(const scalar_t* data);
 };
 template <typename scalar_t>
-struct _BoxUtil<scalar_t, Box2>
+struct _BoxUtil<scalar_t, Poly2>
 {
-    static CUDA_CALLABLE_MEMBER Box2 make_box(const _CudaSubAccessor(1) data)
+    static CUDA_CALLABLE_MEMBER Poly2 make_box(const _CudaSubAccessor(1) data)
     {
-        return Box2(data[0], data[1], data[2], data[3], data[4]);
-    }
-    static CUDA_CALLABLE_MEMBER Box2 make_box(const scalar_t* data)
-    {
-        return Box2(data[0], data[1], data[2], data[3], data[4]);
+        return make_box2(data[0], data[1], data[2], data[3], data[4]);
     }
 };
 template <typename scalar_t>
@@ -36,11 +32,7 @@ struct _BoxUtil<scalar_t, AABox2>
 {
     static CUDA_CALLABLE_MEMBER AABox2 make_box(const _CudaSubAccessor(1) data)
     {
-        return Box2(data[0], data[1], data[2], data[3], data[4]).bbox();
-    }
-    static CUDA_CALLABLE_MEMBER AABox2 make_box(const scalar_t* data)
-    {
-        return Box2(data[0], data[1], data[2], data[3], data[4]).bbox();
+        return make_box2(data[0], data[1], data[2], data[3], data[4]).bbox();
     }
 };
 
@@ -53,7 +45,7 @@ __global__ void nms2d_iou_kernel(
     _CudaAccessor(2) iou_coeffs_,
     _CudaAccessorT(bitvec_t, 2) mask_
 ) {
-    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2, Box2>::type;
+    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2, Poly2>::type;
     const int row_start = blockIdx.y;
     const int col_start = blockIdx.x;
     if (row_start > col_start) return; // calculate only blocks in upper triangle part
@@ -61,21 +53,11 @@ __global__ void nms2d_iou_kernel(
     const int row_size = min(boxes_.size(0) - row_start * FLAG_WIDTH, FLAG_WIDTH);
     const int col_size = min(boxes_.size(0) - col_start * FLAG_WIDTH, FLAG_WIDTH);
 
-    __shared__ scalar_t block_boxes[FLAG_WIDTH][5]; // TODO: directly store boxes here. Need to fix Poly2 alignment
-                                                    // https://stackoverflow.com/questions/37323053/misaligned-address-in-cuda
-                                                    // https://stackoverflow.com/questions/12778949/cuda-memory-alignment
-                                                    // https://stackoverflow.com/questions/27570552/templated-cuda-kernel-with-dynamic-shared-memory
-                                                    // or maybe let Poly2 to have dynamic memory with a pointer (use malloc)
-                                                    // https://devblogs.nvidia.com/using-shared-memory-cuda-cc/
-                                                    // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#per-thread-block-allocation
+    __shared__ BoxType block_boxes[FLAG_WIDTH];
     if (threadIdx.x < col_size)
     {
-        #pragma unroll
-        for (int i = 0; i < 5; ++i)
-        {
-            int boxi = order_[FLAG_WIDTH * col_start + threadIdx.x];
-            block_boxes[threadIdx.x][i] = boxes_[boxi][i];
-        }
+        int boxi = order_[FLAG_WIDTH * col_start + threadIdx.x];
+        block_boxes[threadIdx.x] = _BoxUtil<scalar_t, BoxType>::make_box(boxes_[boxi]);
     }
     __syncthreads();
 
@@ -90,8 +72,7 @@ __global__ void nms2d_iou_kernel(
         int start = (row_start == col_start) ? threadIdx.x + 1 : 0; // also calculate only upper part in diagonal blocks
         for (int i = start; i < col_size; i++)
         {
-            BoxType bcomp = _BoxUtil<scalar_t, BoxType>::make_box(block_boxes[i]);
-            scalar_t iou = bcur.iou(bcomp);
+            scalar_t iou = bcur.iou(block_boxes[i]);
             if (iou > iou_threshold)
                 flag |= 1ULL << i; // mark overlap
 
