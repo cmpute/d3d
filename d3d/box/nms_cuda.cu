@@ -1,6 +1,6 @@
 #include "d3d/common.h"
 #include "d3d/box/nms.h"
-#include "d3d/box/geometry.hpp"
+#include "d3d/box/utils.cuh"
 
 using namespace std;
 using namespace torch;
@@ -12,30 +12,6 @@ constexpr int FLAG_BITS = 6; // in the following code, x << FLAG_BITS is the sam
 constexpr int FLAG_WIDTH = 1 << FLAG_BITS;
 static_assert(FLAG_WIDTH == sizeof(bitvec_t) * 8, "Inconsistant flag width!");
 
-
-template <typename scalar_t, typename TBox>
-struct _BoxUtil
-{ 
-    static CUDA_CALLABLE_MEMBER TBox make_box(const _CudaSubAccessor(1) data);
-    static CUDA_CALLABLE_MEMBER TBox make_box(const scalar_t* data);
-};
-template <typename scalar_t>
-struct _BoxUtil<scalar_t, Poly2>
-{
-    static CUDA_CALLABLE_MEMBER Poly2 make_box(const _CudaSubAccessor(1) data)
-    {
-        return make_box2(data[0], data[1], data[2], data[3], data[4]);
-    }
-};
-template <typename scalar_t>
-struct _BoxUtil<scalar_t, AABox2>
-{
-    static CUDA_CALLABLE_MEMBER AABox2 make_box(const _CudaSubAccessor(1) data)
-    {
-        return make_box2(data[0], data[1], data[2], data[3], data[4]).bbox();
-    }
-};
-
 template <typename scalar_t, IouType Iou, SupressionType Supression>
 __global__ void nms2d_iou_kernel(
     const _CudaAccessor(2) boxes_,
@@ -45,28 +21,29 @@ __global__ void nms2d_iou_kernel(
     _CudaAccessor(2) iou_coeffs_,
     _CudaAccessorT(bitvec_t, 2) mask_
 ) {
-    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2, Poly2>::type;
+    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2f, Poly2f>::type;
     const int row_start = blockIdx.y;
     const int col_start = blockIdx.x;
     if (row_start > col_start) return; // calculate only blocks in upper triangle part
 
-    const int row_size = min(boxes_.size(0) - row_start * FLAG_WIDTH, FLAG_WIDTH);
-    const int col_size = min(boxes_.size(0) - col_start * FLAG_WIDTH, FLAG_WIDTH);
+    const int row_size = min(boxes_.size(0) - (row_start << FLAG_BITS), FLAG_WIDTH);
+    const int col_size = min(boxes_.size(0) - (col_start << FLAG_BITS), FLAG_WIDTH);
 
-    __shared__ BoxType block_boxes[FLAG_WIDTH];
+    __shared__ BoxType block_boxes[FLAG_WIDTH]; // FIXME: possible memory leak with non-empty destructor? need profiling
+                                                // https://stackoverflow.com/questions/27230621/cuda-shared-memory-inconsistent-results
     if (threadIdx.x < col_size)
     {
-        int boxi = order_[FLAG_WIDTH * col_start + threadIdx.x];
-        block_boxes[threadIdx.x] = _BoxUtil<scalar_t, BoxType>::make_box(boxes_[boxi]);
+        int boxi = order_[(col_start << FLAG_BITS) + threadIdx.x];
+        block_boxes[threadIdx.x] = _BoxUtilCuda<scalar_t, BoxType>::make_box(boxes_[boxi]);
     }
     __syncthreads();
 
     // calculate suppression in this cropped box
     if (threadIdx.x < row_size)
     {
-        const int idx = FLAG_WIDTH * row_start + threadIdx.x;
+        const int idx = (row_start << FLAG_BITS) + threadIdx.x;
         const int bcur_idx = order_[idx];
-        BoxType bcur = _BoxUtil<scalar_t, BoxType>::make_box(boxes_[bcur_idx]);
+        BoxType bcur = _BoxUtilCuda<scalar_t, BoxType>::make_box(boxes_[bcur_idx]);
 
         int64_t flag = 0;
         int start = (row_start == col_start) ? threadIdx.x + 1 : 0; // also calculate only upper part in diagonal blocks
@@ -105,8 +82,8 @@ __global__ void nms_collect_kernel(
 
     for (int i = 0; i < nboxes; i++)
     {
-        int block_idx = i / FLAG_WIDTH;
-        int thread_idx = i % FLAG_WIDTH;
+        int block_idx = i >> FLAG_BITS;
+        int thread_idx = i & (FLAG_WIDTH-1);
 
         if (remv_[block_idx] & (1ULL << thread_idx)) // already suppressed
             suppressed_[order_[i]] = true; // mark
@@ -119,7 +96,7 @@ __global__ void nms_collect_kernel(
                     for (int k = 0; k < FLAG_WIDTH; k++)
                         if (mask_[i][j] & (1ULL << k))
                         {
-                            int i2 = j * FLAG_WIDTH + k; // TODO: use bit shift to speed up
+                            int i2 = (j << FLAG_BITS) + k;
                             if (remv_[j] & 1ULL << k) // already suppressed
                                 continue;
 

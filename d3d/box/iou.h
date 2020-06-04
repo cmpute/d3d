@@ -1,18 +1,11 @@
 #pragma once
 
 #include <torch/extension.h>
+#include "d3d/box/common.h"
 
-// TODO: make these functions into one with template
-
-torch::Tensor rbox_2d_iou(
-    const torch::Tensor boxes1, const torch::Tensor boxes2
+torch::Tensor iou2d(
+    const torch::Tensor boxes1, const torch::Tensor boxes2, const IouType iou_type
 );
-torch::Tensor rbox_2d_iou_cuda(
-    const torch::Tensor boxes1, const torch::Tensor boxes2
-);
-torch::Tensor box_2d_iou(
-    const torch::Tensor boxes1, const torch::Tensor boxes2
-);
-torch::Tensor box_2d_iou_cuda(
-    const torch::Tensor boxes1, const torch::Tensor boxes2
+torch::Tensor iou2d_cuda(
+    const torch::Tensor boxes1, const torch::Tensor boxes2, const IouType iou_type
 );

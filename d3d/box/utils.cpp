@@ -13,14 +13,14 @@ py::list rbox_2d_crop(Tensor cloud, Tensor boxes)
 
     for (int i = 0; i < boxes_.size(0); i++)
     {
-        Poly2 box = make_box2(boxes_[i][0], boxes_[i][1], boxes_[i][2],
+        Poly2f box = make_box2<float>(boxes_[i][0], boxes_[i][1], boxes_[i][2],
             boxes_[i][3], boxes_[i][4]);
-        AABox2 aabox = box.bbox();
+        AABox2f aabox = box.bbox();
 
         vector<int> box_result;
         for (int j = 0; j < cloud_.size(0); j++)
         {
-            Point2 p (cloud_[j][0], cloud_[j][1]);
+            Point2f p(cloud_[j][0], cloud_[j][1]);
             if (aabox.contains(p) && box.contains(p))
                 box_result.push_back(j);
         }

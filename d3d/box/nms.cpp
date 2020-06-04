@@ -1,29 +1,9 @@
 #include <cmath>
 #include "d3d/box/nms.h"
-#include "d3d/box/geometry.hpp"
+#include "d3d/box/utils.h"
 
 using namespace std;
 using namespace torch;
-
-// template utils
-template <typename scalar_t, typename TBox>
-struct _BoxUtil { static TBox make_box(const _CpuAccessor(1) data); };
-template <typename scalar_t>
-struct _BoxUtil<scalar_t, Poly2>
-{
-    static Poly2 make_box(const _CpuAccessor(1) data)
-    {
-        return make_box2(data[0], data[1], data[2], data[3], data[4]);
-    }
-};
-template <typename scalar_t>
-struct _BoxUtil<scalar_t, AABox2>
-{
-    static AABox2 make_box(const _CpuAccessor(1) data)
-    {
-        return make_box2(data[0], data[1], data[2], data[3], data[4]).bbox();
-    }
-};
 
 template <typename scalar_t, IouType Iou, SupressionType Supression>
 void nms2d_templated(
@@ -35,7 +15,7 @@ void nms2d_templated(
     const float supression_param, // parameter for supression
     _CpuAccessorT(bool, 1) suppressed_
 ) {
-    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2, Poly2>::type;
+    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2f, Poly2f>::type;
     const int N = boxes_.size(0);
 
     // remove box under score threshold
@@ -50,7 +30,7 @@ void nms2d_templated(
         if (suppressed_[i])
             continue;
 
-        BoxType bi = _BoxUtil<scalar_t, BoxType>::make_box(boxes_[i]);
+        BoxType bi = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes_[i]);
         // Supress following boxes with lower score
         for (int _j = _i + 1; _j < N; _j++)
         {
@@ -58,7 +38,7 @@ void nms2d_templated(
             if (suppressed_[j])
                 continue;
 
-            BoxType bj = _BoxUtil<scalar_t, BoxType>::make_box(boxes_[j]);
+            BoxType bj = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes_[j]);
             scalar_t iou = bi.iou(bj);
 
             if (iou > iou_threshold)

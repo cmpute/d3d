@@ -1,8 +1,7 @@
 import torch
 from .box_impl import (
-    box_2d_iou as box_2d_iou_cc, box_2d_iou_cuda,
+    iou2d as iou2d_cc, iou2d_cuda,
     nms2d as nms2d_cc, nms2d_cuda,
-    rbox_2d_iou as rbox_2d_iou_cc, rbox_2d_iou_cuda,
     rbox_2d_crop as rbox_2d_crop_cc,
     IouType, SupressionType)
 
@@ -17,17 +16,12 @@ def box2d_iou(boxes1, boxes2, method="box"):
 
     boxes1, boxes2 = boxes1.contiguous(), boxes2.contiguous()
 
+    iou_type = getattr(IouType, method.upper())
     if boxes1.is_cuda and boxes2.is_cuda:
-        if method == "box":
-            impl = box_2d_iou_cuda
-        elif method == "rbox":
-            impl = rbox_2d_iou_cuda
+        impl = iou2d_cuda
     else:
-        if method == "box":
-            impl = box_2d_iou_cc
-        elif method == "rbox":
-            impl = rbox_2d_iou_cc
-    return impl(boxes1, boxes2)
+        impl = iou2d_cc
+    return impl(boxes1, boxes2, iou_type)
 
 def box2d_nms(boxes, scores, method="box", threshold=0):
     '''
