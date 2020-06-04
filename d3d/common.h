@@ -18,6 +18,8 @@
 #define _CudaAccessorT(t,n) torch::PackedTensorAccessor32<t,n,torch::RestrictPtrTraits>
 #define _cuda_accessor(n) packed_accessor32<scalar_t,n,torch::RestrictPtrTraits>()
 #define _cuda_accessor_t(t,n) packed_accessor32<t,n,torch::RestrictPtrTraits>()
+#define _CudaSubAccessor(n) torch::TensorAccessor<scalar_t,n,torch::RestrictPtrTraits,int32_t>
+#define _CudaSubAccessorT(t,n) torch::TensorAccessor<t,n,torch::RestrictPtrTraits,int32_t>
 
 #define THREADS_COUNT 1024
 

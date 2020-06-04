@@ -176,14 +176,14 @@ Tensor aligned_scatter_forward(
     const Tensor coord, const Tensor image_feature, const AlignType atype
 ) {
     Tensor scatter_feature = torch::empty({coord.size(0), image_feature.size(1)}, image_feature.options());
-    AT_DISPATCH_FLOATING_TYPES(image_feature.scalar_type(), "aligned_scatter_forward", ([&] {
+    AT_DISPATCH_FLOATING_TYPES(image_feature.scalar_type(), "aligned_scatter_forward",
         _SCATTER_DISPATCH_DIM(coord.size(1) - 1, _SCATTER_DISPATCH_ALIGNTYPE(atype, [&] {
             aligned_scatter_forward_templated<scalar_t, Dim, Atype>(
                 coord._cpu_accessor(2),
                 image_feature._cpu_accessor(Dim+2),
                 scatter_feature._cpu_accessor(2));
-        }));
-    }));
+        }))
+    );
     return scatter_feature;
 }
 

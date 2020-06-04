@@ -1,11 +1,11 @@
-# cython: language_level=3, boundscheck=False, wraparound=False
+# cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True
 
 import numpy as np
 cimport numpy as np
 import torch
 from addict import Dict as edict
 
-from libc.math cimport NAN, isnan, M_PI
+from numpy.math cimport NAN, isnan, PI
 from libcpp.vector cimport vector
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
@@ -13,45 +13,47 @@ from libcpp.unordered_set cimport unordered_set
 from d3d.abstraction import ObjectTarget3DArray
 from d3d.box import box2d_iou
 
-cdef inline float weighted_mean(float a, int wa, float b, int wb):
+ctypedef float scalar_t
+
+cdef inline scalar_t weighted_mean(scalar_t a, int wa, scalar_t b, int wb) nogil:
     if wa == 0: return b
     elif wb == 0: return a
     else: return (a * wa + b * wb) / (wa + wb)
 
-cdef int bisect(np.ndarray[ndim=1, dtype=float] arr, float x):
+cdef inline int bisect(scalar_t[:] arr, scalar_t x) nogil:
     '''Cython version of bisect.bisect_left'''
-    cdef int lo=0, hi=arr.size, mid
+    cdef int lo=0, hi=arr.shape[0], mid
     while lo < hi:
         mid = (lo+hi)//2
         if arr[mid] < x: lo = mid+1
         else: hi = mid
     return lo
 
-cdef inline float calc_precision(int tp, int fp):
+cdef inline scalar_t calc_precision(int tp, int fp) nogil:
     if fp == 0: return 1
-    else: return <float>tp / (tp + fp)
-cdef inline float calc_recall(int tp, int fn):
+    else: return <scalar_t>tp / (tp + fp)
+cdef inline scalar_t calc_recall(int tp, int fn) nogil:
     if fn == 0: return 1
-    else: return <float>tp / (tp + fn)
-cdef inline float calc_fscore(int tp, int fp, int fn, float b2):
+    else: return <scalar_t>tp / (tp + fn)
+cdef inline scalar_t calc_fscore(int tp, int fp, int fn, scalar_t b2) nogil:
     return (1+b2) * tp / ((1+b2)*tp + b2*fn + fp)
 
 cdef class ObjectBenchmark:
     '''Benchmark for object detection'''
     # member declarations
     cdef int _pr_nsamples
-    cdef float _min_score
+    cdef scalar_t _min_score
     cdef unordered_set[int] _classes
     cdef object _class_type
-    cdef unordered_map[int, float] _min_overlaps
+    cdef unordered_map[int, scalar_t] _min_overlaps
     cdef np.ndarray _pr_thresholds
 
     # aggregated statistics declarations
     cdef unordered_map[int, int] _total_gt
     cdef unordered_map[int, vector[int]] _total_dt, _tp, _fp, _fn
-    cdef unordered_map[int, vector[float]] _acc_angular, _acc_iou, _acc_box, _acc_dist
+    cdef unordered_map[int, vector[scalar_t]] _acc_angular, _acc_iou, _acc_box, _acc_dist
 
-    def __init__(self, classes, min_overlaps, int pr_sample_count=40, float min_score=0, str pr_sample_scale="log10"):
+    def __init__(self, classes, min_overlaps, int pr_sample_count=40, scalar_t min_score=0, str pr_sample_scale="log10"):
         '''
         Object detection benchmark. Targets association is done by score sorting.
 
@@ -99,10 +101,10 @@ cdef class ObjectBenchmark:
             self._fp[k] = vector[int](self._pr_nsamples, 0)
             self._fn[k] = vector[int](self._pr_nsamples, 0)
 
-            self._acc_angular[k] = vector[float](self._pr_nsamples, NAN)
-            self._acc_iou[k] = vector[float](self._pr_nsamples, NAN)
-            self._acc_box[k] = vector[float](self._pr_nsamples, NAN)
-            self._acc_dist[k] = vector[float](self._pr_nsamples, NAN)
+            self._acc_angular[k] = vector[scalar_t](self._pr_nsamples, NAN)
+            self._acc_iou[k] = vector[scalar_t](self._pr_nsamples, NAN)
+            self._acc_box[k] = vector[scalar_t](self._pr_nsamples, NAN)
+            self._acc_dist[k] = vector[scalar_t](self._pr_nsamples, NAN)
 
     def reset(self):
         for k in self._classes:
@@ -117,17 +119,28 @@ cdef class ObjectBenchmark:
             self._acc_box[k].assign(self._pr_nsamples, NAN)
             self._acc_dist[k].assign(self._pr_nsamples, NAN)
 
-    cdef inline dict _aggregate_stats(self, vector[unordered_map[int, float]]& acc, vector[int]& gt_tags):
+    cdef inline dict _aggregate_stats(self, vector[unordered_map[int, scalar_t]]& acc, vector[int]& gt_tags):
         '''Help put accuracy values into categories'''
-        aggregated = {k: [[] for _ in range(self._pr_nsamples)] for k in self._classes}
+        # init intermediate vars
+        cdef unordered_map[int, vector[scalar_t]] sorted_sum, aggregated
+        cdef unordered_map[int, vector[int]] sorted_count
+        for k in self._classes:
+            sorted_sum[k] = vector[scalar_t](self._pr_nsamples, 0)
+            sorted_count[k] = vector[int](self._pr_nsamples, 0)
+            aggregated[k] = vector[scalar_t](self._pr_nsamples, 0)
+
+        # sort accuracies into categories
         for score_idx in range(self._pr_nsamples):
             for iter in acc[score_idx]:
-                aggregated[gt_tags[iter.first]][score_idx].append(iter.second)
+                sorted_sum[gt_tags[iter.first]][score_idx] += iter.second
+                sorted_count[gt_tags[iter.first]][score_idx] += 1
+
+        # aggregate
         for k in self._classes:
             for score_idx in range(self._pr_nsamples):
-                # assert len(aggregated[k][score_idx]) == tp[k][score_idx]
-                if len(aggregated[k][score_idx]) > 0:
-                    aggregated[k][score_idx] = sum(aggregated[k][score_idx]) / len(aggregated[k][score_idx])
+                # assert sorted_count[k][score_idx] == tp[k][score_idx]
+                if sorted_count[k][score_idx] > 0:
+                    aggregated[k][score_idx] = sorted_sum[k][score_idx] / sorted_count[k][score_idx]
                 else:
                     aggregated[k][score_idx] = NAN
         return aggregated
@@ -138,13 +151,13 @@ cdef class ObjectBenchmark:
         assert gt_boxes.frame == dt_boxes.frame        
 
         # forward definitions
-        cdef int thres_loc, dt_idx, dt_tagv
+        cdef int thres_loc, gt_tagv, dt_idx, dt_tagv
 
         # initialize statistics
         cdef unordered_map[int, int] ngt
         cdef unordered_map[int, vector[int]] tp, fp, fn, ndt
         cdef vector[unordered_map[int, int]] dt_assignment, gt_assignment
-        cdef vector[unordered_map[int, float]] iou_acc, angular_acc, dist_acc, box_acc
+        cdef vector[unordered_map[int, scalar_t]] iou_acc, angular_acc, dist_acc, box_acc
 
         for k in self._classes:
             ngt[k] = 0
@@ -170,7 +183,8 @@ cdef class ObjectBenchmark:
         for gt_idx in range(len(gt_boxes)):
             # skip classes not required
             gt_tag = gt_boxes[gt_idx].tag_top
-            if self._classes.find(gt_tag.value) == self._classes.end():
+            gt_tagv = gt_tag.value
+            if self._classes.find(gt_tagv) == self._classes.end():
                 continue
            
             for order_idx in range(len(order)):
@@ -180,7 +194,7 @@ cdef class ObjectBenchmark:
                     continue
 
                 # true positive if overlap is larger than threshold
-                if iou[gt_idx, dt_idx] > self._min_overlaps[gt_tag.value]:
+                if iou[gt_idx, dt_idx] > self._min_overlaps[gt_tagv]:
                     thres_loc = bisect(self._pr_thresholds, dt_boxes[dt_idx].tag_score)
                     assert thres_loc >= 0, "Box score should be larger than min_score!"
 
@@ -201,15 +215,15 @@ cdef class ObjectBenchmark:
                             gt_boxes[gt_idx].dimension - dt_boxes[dt_idx].dimension)
 
                         angular_acc_cur = (gt_boxes[gt_idx].orientation.inv() * dt_boxes[dt_idx].orientation).magnitude()
-                        angular_acc[score_idx][gt_idx] = angular_acc_cur / M_PI
+                        angular_acc[score_idx][gt_idx] = angular_acc_cur / PI
                     break
 
-            ngt[gt_tag.value] += 1
+            ngt[gt_tagv] += 1
             for score_idx in range(self._pr_nsamples):
                 if gt_assignment[score_idx].find(gt_idx) != gt_assignment[score_idx].end():
-                    tp[gt_tag.value][score_idx] += 1
+                    tp[gt_tagv][score_idx] += 1
                 else:
-                    fn[gt_tag.value][score_idx] += 1
+                    fn[gt_tagv][score_idx] += 1
 
         # compute false positives
         for dt_idx in range(len(dt_boxes)):
@@ -242,6 +256,7 @@ cdef class ObjectBenchmark:
         '''
         Add statistics from get_stats into database
         '''
+        cdef int otp, ntp
         for k in self._classes:
             self._total_gt[k] += stats.ngt[k]
             for i in range(self._pr_nsamples):
@@ -262,32 +277,31 @@ cdef class ObjectBenchmark:
                 self._fp[k][i] += stats.fp[k][i]
                 self._fn[k][i] += stats.fn[k][i]
 
-
-    cdef inline int _get_score_idx(self, float score):
+    cdef inline int _get_score_idx(self, scalar_t score) nogil:
         if isnan(score):
             return self._pr_nsamples // 2
         else:
             return bisect(self._pr_thresholds, score)
     def gt_count(self):
         return self._total_gt
-    def dt_count(self, float score=NAN):
+    def dt_count(self, scalar_t score=NAN):
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(iter.first): iter.second[score_idx] for iter in self._total_dt}
 
-    def tp(self, float score=NAN):
+    def tp(self, scalar_t score=NAN):
         '''Return true positive count. If score is not specified, return the median value'''
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(iter.first): iter.second[score_idx] for iter in self._tp}
-    def fp(self, float score=NAN):
+    def fp(self, scalar_t score=NAN):
         '''Return false positive count. If score is not specified, return the median value'''
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(iter.first): iter.second[score_idx] for iter in self._fp}
-    def fn(self, float score=NAN):
+    def fn(self, scalar_t score=NAN):
         '''Return false negative count. If score is not specified, return the median value'''
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(iter.first): iter.second[score_idx] for iter in self._fn}
 
-    def precision(self, float score=NAN):
+    def precision(self, scalar_t score=NAN):
         cdef int score_idx = self._get_score_idx(score)
         if isnan(score):
             p = {k: [None] * self._pr_nsamples for k in self._classes}
@@ -297,7 +311,7 @@ cdef class ObjectBenchmark:
         else:
             p = {k: calc_precision(self._tp[k][score_idx], self._fp[k][score_idx]) for k in self._classes}
         return p
-    def recall(self, float score=NAN):
+    def recall(self, scalar_t score=NAN):
         cdef int score_idx = self._get_score_idx(score)
         if isnan(score):
             r = {k: [None] * self._pr_nsamples for k in self._classes}
@@ -307,8 +321,8 @@ cdef class ObjectBenchmark:
         else:
             r = {k: calc_recall(self._tp[k][score_idx], self._fn[k][score_idx]) for k in self._classes}
         return r
-    def fscore(self, float score=NAN, float beta=1):
-        cdef float b2 = beta * beta        
+    def fscore(self, scalar_t score=NAN, scalar_t beta=1):
+        cdef scalar_t b2 = beta * beta        
         cdef int score_idx = self._get_score_idx(score)
         if isnan(score):
             fs = {k: [None] * self._pr_nsamples for k in self._classes}
@@ -328,16 +342,16 @@ cdef class ObjectBenchmark:
         area = {k: -np.trapz(p[k], r[k]) for k in self._classes}
         return area
 
-    def acc_iou(self, float score=NAN):
+    def acc_iou(self, scalar_t score=NAN):
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(iter.first): iter.second[score_idx] for iter in self._acc_iou}
-    def acc_box(self, float score=NAN):
+    def acc_box(self, scalar_t score=NAN):
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(iter.first): iter.second[score_idx] for iter in self._acc_box}
-    def acc_dist(self, float score=NAN):
+    def acc_dist(self, scalar_t score=NAN):
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(iter.first): iter.second[score_idx] for iter in self._acc_dist}
-    def acc_angular(self, float score=NAN):
+    def acc_angular(self, scalar_t score=NAN):
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(iter.first): iter.second[score_idx] for iter in self._acc_angular}
 
@@ -345,7 +359,7 @@ cdef class ObjectBenchmark:
         '''
         Print default summary (into returned string)
         '''
-        cdef float score_thres = 0.8
+        cdef scalar_t score_thres = 0.8
         cdef int score_idx = self._get_score_idx(score_thres)
 
         cdef list lines = [''] # prepend an empty line

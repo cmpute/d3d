@@ -1,10 +1,10 @@
 import torch
 from .box_impl import (
     box_2d_iou as box_2d_iou_cc, box_2d_iou_cuda,
-    box_2d_nms as box_2d_nms_cc, box_2d_nms_cuda,
+    nms2d as nms2d_cc, nms2d_cuda,
     rbox_2d_iou as rbox_2d_iou_cc, rbox_2d_iou_cuda,
-    rbox_2d_nms as rbox_2d_nms_cc, rbox_2d_nms_cuda,
-    rbox_2d_crop as rbox_2d_crop_cc)
+    rbox_2d_crop as rbox_2d_crop_cc,
+    IouType, SupressionType)
 
 def box2d_iou(boxes1, boxes2, method="box"):
     '''
@@ -41,20 +41,18 @@ def box2d_nms(boxes, scores, method="box", threshold=0):
     if boxes.numel() == 0:
         return torch.tensor([], dtype=torch.bool)
 
-    order = scores.argsort(descending=True)
+    iou_type = getattr(IouType, method.upper())
+    supression_type = SupressionType.HARD
 
     if boxes.is_cuda and scores.is_cuda:
-        if method == "box":
-            impl = box_2d_nms_cuda
-        elif method == "rbox":
-            impl = rbox_2d_nms_cuda
+        impl = nms2d_cuda
     else:
-        if method == "box":
-            impl = box_2d_nms_cc
-        elif method == "rbox":
-            impl = rbox_2d_nms_cc
+        impl = nms2d_cc
 
-    suppressed = impl(boxes, order, threshold)
+    suppressed = impl(boxes, scores,
+        iou_type, supression_type,
+        threshold, 0, 0
+    )
     return ~suppressed
 
 # TODO: implement softnms

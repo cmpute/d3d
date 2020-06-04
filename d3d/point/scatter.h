@@ -31,7 +31,7 @@
     _SCATTER_DISPATCH_DIM_CASE(3, __VA_ARGS__)                  \
     default:                                                    \
         throw py::value_error("Unsupported dimension size: " + to_string(dim)); \
-    }}()
+    }}
 
 // define function definitions
 enum class AlignType : int { DROP=0, MEAN=1, LINEAR=2, MAX=3, NEAREST=4 };

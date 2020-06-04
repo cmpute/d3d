@@ -10,13 +10,13 @@ using namespace torch;
 // helper class to access tensor to various dimensions
 template <typename scalar_t, int N, int I=0> __device__ inline
 typename std::enable_if<(I==N-1), scalar_t&>::type
-_var_access(TensorAccessor<scalar_t, 1, RestrictPtrTraits, int32_t> accessor, int* coord)
+_var_access(_CudaSubAccessor(1) accessor, int* coord)
 {
     return accessor[coord[I]];
 }
 template <typename scalar_t, int N, int I=0> __device__ inline
 typename std::enable_if<(I<N-1), scalar_t&>::type
-_var_access(TensorAccessor<scalar_t, N-I, RestrictPtrTraits, int32_t> accessor, int* coord)
+_var_access(_CudaSubAccessor(N-I) accessor, int* coord)
 {
     return _var_access<scalar_t, N, I+1>(accessor[coord[I]], coord);
 }
@@ -37,7 +37,7 @@ template<typename scalar_t> __device__ inline int _ceil(scalar_t value)
 template<typename scalar_t, int Dim, AlignType AType> __device__ inline
 void _fill_lcoords(
     const _CudaAccessor(Dim+2)& image_feature_,
-    const TensorAccessor<scalar_t, 1, RestrictPtrTraits, int32_t>& coord_,
+    const _CudaSubAccessor(1)& coord_,
     int lcoord[][Dim], scalar_t lweights[]
 ) {
     constexpr int Neighbor = 1 << Dim;
@@ -228,7 +228,7 @@ Tensor aligned_scatter_forward_cuda(
     Tensor scatter_feature = torch::empty({coord.size(0), image_feature.size(1)}, image_feature.options());
     _SCATTER_DISPATCH_DIM(coord.size(1) - 1, _SCATTER_DISPATCH_ALIGNTYPE(atype, [&] {
         aligned_scatter_forward_templated<Dim, Atype>(coord, image_feature, scatter_feature);
-    }));
+    }))();
     return scatter_feature;
 }
 
@@ -237,5 +237,5 @@ void aligned_scatter_backward_cuda(
 ) {
     _SCATTER_DISPATCH_DIM(coord.size(1) - 1, _SCATTER_DISPATCH_ALIGNTYPE(atype, [&] {
         aligned_scatter_backward_templated<Dim, Atype>(coord, grad, image_grad);
-    }));
+    }))();
 }

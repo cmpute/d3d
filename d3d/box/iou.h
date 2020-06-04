@@ -2,6 +2,8 @@
 
 #include <torch/extension.h>
 
+// TODO: make these functions into one with template
+
 torch::Tensor rbox_2d_iou(
     const torch::Tensor boxes1, const torch::Tensor boxes2
 );

@@ -4,6 +4,6 @@ add_subdirectory(voxel)
 
 add_cython_target(benchmarks CXX)
 add_library(benchmarks MODULE ${benchmarks})
-target_compile_definitions(benchmarks PRIVATE CYTHON_WITHOUT_ASSERTIONS)
+target_compile_definitions(benchmarks PRIVATE $<$<NOT:$<CONFIG:Debug>>:CYTHON_WITHOUT_ASSERTIONS>)
 python_extension_module(benchmarks)
 install(TARGETS benchmarks LIBRARY DESTINATION d3d)

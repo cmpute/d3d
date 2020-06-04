@@ -14,7 +14,7 @@ void box_2d_iou_templated(
     const auto M = boxes2_.size(0);
     parallel_for(0, N*M, 0, [&](int64_t begin, int64_t end)
     {
-        for (int64_t nm = begin; nm < end; nm++) // TODO: use parallel for // TODO: dispatch tensor types
+        for (int64_t nm = begin; nm < end; nm++)
         {
             const int i = nm % N;
             const int j = nm / N;

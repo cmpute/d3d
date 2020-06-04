@@ -23,8 +23,8 @@ struct Box2;
 // implementations
 struct Point2
 {
-    float x, y;
-    CUDA_CALLABLE_MEMBER Point2() : x(0), y(0) {}
+    float x = 0, y = 0;
+    CUDA_CALLABLE_MEMBER Point2() {}
     CUDA_CALLABLE_MEMBER Point2(const float& x_, const float& y_) : x(x_), y(y_) {}
     CUDA_CALLABLE_MEMBER inline Point2 operator+(const Point2& v2) { return Point2(x + v2.x, y + v2.y); }
     CUDA_CALLABLE_MEMBER inline Point2 operator-(const Point2& v2) { return Point2(x - v2.x, y - v2.y); }
@@ -33,8 +33,8 @@ struct Point2
 
 struct Line2
 {
-    float a, b, c; // a*x + b*y + c = 0
-    CUDA_CALLABLE_MEMBER Line2() : a(0), b(0), c(0) {}
+    float a = 0, b = 0, c = 0; // a*x + b*y + c = 0
+    CUDA_CALLABLE_MEMBER Line2() {}
     CUDA_CALLABLE_MEMBER Line2(float x1, float y1, float x2, float y2) :
         a(y2-y1), b(x1-x2), c(x2*y1 - x1*y2) {}
     CUDA_CALLABLE_MEMBER Line2(Point2 p1, Point2 p2) : Line2(p1.x, p1.y, p2.x, p2.y) {}
@@ -63,7 +63,6 @@ struct AABox2 // Axis-aligned 2D box for quick calculation
     CUDA_CALLABLE_MEMBER inline Box2 box() const;
     CUDA_CALLABLE_MEMBER inline float iou(const AABox2 &other) const;
 };
-
 
 template <int MaxPoints> struct Poly2 // Convex polygon with no holes
 {
@@ -120,7 +119,7 @@ template <int MaxPoints> struct Poly2 // Convex polygon with no holes
                     temp.vertices[temp.nvertices++] = edge.intersect(cut);
                 }
             }
-            intersection = temp;
+            intersection = temp; // TODO: implement swap protocol to prevent copy
             temp = Poly2<MaxPoints + MaxPointsOther>();
         }
         return intersection;

@@ -144,4 +144,4 @@ class TestVoxelModule(unittest.TestCase):
         assert torch.all(result[1] == exp_box2)
 
 if __name__ == "__main__":
-    TestVoxelModule().test_iou_apart_boxes()
+    TestVoxelModule().test_nms()
