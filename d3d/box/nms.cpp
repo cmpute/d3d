@@ -24,6 +24,7 @@ void nms2d_templated(
             suppressed_[i] = true;
 
     // main loop
+    // TODO: for soft nms, we should maintain a heap here
     for (int _i = 0; _i < N; _i++)
     {
         int i = order_[_i];
@@ -86,6 +87,6 @@ Tensor nms2d(
                 suppressed._cpu_accessor_t(bool, 1));
         }))
     );
-
+    cout << scores_copy << endl;
     return suppressed;
 }

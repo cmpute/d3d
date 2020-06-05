@@ -50,16 +50,17 @@ __global__ void nms2d_iou_kernel(
         for (int i = start; i < col_size; i++)
         {
             scalar_t iou = bcur.iou(block_boxes[i]);
-            if (iou > iou_threshold)
-                flag |= 1ULL << i; // mark overlap
+            if (iou < iou_threshold)
+                continue;
 
+            flag |= 1ULL << i; // mark overlap
             switch(Supression)
             {
             case SupressionType::LINEAR:
-                iou_coeffs_[idx][i] *= 1 - pow(iou, supression_param); 
+                iou_coeffs_[idx][i] = 1 - pow(iou, supression_param); 
                 break;
             case SupressionType::GAUSSIAN:
-                iou_coeffs_[idx][i] *= exp(-iou * iou / supression_param);
+                iou_coeffs_[idx][i] = exp(-iou * iou / supression_param);
                 break;
             }
         }
@@ -124,9 +125,9 @@ void nms2d_cuda_templated(
     Tensor mask = torch::zeros({nboxes, nblocks}, torch::dtype(bitvec_dtype).device(device));
     Tensor iou_coeffs;
     if (Supression == SupressionType::HARD)
-        iou_coeffs = torch::zeros({0, 0}, boxes.options());
+        iou_coeffs = torch::empty({0, 0}, boxes.options());
     else
-        iou_coeffs = torch::zeros({nboxes, nboxes}, boxes.options());
+        iou_coeffs = torch::ones({nboxes, nboxes}, boxes.options());
 
     dim3 blocks(nblocks, nblocks);
     dim3 threads(FLAG_WIDTH);
@@ -162,18 +163,21 @@ Tensor nms2d_cuda(
     Tensor score_mask = scores > score_threshold;
     Tensor boxes_masked = boxes.index({score_mask});
     Tensor scores_masked = scores.index({score_mask});
-    Tensor order = scores_masked.argsort(-1, true);
-    Tensor suppressed = torch::zeros({boxes_masked.size(0)}, torch::dtype(torch::kBool).device(boxes.device()));
+    Tensor order_masked = scores_masked.argsort(-1, true);
+    Tensor suppressed_masked = torch::zeros({boxes_masked.size(0)}, torch::dtype(torch::kBool).device(boxes.device()));
 
     AT_DISPATCH_FLOATING_TYPES(boxes.scalar_type(), "nms2d_cuda",
         _NMS_DISPATCH_IOUTYPE(iou_type, _NMS_DISPATCH_SUPRESSTYPE(supression_type, [&] {
             nms2d_cuda_templated<scalar_t, Iou, Supression>(
-                boxes_masked, order, scores_masked,
+                boxes_masked, order_masked, scores_masked,
                 iou_threshold, score_threshold, supression_param,
-                suppressed);
+                suppressed_masked);
         }))
     );
 
-    // TODO: return ~score_mask & suppressed
+    Tensor suppressed_idx = torch::where(score_mask)[0].index({suppressed_masked});
+    Tensor suppressed = score_mask.logical_not();
+    suppressed.index_fill_(0, suppressed_idx, true);
+    cout << scores_masked << endl;
     return suppressed;
 }

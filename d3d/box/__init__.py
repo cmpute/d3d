@@ -23,9 +23,12 @@ def box2d_iou(boxes1, boxes2, method="box"):
         impl = iou2d_cc
     return impl(boxes1, boxes2, iou_type)
 
-def box2d_nms(boxes, scores, method="box", threshold=0):
+def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
+    iou_threshold=0, score_threshold=0, supression_param=0):
     '''
     :param method: 'box' - normal box, 'rbox' - rotated box
+
+    Soft-NMS: Bodla, Navaneeth, et al. "Soft-NMS--improving object detection with one line of code." Proceedings of the IEEE international conference on computer vision. 2017.
     '''
     if len(boxes) != len(scores):
         raise ValueError("Numbers of boxes and scores are inconsistent!")
@@ -35,8 +38,11 @@ def box2d_nms(boxes, scores, method="box", threshold=0):
     if boxes.numel() == 0:
         return torch.tensor([], dtype=torch.bool)
 
-    iou_type = getattr(IouType, method.upper())
-    supression_type = SupressionType.HARD
+    iou_type = getattr(IouType, iou_method.upper())
+    supression_type = getattr(SupressionType, supression_method.upper())
+
+    if supression_type != SupressionType.HARD:
+        raise NotImplementedError("Current implementation of supression is incorrect!")
 
     if boxes.is_cuda and scores.is_cuda:
         impl = nms2d_cuda
@@ -45,7 +51,7 @@ def box2d_nms(boxes, scores, method="box", threshold=0):
 
     suppressed = impl(boxes, scores,
         iou_type, supression_type,
-        threshold, 0, 0
+        iou_threshold, score_threshold, supression_param
     )
     return ~suppressed
 
