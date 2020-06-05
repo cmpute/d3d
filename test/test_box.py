@@ -145,7 +145,7 @@ class TestBoxModule(unittest.TestCase):
         # test linear supression
         sthres = 0.099999
         for iou in ['box', 'rbox']:
-            # TODO: to be implemented
+            # TODO: more tests to be implemented
             # mask = box2d_nms(boxes, scores, iou_method=iou, supression_method="linear", score_threshold=sthres)
             # assert torch.all(mask == expected)
             # mask = box2d_nms(boxes.cuda(), scores.cuda(), iou_method=iou, supression_method="linear", score_threshold=sthres)

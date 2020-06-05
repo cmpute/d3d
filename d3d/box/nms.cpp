@@ -8,7 +8,7 @@ using namespace torch;
 template <typename scalar_t, IouType Iou, SupressionType Supression>
 void nms2d_templated(
     const _CpuAccessor(2) boxes_,
-    const _CpuAccessorT(long, 1) order_, // score order
+    _CpuAccessorT(long, 1) order_, // score order
     _CpuAccessor(1) scores_, // original score array
     const float iou_threshold,
     const float score_threshold,
@@ -19,24 +19,31 @@ void nms2d_templated(
     const int N = boxes_.size(0);
 
     // remove box under score threshold
-    for (int i = 0; i < N; i++)
-        if (scores_[i] < score_threshold)
-            suppressed_[i] = true;
+    for (int _i = N - 1; _i > 0; _i--)
+    {
+        int i = order_[_i];
+        if (scores_[i] > score_threshold)
+            break;
+        suppressed_[i] = true;
+    }
 
     // main loop
-    // TODO: for soft nms, we should maintain a heap here
     for (int _i = 0; _i < N; _i++)
     {
         int i = order_[_i];
         if (suppressed_[i])
-            continue;
+        {
+            if (Supression == SupressionType::HARD)
+                continue;
+            else break; // for soft-nms, remaining part are all suppressed
+        }
 
         BoxType bi = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes_[i]);
-        // Supress following boxes with lower score
+        // suppress following boxes with lower score
         for (int _j = _i + 1; _j < N; _j++)
         {
             int j = order_[_j];
-            if (suppressed_[j])
+            if (Supression == SupressionType::HARD && suppressed_[j])
                 continue;
 
             BoxType bj = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes_[j]);
@@ -52,16 +59,36 @@ void nms2d_templated(
                 
                 case SupressionType::LINEAR:
                     scores_[j] *= 1 - pow(iou, supression_param);
-                    if (scores_[j] < score_threshold)
-                        suppressed_[j] = true;
+                    suppressed_[j] = scores_[j] < score_threshold;
                     break;
 
                 case SupressionType::GAUSSIAN:
                     scores_[j] *= exp(-iou*iou/supression_param);
-                    if (scores_[j] < score_threshold)
-                        suppressed_[j] = true;
+                    suppressed_[j] = scores_[j] < score_threshold;
                     break;
                 }
+            }
+        }
+
+        // For soft-NMS, we need to maintain score order
+        if (Supression != SupressionType::HARD)
+        {
+            // find suppression block start
+            int S = N - 1;
+            while (S > _i && !suppressed_[order_[S]]) S--;
+
+            // sort the scores again with simple insertion sort and put suppressed indices into back
+            for (int _j = S - 1; _j > _i; _j--)
+            {
+                int j = order_[_j];
+                int _k = _j + 1;
+                while (_k < S && (suppressed_[j] || // suppression is like score = 0
+                    scores_[order_[_k]] > scores_[j]))
+                {
+                    order_[_k-1] = order_[_k];
+                    _k++;
+                }
+                order_[_k - 1] = j;
             }
         }
     }
@@ -87,6 +114,5 @@ Tensor nms2d(
                 suppressed._cpu_accessor_t(bool, 1));
         }))
     );
-    cout << scores_copy << endl;
     return suppressed;
 }

@@ -41,9 +41,6 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
     iou_type = getattr(IouType, iou_method.upper())
     supression_type = getattr(SupressionType, supression_method.upper())
 
-    if supression_type != SupressionType.HARD:
-        raise NotImplementedError("Current implementation of supression is incorrect!")
-
     if boxes.is_cuda and scores.is_cuda:
         impl = nms2d_cuda
     else:
@@ -54,9 +51,6 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
         iou_threshold, score_threshold, supression_param
     )
     return ~suppressed
-
-# TODO: implement softnms
-# https://github.com/DocF/Soft-NMS/blob/master/softnms_pytorch.py
 
 def box2d_crop(cloud, boxes):
     '''
