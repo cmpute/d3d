@@ -23,6 +23,8 @@ def box2d_iou(boxes1, boxes2, method="box"):
         impl = iou2d_cc
     return impl(boxes1, boxes2, iou_type)
 
+# TODO: implement IoU loss, GIoU, DIoU, CIoU: https://zhuanlan.zhihu.com/p/104236411
+
 def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
     iou_threshold=0, score_threshold=0, supression_param=0):
     '''
