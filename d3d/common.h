@@ -4,8 +4,12 @@
 // CUDA function descriptors
 #ifdef __CUDACC__
 #define CUDA_CALLABLE_MEMBER __host__ __device__
+#define CUDA_RESTRICT __restrict__
+#define CUDA_CONSTANT __constant__
 #else
 #define CUDA_CALLABLE_MEMBER
+#define CUDA_RESTRICT
+#define CUDA_CONSTANT
 #endif 
 
 // abbreviated pytorch accessors

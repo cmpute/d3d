@@ -1,3 +1,5 @@
+#pragma once
+
 #include <torch/extension.h>
 #include "d3d/box/common.h"
 
