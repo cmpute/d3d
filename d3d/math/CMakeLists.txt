@@ -1,5 +1,5 @@
 add_library(math_impl MODULE
-    impl.cpp math.cpp math.cu
+    impl.cpp math.cpp math_cuda.cu
 )
 
 python_extension_module(math_impl)

@@ -42,7 +42,7 @@ template <typename scalar_t> struct Line2
         a(y2-y1), b(x1-x2), c(x2*y1 - x1*y2) {}
     CUDA_CALLABLE_MEMBER Line2(Point2<scalar_t> p1, Point2<scalar_t> p2) : Line2(p1.x, p1.y, p2.x, p2.y) {}
 
-    // Calculate signed distance from point p to a the line
+    // Calculate signed distance from point p to the line
     CUDA_CALLABLE_MEMBER inline scalar_t dist(const Point2<scalar_t>& p) const { return (a*p.x + b*p.y + c) / sqrt(a*a + b*b); }
 
     // Calculate intersection point of two lines
