@@ -53,7 +53,8 @@ class ObjectTarget3D:
     '''
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
     '''
-    def __init__(self, position, orientation, dimension, tag, id=None):
+    def __init__(self, position, orientation, dimension, tag,
+        id=None, position_var=None, orientation_var=None, dimension_var=None):
         '''
         :param position: Position of object center (x,y,z)
         :param orientation: Object heading (direction of x-axis attached on body)
@@ -82,6 +83,9 @@ class ObjectTarget3D:
             raise ValueError("Label should be of type ObjectTag")
 
         self.id = id
+        self.position_var = position_var or np.zeros((3, 3))
+        self.dimension_var = dimension_var or np.zeros((3, 3))
+        self.orientation_var = orientation_var or 0
 
     @property
     def tag_top(self):

@@ -28,13 +28,16 @@ __global__ void nms2d_iou_kernel(
 
     const int row_size = min(boxes_.size(0) - (row_start << FLAG_BITS), FLAG_WIDTH);
     const int col_size = min(boxes_.size(0) - (col_start << FLAG_BITS), FLAG_WIDTH);
+    __shared__ scalar_t block_boxes[FLAG_WIDTH][5];
 
-    __shared__ BoxType block_boxes[FLAG_WIDTH]; // FIXME: possible memory leak with non-empty destructor? need profiling
-                                                // https://stackoverflow.com/questions/27230621/cuda-shared-memory-inconsistent-results
     if (threadIdx.x < col_size)
     {
-        int boxi = order_[(col_start << FLAG_BITS) + threadIdx.x];
-        block_boxes[threadIdx.x] = _BoxUtilCuda<scalar_t, BoxType>::make_box(boxes_[boxi]);
+        #pragma unroll
+        for (int i = 0; i < 5; ++i)
+        {
+            int boxi = order_[FLAG_WIDTH * col_start + threadIdx.x];
+            block_boxes[threadIdx.x][i] = boxes_[boxi][i];
+        }
     }
     __syncthreads();
 
@@ -49,7 +52,8 @@ __global__ void nms2d_iou_kernel(
         int start = (row_start == col_start) ? threadIdx.x + 1 : 0; // also calculate only upper part in diagonal blocks
         for (int i = start; i < col_size; i++)
         {
-            scalar_t iou = bcur.iou(block_boxes[i]);
+            BoxType bcomp = _BoxUtilCuda<scalar_t, BoxType>::make_box(block_boxes[i]);
+            scalar_t iou = bcur.iou(bcomp);
             if (iou <= iou_threshold)
                 continue;
 

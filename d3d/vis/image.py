@@ -38,3 +38,5 @@ def visualize_detections(image, image_frame, targets: ObjectTarget3DArray, calib
         # draw direction
         cv2.line(image, (uv[-2,0], uv[-2,1]), (uv[-1,0], uv[-1,1]), color, thickness)
     return image
+
+# TODO: add BEV visualization

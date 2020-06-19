@@ -14,8 +14,6 @@ def box2d_iou(boxes1, boxes2, method="box"):
     if boxes1.shape[1] != 5 or boxes2.shape[1] != 5:
         raise ValueError("Input boxes should have 5 fields: x, y, w, h, r")
 
-    boxes1, boxes2 = boxes1.contiguous(), boxes2.contiguous()
-
     iou_type = getattr(IouType, method.upper())
     if boxes1.is_cuda and boxes2.is_cuda:
         impl = iou2d_cuda

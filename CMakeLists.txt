@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
 project(D3D LANGUAGES C CXX CUDA VERSION 1.0)
 
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    set(CMAKE_CUDA_FLAGS_DEBUG "-G -g") # disable CUDA optimization
+endif()
+
 find_package(Torch REQUIRED)
 find_package(PythonExtensions REQUIRED)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})

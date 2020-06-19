@@ -2,6 +2,7 @@
 
 import numpy as np
 cimport numpy as np
+import scipy.stats as sps
 import torch
 from addict import Dict as edict
 
@@ -51,7 +52,7 @@ cdef class ObjectBenchmark:
     # aggregated statistics declarations
     cdef unordered_map[int, int] _total_gt
     cdef unordered_map[int, vector[int]] _total_dt, _tp, _fp, _fn
-    cdef unordered_map[int, vector[scalar_t]] _acc_angular, _acc_iou, _acc_box, _acc_dist
+    cdef unordered_map[int, vector[scalar_t]] _acc_angular, _acc_iou, _acc_box, _acc_dist, _acc_var
 
     def __init__(self, classes, min_overlaps, int pr_sample_count=40, scalar_t min_score=0, str pr_sample_scale="log10"):
         '''
@@ -105,6 +106,7 @@ cdef class ObjectBenchmark:
             self._acc_iou[k] = vector[scalar_t](self._pr_nsamples, NAN)
             self._acc_box[k] = vector[scalar_t](self._pr_nsamples, NAN)
             self._acc_dist[k] = vector[scalar_t](self._pr_nsamples, NAN)
+            self._acc_var[k] = vector[scalar_t](self._pr_nsamples, NAN)
 
     def reset(self):
         for k in self._classes:
@@ -118,6 +120,7 @@ cdef class ObjectBenchmark:
             self._acc_iou[k].assign(self._pr_nsamples, NAN)
             self._acc_box[k].assign(self._pr_nsamples, NAN)
             self._acc_dist[k].assign(self._pr_nsamples, NAN)
+            self._acc_var[k].assign(self._pr_nsamples, NAN)
 
     cdef inline dict _aggregate_stats(self, vector[unordered_map[int, scalar_t]]& acc, vector[int]& gt_tags):
         '''Help put accuracy values into categories'''
@@ -157,7 +160,7 @@ cdef class ObjectBenchmark:
         cdef unordered_map[int, int] ngt
         cdef unordered_map[int, vector[int]] tp, fp, fn, ndt
         cdef vector[unordered_map[int, int]] dt_assignment, gt_assignment
-        cdef vector[unordered_map[int, scalar_t]] iou_acc, angular_acc, dist_acc, box_acc
+        cdef vector[unordered_map[int, scalar_t]] iou_acc, angular_acc, dist_acc, box_acc, var_acc
 
         for k in self._classes:
             ngt[k] = 0
@@ -173,6 +176,7 @@ cdef class ObjectBenchmark:
             angular_acc.resize(self._pr_nsamples)
             dist_acc.resize(self._pr_nsamples)
             box_acc.resize(self._pr_nsamples)
+            var_acc.resize(self._pr_nsamples)
 
         # calculate iou and sort by score
         gt_array = gt_boxes.to_torch().float()
@@ -216,6 +220,16 @@ cdef class ObjectBenchmark:
 
                         angular_acc_cur = (gt_boxes[gt_idx].orientation.inv() * dt_boxes[dt_idx].orientation).magnitude()
                         angular_acc[score_idx][gt_idx] = angular_acc_cur / PI
+
+                        if dt_boxes[dt_idx].orientation_var > 0:
+                            var_acc_cur = sps.multivariate_normal.logpdf(gt_boxes[gt_idx].position,
+                                dt_boxes[dt_idx].position, cov=dt_boxes[dt_idx].position_var)
+                            var_acc_cur += sps.multivariate_normal.logpdf(gt_boxes[gt_idx].dimension,
+                                dt_boxes[dt_idx].dimension, cov=dt_boxes[dt_idx].dimension_var)
+                            var_acc_cur += sps.vonmises.logpdf(angular_acc_cur, kappa=1/dt_boxes[dt_idx].orientation_var)
+                            var_acc[score_idx][gt_idx] = var_acc_cur
+                        else:
+                            var_acc[score_idx][gt_idx] = -np.inf
                     break
 
             ngt[gt_tagv] += 1
@@ -249,7 +263,8 @@ cdef class ObjectBenchmark:
             acc_iou=self._aggregate_stats(iou_acc, gt_tags),
             acc_angular=self._aggregate_stats(angular_acc, gt_tags),
             acc_dist=self._aggregate_stats(dist_acc, gt_tags),
-            acc_box=self._aggregate_stats(box_acc, gt_tags)
+            acc_box=self._aggregate_stats(box_acc, gt_tags),
+            acc_var=self._aggregate_stats(var_acc, gt_tags)
         )
 
     def add_stats(self, stats):
@@ -270,6 +285,8 @@ cdef class ObjectBenchmark:
                     self._acc_iou[k][i], otp, stats.acc_iou[k][i], ntp)
                 self._acc_dist[k][i] = weighted_mean(
                     self._acc_dist[k][i], otp, stats.acc_dist[k][i], ntp)
+                self._acc_var[k][i] = weighted_mean(
+                    self._acc_var[k][i], otp, stats.acc_var[k][i], ntp)
 
                 # aggregate common stats
                 self._total_dt[k][i] += stats.ndt[k][i]
@@ -381,6 +398,7 @@ cdef class ObjectBenchmark:
             lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._acc_angular[k][score_idx]))
             lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._acc_dist[k][score_idx]))
             lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._acc_box[k][score_idx]))
+            lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._acc_var[k][score_idx]))
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)
