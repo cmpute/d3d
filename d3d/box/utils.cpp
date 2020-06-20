@@ -13,7 +13,7 @@ py::list rbox_2d_crop(Tensor cloud, Tensor boxes)
 
     for (int i = 0; i < boxes_.size(0); i++)
     {
-        Poly2f box = make_box2<float>(boxes_[i][0], boxes_[i][1], boxes_[i][2],
+        Box2f box(boxes_[i][0], boxes_[i][1], boxes_[i][2],
             boxes_[i][3], boxes_[i][4]);
         AABox2f aabox = box.bbox();
 

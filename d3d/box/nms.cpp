@@ -15,7 +15,7 @@ void nms2d_templated(
     const float supression_param, // parameter for supression
     _CpuAccessorT(bool, 1) suppressed_
 ) {
-    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2f, Poly2f>::type;
+    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2f, Box2f>::type;
     const int N = boxes_.size(0);
 
     // remove box under score threshold

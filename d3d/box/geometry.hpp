@@ -14,14 +14,14 @@
 template <typename scalar_t = float> struct Point2;
 template <typename scalar_t = float> struct Line2;
 template <typename scalar_t = float> struct AABox2;
-template <typename scalar_t = float> struct Poly2;
+template <typename scalar_t, int MaxPoints> struct Poly2;
 template <typename scalar_t = float> struct Box2;
 
-typedef Point2<float> Point2f;
-typedef Line2<float> Line2f;
-typedef AABox2<float> AABox2f;
-typedef Poly2<float> Poly2f;
-typedef Box2<float> Box2f;
+using Point2f = Point2<float>;
+using Line2f = Line2<float>;
+using AABox2f = AABox2<float>;
+template <int MaxPoints> using Poly2f = Poly2<float, MaxPoints>;
+using Box2f = Box2<float>;
 
 // implementations
 template <typename scalar_t> struct Point2
@@ -94,30 +94,23 @@ template <typename scalar_t> struct AABox2 // Axis-aligned 2D box for quick calc
         scalar_t area_u = area() + other.area() - area_i;
         return area_i / area_u;
     }
-    CUDA_CALLABLE_MEMBER inline Poly2<scalar_t> poly() const;
+    CUDA_CALLABLE_MEMBER inline Box2<scalar_t> box() const;
 };
 
-template <typename scalar_t> struct Poly2 // Convex polygon with no holes
+template <typename scalar_t, int MaxPoints> struct Poly2 // Convex polygon with no holes
 {
-    Point2<scalar_t> *vertices = nullptr; // vertices in counter-clockwise order
-    int64_t nvertices = 0; // actual number of vertices
-
+    Point2<scalar_t> vertices[MaxPoints]; // vertices in counter-clockwise order
+    size_t nvertices = 0; // actual number of vertices
     CUDA_CALLABLE_MEMBER Poly2() {}
-    CUDA_CALLABLE_MEMBER ~Poly2()
-    {
-        if (vertices != nullptr)
-        {
-            delete[] vertices;
-            vertices = nullptr;
-        }
-    }
 
-    CUDA_CALLABLE_MEMBER void operator=(const Poly2<scalar_t> &other)
+    template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
+    Poly2<scalar_t, MaxPoints>& operator=(Poly2<scalar_t, MaxPointsOther> const &other)
     {
-        vertices = new Point2<scalar_t>[other.nvertices];
+        assert(other.nvertices <= MaxPoints);
         nvertices = other.nvertices;
         for (size_t i = 0; i < other.nvertices; i++)
             vertices[i] = other.vertices[i];
+        return *this;
     }
 
     // Calculate inner area
@@ -133,61 +126,43 @@ template <typename scalar_t> struct Poly2 // Convex polygon with no holes
         return sum / 2;
     }
 
-    CUDA_CALLABLE_MEMBER Poly2<scalar_t> intersect(const Poly2<scalar_t> &other) const
+    template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
+    Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect(const Poly2<scalar_t, MaxPointsOther> &other) const
     // XXX: if to make the intersection differentialble, need to store which points are selected
     //      e.g. self points are indexed from 1 to n, other points are indexed from -1 to -n, 0 is reserved for tensor padding
     {
-        Point2<scalar_t> *intersection_p, *temp_p; // start with original polygon
-        int intersection_n = nvertices, temp_n = 0;
-        const int max_nvertices = nvertices + other.nvertices;
-
-        intersection_p = new Point2<scalar_t>[max_nvertices];
-        temp_p = new Point2<scalar_t>[max_nvertices];
-        scalar_t *signs = new float[max_nvertices];
-        for (size_t i = 0; i < nvertices; i++)
-            intersection_p[i] = vertices[i];
-
+        using PolyT = Poly2<scalar_t, MaxPoints + MaxPointsOther>;
+        PolyT temp1, temp2; // declare variables to store temporary results
+        PolyT *pcut = &(temp1 = *this), *ptemp = &temp2; // start with original polygon
         for (size_t j = 0; j < other.nvertices; j++) // loop over edges of polygon doing cut
         {
             Line2<scalar_t> edge(other.vertices[j], other.vertices[(j+1) % other.nvertices]);
 
-            for (size_t i = 0; i < intersection_n; i++) // caculate
-                signs[i] = edge.dist(intersection_p[i]);
+            scalar_t signs[MaxPoints + MaxPointsOther];
+            for (size_t i = 0; i < pcut->nvertices; i++) // caculate
+                signs[i] = edge.dist(pcut->vertices[i]);
 
-            for (size_t i = 0; i < intersection_n; i++) // loop over edges of polygon to be cut
+            for (size_t i = 0; i < pcut->nvertices; i++) // loop over edges of polygon to be cut
             {
                 if (signs[i] <= 0)
-                    temp_p[temp_n++] = intersection_p[i];
+                    ptemp->vertices[ptemp->nvertices++] = pcut->vertices[i];
 
-                size_t inext = i == (intersection_n-1) ? 0 : i+1;
+                size_t inext = i == (pcut->nvertices-1) ? 0 : i+1;
                 if (signs[i] * signs[inext] < 0)
                 {
-                    Line2<scalar_t> cut(intersection_p[i], intersection_p[inext]);
-                    temp_p[temp_n++] = edge.intersect(cut);
+                    Line2<scalar_t> cut(pcut->vertices[i], pcut->vertices[inext]);
+                    ptemp->vertices[ptemp->nvertices++] = edge.intersect(cut);
                 }
             }
 
-            Point2<scalar_t> *t = intersection_p;
-            intersection_p = temp_p;
-            temp_p = t;
-            intersection_n = temp_n;
-            temp_n = 0;
+            PolyT* p = pcut; pcut = ptemp; ptemp = p; // swap
+            ptemp->nvertices = 0;
         }
-
-        Poly2<scalar_t> intersection;
-        intersection.nvertices = intersection_n;
-        intersection.vertices = new Point2<scalar_t>[intersection_n];
-        for (size_t i = 0; i < intersection_n; i++)
-            intersection.vertices[i] = intersection_p[i];
-
-        delete[] intersection_p;
-        delete[] temp_p;
-        delete[] signs;
-        
-        return intersection;
+        return *pcut;
     }
 
-    CUDA_CALLABLE_MEMBER inline scalar_t iou(const Poly2 &other) const
+    template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
+    inline scalar_t iou(const Poly2<scalar_t, MaxPointsOther> &other) const
     {
         scalar_t area_i = intersect(other).area();
         scalar_t area_u = area() + other.area() - area_i;
@@ -225,36 +200,24 @@ template <typename scalar_t> struct Poly2 // Convex polygon with no holes
     }
 };
 
-
-template <typename scalar_t = float>
-CUDA_CALLABLE_MEMBER inline Poly2<scalar_t> make_box2(const scalar_t& x, const scalar_t& y,
-    const scalar_t& w, const scalar_t& h, const scalar_t& r)
+template <typename scalar_t> struct Box2 : Poly2<scalar_t, 4>
 {
-    Poly2<scalar_t> poly;
-    scalar_t dxsin = w*sin(r)/2, dxcos = w*cos(r)/2;
-    scalar_t dysin = h*sin(r)/2, dycos = h*cos(r)/2;
-    
-    poly.nvertices = 4;
-    poly.vertices = new Point2<scalar_t>[4];
-    poly.vertices[0] = Point2<scalar_t>(x - dxcos + dysin, y - dxsin - dycos);
-    poly.vertices[1] = Point2<scalar_t>(x + dxcos + dysin, y + dxsin - dycos);
-    poly.vertices[2] = Point2<scalar_t>(x + dxcos - dysin, y + dxsin + dycos);
-    poly.vertices[3] = Point2<scalar_t>(x - dxcos - dysin, y - dxsin + dycos);
+    using Poly2<scalar_t, 4>::nvertices;
+    using Poly2<scalar_t, 4>::vertices;
 
-    return poly;
-}
-
-template <typename scalar_t>
-CUDA_CALLABLE_MEMBER inline Poly2<scalar_t> AABox2<scalar_t>::poly() const
-{
-    Poly2<scalar_t> result;
-    result.nvertices = 4;
-    result.vertices = new Point2<scalar_t>[4];
-    result.vertices[0] = Point2<scalar_t>(min_x, min_y);
-    result.vertices[1] = Point2<scalar_t>(max_x, min_y);
-    result.vertices[2] = Point2<scalar_t>(max_x, max_y);
-    result.vertices[3] = Point2<scalar_t>(min_x, max_y);
-    return result;
-}
+    CUDA_CALLABLE_MEMBER Box2() {}
+    CUDA_CALLABLE_MEMBER Box2(const scalar_t& x, const scalar_t& y,
+        const scalar_t& w, const scalar_t& h, const scalar_t& r)
+    {
+        scalar_t dxsin = w*sin(r)/2, dxcos = w*cos(r)/2;
+        scalar_t dysin = h*sin(r)/2, dycos = h*cos(r)/2;
+        
+        nvertices = 4;
+        vertices[0] = Point2<scalar_t>(x - dxcos + dysin, y - dxsin - dycos);
+        vertices[1] = Point2<scalar_t>(x + dxcos + dysin, y + dxsin - dycos);
+        vertices[2] = Point2<scalar_t>(x + dxcos - dysin, y + dxsin + dycos);
+        vertices[3] = Point2<scalar_t>(x - dxcos - dysin, y - dxsin + dycos);
+    }
+};
 
 #endif // D3D_GEOMETRY_HPP

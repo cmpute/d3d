@@ -21,7 +21,7 @@ __global__ void nms2d_iou_kernel(
     _CudaAccessor(2) iou_coeffs_, // store suppression coefficients
     _CudaAccessorT(bitvec_t, 2) iou_mask_ // store suppression masks
 ) {
-    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2f, Poly2f>::type;
+    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2f, Box2f>::type;
     const int row_start = blockIdx.y;
     const int col_start = blockIdx.x;
     if (row_start > col_start) return; // calculate only blocks in upper triangle part

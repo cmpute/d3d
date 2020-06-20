@@ -11,7 +11,7 @@ __global__ void iou2d_kernel(
     const _CudaAccessor(2) boxes2_,
     _CudaAccessor(2) ious_
 ) {
-    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2f, Poly2f>::type;
+    using BoxType = typename std::conditional<Iou == IouType::BOX, AABox2f, Box2f>::type;
     const int nm = blockIdx.x * blockDim.x + threadIdx.x;    
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
