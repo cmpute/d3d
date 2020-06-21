@@ -10,6 +10,10 @@
 #include <limits>
 #include "d3d/common.h"
 
+#ifndef GEOMETRY_EPS
+    #define GEOMETRY_EPS 1e-6 // numerical eps used in the library
+#endif
+
 // forward declarations
 template <typename scalar_t = float> struct Point2;
 template <typename scalar_t = float> struct Line2;
@@ -38,11 +42,13 @@ template <typename scalar_t> struct Line2
 {
     scalar_t a = NAN, b = NAN, c = NAN; // a*x + b*y + c = 0
     CUDA_CALLABLE_MEMBER Line2() {}
+    // Note that the order of points matters
     CUDA_CALLABLE_MEMBER Line2(scalar_t x1, scalar_t y1, scalar_t x2, scalar_t y2) :
         a(y2-y1), b(x1-x2), c(x2*y1 - x1*y2) {}
     CUDA_CALLABLE_MEMBER Line2(Point2<scalar_t> p1, Point2<scalar_t> p2) : Line2(p1.x, p1.y, p2.x, p2.y) {}
 
     // Calculate signed distance from point p to the line
+    // The distance is negative if the point is at left hand side wrt the direction of line (x1y1 -> x2y2)
     CUDA_CALLABLE_MEMBER inline scalar_t dist(const Point2<scalar_t>& p) const { return (a*p.x + b*p.y + c) / sqrt(a*a + b*b); }
 
     // Calculate intersection point of two lines
@@ -119,13 +125,14 @@ template <typename scalar_t, int MaxPoints> struct Poly2 // Convex polygon with 
         if (nvertices <= 2)
             return 0;
 
-        scalar_t sum = vertices[nvertices - 1].x*vertices[0].y // deal with head and tail first
-                     - vertices[0].x*vertices[nvertices - 1].y;
+        scalar_t sum = vertices[nvertices-1].x*vertices[0].y // deal with head and tail first
+                     - vertices[nvertices-1].y*vertices[0].x;
         for (size_t i = 1; i < nvertices; i++)
             sum += vertices[i-1].x*vertices[i].y - vertices[i].x*vertices[i-1].y;
         return sum / 2;
     }
 
+    // Sutherland-Hodgman https://stackoverflow.com/a/45268241/5960776
     template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
     Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect(const Poly2<scalar_t, MaxPointsOther> &other) const
     // XXX: if to make the intersection differentialble, need to store which points are selected
@@ -134,21 +141,23 @@ template <typename scalar_t, int MaxPoints> struct Poly2 // Convex polygon with 
         using PolyT = Poly2<scalar_t, MaxPoints + MaxPointsOther>;
         PolyT temp1, temp2; // declare variables to store temporary results
         PolyT *pcut = &(temp1 = *this), *ptemp = &temp2; // start with original polygon
+
         for (size_t j = 0; j < other.nvertices; j++) // loop over edges of polygon doing cut
         {
-            Line2<scalar_t> edge(other.vertices[j], other.vertices[(j+1) % other.nvertices]);
+            size_t jnext = (j == other.nvertices-1) ? 0 : j+1;
+            Line2<scalar_t> edge(other.vertices[j], other.vertices[jnext]);
 
             scalar_t signs[MaxPoints + MaxPointsOther];
-            for (size_t i = 0; i < pcut->nvertices; i++) // caculate
+            for (size_t i = 0; i < pcut->nvertices; i++)
                 signs[i] = edge.dist(pcut->vertices[i]);
 
             for (size_t i = 0; i < pcut->nvertices; i++) // loop over edges of polygon to be cut
             {
-                if (signs[i] <= 0)
+                if (signs[i] < GEOMETRY_EPS) // eps is used for numerical stable when the boxes are very close
                     ptemp->vertices[ptemp->nvertices++] = pcut->vertices[i];
 
-                size_t inext = i == (pcut->nvertices-1) ? 0 : i+1;
-                if (signs[i] * signs[inext] < 0)
+                size_t inext = (i == pcut->nvertices-1) ? 0 : i+1;
+                if (signs[i] * signs[inext] < -GEOMETRY_EPS)
                 {
                     Line2<scalar_t> cut(pcut->vertices[i], pcut->vertices[inext]);
                     ptemp->vertices[ptemp->nvertices++] = edge.intersect(cut);
@@ -164,7 +173,7 @@ template <typename scalar_t, int MaxPoints> struct Poly2 // Convex polygon with 
     template <int MaxPointsOther> CUDA_CALLABLE_MEMBER
     inline scalar_t iou(const Poly2<scalar_t, MaxPointsOther> &other) const
     {
-        scalar_t area_i = intersect(other).area();
+        scalar_t area_i = intersect<MaxPointsOther>(other).area();
         scalar_t area_u = area() + other.area() - area_i;
         return area_i / area_u;
     }

@@ -118,7 +118,30 @@ class TestBoxModule(unittest.TestCase):
             mask = box2d_nms(boxes.cuda(), scores.cuda())
             assert torch.all(mask == mask_expected.cuda())
 
-    def test_nms_large(self):
+    def test_iou_self(self):
+        angles = [0.183802, 0.47705078, 0.69445676, 0.7366754, 0.9669602]
+        box = torch.tensor([[0,0,2,2,a] for a in angles])
+        for iou in ['box', 'rbox']:
+            result = box2d_iou(box, box, method=iou)
+            assert torch.all(torch.diag(result) == 1)
+
+    def test_iou_large_array(self):
+        n = 5000
+        x = torch.rand(n)*200
+        y = torch.rand(n)*400
+        w = torch.rand(n)*20 + 10
+        h = torch.rand(n)*30 + 5
+        r = torch.rand(n)*2 - 1
+        boxes = torch.stack((x,y,w,h,r), dim=1)
+
+        eps = 1e-3
+        for iou in ['box', 'rbox']:
+            result = box2d_iou(boxes, boxes, method=iou)
+            assert torch.all(result >= -eps) and torch.all(result <= (1+eps))
+            result = box2d_iou(boxes.cuda(), boxes.cuda(), method=iou)
+            assert torch.all(result >= -eps) and torch.all(result <= (1+eps))
+
+    def test_nms_large_array(self):
         n = 5000
         x = torch.rand(n)*200
         y = torch.rand(n)*400
@@ -128,10 +151,11 @@ class TestBoxModule(unittest.TestCase):
         boxes = torch.stack((x,y,w,h,r), dim=1)
         scores = torch.rand(n)
 
-        result = box2d_nms(boxes, scores, iou_method="rbox", iou_threshold=0.3)
-        assert result.shape[0] == n
-        result = box2d_nms(boxes.cuda(), scores.cuda(), iou_method="rbox", iou_threshold=0.3)
-        assert result.shape[0] == n
+        for iou in ['box', 'rbox']:
+            result = box2d_nms(boxes, scores, iou_method=iou, iou_threshold=0.3)
+            assert result.shape[0] == n
+            result = box2d_nms(boxes.cuda(), scores.cuda(), iou_method=iou, iou_threshold=0.3)
+            assert result.shape[0] == n
 
     def test_softnms(self):
         boxes = torch.tensor([
