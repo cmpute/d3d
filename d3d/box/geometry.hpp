@@ -3,6 +3,10 @@
  * One can turn to boost.geometry or CGAL for a complete functionality of geometry operations.
  */
 
+// TODO: to implement gradients, we need to reconstruct these class member functions to standalone function
+// For example, previously we have poly1.intersect(poly2), we should have intersect(poly1, poly2, out poly) and 
+// intersect(poly1, poly2, poly_grad, out poly1_grad, out poly2_grad)
+
 #ifndef D3D_GEOMETRY_HPP
 #define D3D_GEOMETRY_HPP
 
@@ -137,6 +141,8 @@ template <typename scalar_t, int MaxPoints> struct Poly2 // Convex polygon with 
     Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect(const Poly2<scalar_t, MaxPointsOther> &other) const
     // XXX: if to make the intersection differentialble, need to store which points are selected
     //      e.g. self points are indexed from 1 to n, other points are indexed from -1 to -n, 0 is reserved for tensor padding
+    //      a solution is using 32bit integer to store the flag, 15bit for each polygon point index and leftmost 2bits for mode:
+    //           (10 means poly1 vertex, 01 means poly2 vertex, 11 means intersection of two edges)
     {
         using PolyT = Poly2<scalar_t, MaxPoints + MaxPointsOther>;
         PolyT temp1, temp2; // declare variables to store temporary results

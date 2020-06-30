@@ -45,10 +45,10 @@ def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targ
         aux_text = []
         if target.tag_score < 1:
             aux_text.append("%.2f" % target.tag_score)
-        position_var = np.power(np.linalg.det(target.position_var), 1/3)
+        position_var = np.power(np.linalg.det(target.position_var), 1/6) # display standard deviation
         if position_var > 0:
             aux_text.append("%.2f" % position_var)
-        dimension_var = np.power(np.linalg.det(target.dimension_var), 1/3)
+        dimension_var = np.power(np.linalg.det(target.dimension_var), 1/6)
         if dimension_var > 0:
             aux_text.append("%.2f" % dimension_var)
         if target.orientation_var > 0:
