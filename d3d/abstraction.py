@@ -1,6 +1,8 @@
 import enum
 import logging
+import pickle
 from collections import namedtuple
+from pathlib import Path
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -154,6 +156,17 @@ class ObjectTarget3DArray(list):
     def to_torch(self, box_type="ground"):
         import torch
         return torch.tensor(self.to_numpy(box_type=box_type))
+
+    def dump(self, output):
+        if isinstance(output, (str, Path)):
+            with Path(output).open('wb') as fout:
+                pickle.dump(self, fout)
+
+    @staticmethod
+    def load(output):
+        if isinstance(output, (str, Path)):
+            with Path(output).open('rb') as fout:
+                return pickle.load(fout)
 
     def __str__(self):
         return "<ObjectTarget3DArray with %d objects>" % len(self)

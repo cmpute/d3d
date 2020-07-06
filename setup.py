@@ -37,6 +37,7 @@ setup(
         'console_scripts': [
             'd3d_waymo_convert = d3d.dataset.waymo.converter:main',
             'd3d_nuscenes_convert = d3d.dataset.nuscenes.converter:main',
+            'd3d_kitti_parse_result = d3d.dataset.kitti.object:parse_detection_output',
         ],
     },
     cmake_args=[f'-DCMAKE_PREFIX_PATH={torch_root}']

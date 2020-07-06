@@ -6,7 +6,7 @@ import scipy.stats as sps
 import torch
 from addict import Dict as edict
 
-from numpy.math cimport NAN, isnan, PI
+from numpy.math cimport NAN, isnan, PI, isinf
 from libcpp.vector cimport vector
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
@@ -39,7 +39,7 @@ cdef inline scalar_t calc_recall(int tp, int fn) nogil:
 cdef inline scalar_t calc_fscore(int tp, int fp, int fn, scalar_t b2) nogil:
     return (1+b2) * tp / ((1+b2)*tp + b2*fn + fp)
 
-cdef class ObjectBenchmark:
+cdef class ObjectBenchmark: # TODO: rename as evaluator
     '''Benchmark for object detection'''
     # member declarations
     cdef int _pr_nsamples
@@ -398,7 +398,8 @@ cdef class ObjectBenchmark:
             lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._acc_angular[k][score_idx]))
             lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._acc_dist[k][score_idx]))
             lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._acc_box[k][score_idx]))
-            lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._acc_var[k][score_idx]))
+            if not isinf(self._acc_var[k][score_idx]):
+                lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._acc_var[k][score_idx]))
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)
