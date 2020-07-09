@@ -19,8 +19,17 @@ from d3d.vis.image import visualize_detections as img_vis
 kitti_location = os.environ['KITTI'] if 'KITTI' in os.environ else None
 waymo_location = os.environ['WAYMO'] if 'WAYMO' in os.environ else None
 nuscenes_location = os.environ['NUSCENES'] if 'NUSCENES' in os.environ else None
-inzip = os.environ['INZIP'] if 'INZIP' in os.environ else True
 selection = int(os.environ['INDEX']) if 'INDEX' in os.environ else None
+
+if 'INZIP' in os.environ:
+    if os.environ['INZIP'].lower() in ['0', 'false']:
+        inzip = False
+    elif os.environ['INZIP'].lower() in ['1', 'true']:
+        inzip = True
+    else:
+        raise ValueError("Invalid INZIP option!")
+else:
+    inzip = True
 
 class CommonMixin:
     def test_point_cloud_projection(self):
@@ -66,12 +75,10 @@ class CommonMixin:
         image = np.array(self.loader.camera_data(idx, cam))
         targets = self.loader.lidar_objects(idx)
         calib = self.loader.calibration_data(idx)
-
-        gt_color = (255, 255, 0)
-        image = img_vis(image, cam, targets, calib, color=gt_color)
         
-        plt.figure(num="Please check whether the bounding boxes are aligned")
+        fig, ax = plt.subplots(num="Please check whether the bounding boxes are aligned")
         plt.imshow(image)
+        img_vis(ax, cam, targets, calib, box_color=(255, 255, 0))
         plt.draw()
         try:
             plt.pause(5)
@@ -87,11 +94,11 @@ class TestKittiDataset(unittest.TestCase, CommonMixin):
         idx = selection or random.randint(0, len(self.loader))
         print("index: ", idx) # for debug
         targets = self.loader.lidar_objects(idx)
-        label = self.loader.lidar_label(idx)
+        label = self.loader.lidar_objects(idx, raw=True)
         output = dump_detection_output(targets,
             self.loader.calibration_data(idx), self.loader.calibration_data(idx, raw=True))
 
-        # XXX These are for debug. Actually there are some labels in KITTI (usually pedestrian)
+        # These are for debug. Actually there are some labels in KITTI (usually pedestrian)
         #     whose 2D coordinates are not calculated from 3D box...
         # with open("test_out.txt", "w") as fout:
         #     fout.write(output)

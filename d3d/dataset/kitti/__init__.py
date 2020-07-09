@@ -1,1 +1,2 @@
-from .object import KittiObjectLoader, KittiObjectClass
+from .object import KittiObjectLoader
+from .utils import KittiObjectClass

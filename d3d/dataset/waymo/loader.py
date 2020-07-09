@@ -20,7 +20,7 @@ from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
                              TransformSet)
-from d3d.dataset.base import DetectionDatasetBase, ZipCache, _check_frames
+from d3d.dataset.base import DetectionDatasetBase, ZipCache, check_frames
 
 _logger = logging.getLogger("d3d")
 
@@ -112,7 +112,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
 
         XXX: support return ri2 data
         """
-        unpack_result, names = _check_frames(names, self.VALID_LIDAR_NAMES)
+        unpack_result, names = check_frames(names, self.VALID_LIDAR_NAMES)
 
         handles = self._locate_file(idx, names, "npy")
         outputs = [np.load(BytesIO(h.read())) for h in handles]
@@ -136,7 +136,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
         """
         :param names: frame names of camera to be loaded
         """
-        unpack_result, names = _check_frames(names, self.VALID_CAM_NAMES)
+        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
 
         handles = self._locate_file(idx, names, "jpg")
         outputs = [Image.open(h).convert('RGB') for h in handles]
@@ -147,12 +147,8 @@ class WaymoObjectLoader(DetectionDatasetBase):
         else:
             return outputs
 
-    def lidar_label(self, idx):
-        with self._locate_file(idx, "label_lidars", "json") as fin:
-            return list(map(edict, json.loads(fin.read().decode())))
-
     def camera_label(self, idx, names=None):
-        unpack_result, names = _check_frames(names, self.VALID_CAM_NAMES)
+        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
 
         handles = self._locate_file(idx, names, "jpg")
         outputs = [list(map(edict, json.loads(h.read().decode()))) for h in handles]
@@ -162,10 +158,14 @@ class WaymoObjectLoader(DetectionDatasetBase):
         else:
             return outputs
 
-    def lidar_objects(self, idx):
-        labels = self.lidar_label(idx)
-        outputs = ObjectTarget3DArray(frame="vehicle") # or frame=None
+    def lidar_objects(self, idx, raw=False):
+        with self._locate_file(idx, "label_lidars", "json") as fin:
+            labels = list(map(edict, json.loads(fin.read().decode())))
 
+        if raw:
+            return labels
+
+        outputs = ObjectTarget3DArray(frame="vehicle") # or frame=None
         for label in labels:
             target = ObjectTarget3D(
                 label.center,

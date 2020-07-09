@@ -1,5 +1,5 @@
 # D3D
-Some utils for 3D object detection based on Numpy and Pytorch
+Devkit for 3D: Some utils for 3D object detection and tracking based on Numpy and Pytorch
 
 - `d3d.abstraction`: Common interface definitions
 - `d3d.benchmark`: Implementation of benchmarks

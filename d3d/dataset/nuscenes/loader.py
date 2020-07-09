@@ -15,7 +15,7 @@ from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
                              TransformSet)
-from d3d.dataset.base import DetectionDatasetBase, ZipCache, _check_frames
+from d3d.dataset.base import DetectionDatasetBase, ZipCache, check_frames, split_trainval
 
 _logger = logging.getLogger("d3d")
 
@@ -176,7 +176,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
 
         # split trainval
         total_count = sum(v.nbr_samples for v in self._metadata.values())
-        self._split_trainval(phase, total_count, trainval_split, trainval_random)
+        self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
 
         self._zip_cache = ZipCache()
 
@@ -247,7 +247,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
         return scan
 
     def camera_data(self, idx, names=None):
-        unpack_result, names = _check_frames(names, self.VALID_CAM_NAMES)
+        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
 
         handles = self._locate_file(idx, names, "jpg")
         outputs = [Image.open(h).convert('RGB') for h in handles]
@@ -258,15 +258,15 @@ class NuscenesObjectLoader(DetectionDatasetBase):
         else:
             return outputs
 
-    def lidar_label(self, idx):
+    def lidar_objects(self, idx, raw=False, convert_tag=False):        
         with self._locate_file(idx, "annotation", "json") as fin:
-            return list(map(edict, json.loads(fin.read().decode())))
+            labels = list(map(edict, json.loads(fin.read().decode())))
 
-    def lidar_objects(self, idx, convert_tag=False):
-        labels = self.lidar_label(idx)
-        outputs = ObjectTarget3DArray(frame="ego")
+        if raw:
+            return labels
 
         ego_r, ego_t = self.pose(idx)
+        outputs = ObjectTarget3DArray(frame="ego")
         for label in labels:
             # convert tags
             tag = NuscenesObjectClass.parse(label.category)

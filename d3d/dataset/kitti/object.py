@@ -1,7 +1,6 @@
 import shutil
 import subprocess
 import tempfile
-from enum import Enum, auto
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -10,43 +9,9 @@ from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
                              TransformSet)
-from d3d.dataset.base import DetectionDatasetBase, _check_frames
+from d3d.dataset.base import DetectionDatasetBase, check_frames, split_trainval
 from d3d.dataset.kitti import utils
-
-
-class KittiObjectClass(Enum):
-    DontCare = 0
-    Car = auto()
-    Van = auto()
-    Truck = auto()
-    Pedestrian = auto()
-    Person_sitting = auto()
-    Cyclist = auto()
-    Tram = auto()
-    Misc = auto()
-
-def load_label(basepath, file):
-    '''
-    Load label or result from text file in KITTI format
-    '''
-    data = []
-    if isinstance(basepath, (str, Path)):
-        fin = Path(basepath, file).open()
-    else: # assume ZipFile object
-        fin = basepath.open(str(file))
-
-    with fin:
-        for line in fin.readlines():
-            if not line.strip():
-                continue
-            if isinstance(line, bytes):
-                line = line.decode()
-
-            values = [KittiObjectClass[value] if idx == 0 else float(value)
-                for idx, value in enumerate(line.split(' '))]
-            data.append(values)
-
-    return data
+from d3d.dataset.kitti.utils import KittiObjectClass
 
 def parse_label(label: list, raw_calib: dict):
     '''
@@ -82,8 +47,7 @@ def parse_label(label: list, raw_calib: dict):
 
 class KittiObjectLoader(DetectionDatasetBase):
     """
-    Load and parse odometry benchmark data into a usable format.
-    Please ensure that calibration and poses are downloaded
+    Loader for KITTI object detection dataset, please organize the filed into following structure
     
     # Zip Files
     - data_object_calib.zip
@@ -113,44 +77,38 @@ class KittiObjectLoader(DetectionDatasetBase):
         self.base_path = base_path
         self.inzip = inzip
         self.phase = phase
-        self.phase_path = Path('training' if phase == 'validation' else phase)
+        self.phase_path = 'training' if phase == 'validation' else phase
 
         if phase not in ['training', 'validation', 'testing']:
             raise ValueError("Invalid phase tag")
 
-        # Open zipfiles and count total number of frames
+        # count total number of frames
         total_count = None
         if self.inzip:
-            if phase in ['training', 'validation']:
-                # label data is necessary when training
-                with ZipFile(base_path / "data_object_label_2.zip") as label_data:
-                    total_count = sum(1 for name in label_data.namelist() if not name.endswith('/'))
-            elif (base_path / "data_object_image_2.zip").exists():
-                with ZipFile(base_path / "data_object_image_2.zip") as cam2_data:
-                    total_count = total_count or sum(1 for name in cam2_data.namelist() \
-                        if name.startswith(self.phase_path.name) and not name.endswith('/'))
-            elif (base_path / "data_object_velodyne.zip").exists():
-                with ZipFile(base_path / "data_object_velodyne.zip") as velo_data:
-                    total_count = total_count or sum(1 for name in velo_data.namelist() \
-                        if name.startswith(self.phase_path.name) and not name.endswith('/'))
+            for folder in ['label_2', 'image_2', 'image_3', 'velodyne']:
+                data_zip = base_path / ("data_object_%s.zip" % folder)
+                if data_zip.exists():
+                    with ZipFile(data_zip) as data:
+                        total_count = total_count or sum(1 for name in data.namelist() \
+                            if name.startswith(self.phase_path) and not name.endswith('/'))
+                    break
         else:
-            if phase in ['training', 'validation']:
-                total_count = sum(1 for _ in (base_path / self.phase_path / 'label_2').iterdir())
-            else:
-                for folder in ['image_2', 'velodyne']:
-                    fpath = base_path / self.phase_path / folder
-                    if fpath.exists():
-                        total_count = sum(1 for _ in fpath.iterdir())
-                        break
+            for folder in ['label_2', 'image_2', 'image_3', 'velodyne']:
+                fpath = base_path / self.phase_path / folder
+                if fpath.exists():
+                    total_count = sum(1 for _ in fpath.iterdir())
+                    break
+        if not total_count:
+            raise ValueError("Cannot parse dataset, please check path, inzip option and file structure")
 
-        self._split_trainval(phase, total_count, trainval_split, trainval_random)
+        self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
         self._image_size_cache = {} # used to store the image size
 
     def __len__(self):
         return len(self.frames)
 
     def camera_data(self, idx, names='cam2'):
-        unpack_result, names = _check_frames(names, self.VALID_CAM_NAMES)
+        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
         
         outputs = []
         for name in names:
@@ -159,7 +117,7 @@ class KittiObjectLoader(DetectionDatasetBase):
             elif name == "cam3":
                 folder_name = "image_3"
 
-            file_name = self.phase_path / folder_name / ('%06d.png' % self.frames[idx])
+            file_name = Path(self.phase_path, folder_name, '%06d.png' % self.frames[idx])
             if self.inzip:
                 with ZipFile(self.base_path / ("data_object_%s.zip" % folder_name)) as source:
                     image = utils.load_image(source, file_name, gray=False)
@@ -181,7 +139,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         if names != self.VALID_LIDAR_NAMES:
             raise ValueError("There's only one lidar in KITTI dataset")
 
-        fname = self.phase_path / 'velodyne' / ('%06d.bin' % self.frames[idx])
+        fname = Path(self.phase_path, 'velodyne', '%06d.bin' % self.frames[idx])
         if self.inzip:
             with ZipFile(self.base_path / "data_object_velodyne.zip") as source:
                 return utils.load_velo_scan(source, fname)
@@ -196,22 +154,26 @@ class KittiObjectLoader(DetectionDatasetBase):
         else:
             return self._load_calib(self.base_path, idx, raw)
 
-    def lidar_label(self, idx):
-        if self.phase_path.name == "testing":
+    def lidar_objects(self, idx, raw=False):
+        '''
+        Return list of converted ground truth targets in lidar frame.
+
+        Note that Objects labelled as `DontCare` are removed
+        '''
+
+        if self.phase_path == "testing":
             raise ValueError("Testing dataset doesn't contain label data")
 
-        fname = self.phase_path / 'label_2' / ('%06d.txt' % self.frames[idx])
+        fname = Path(self.phase_path, 'label_2', '%06d.txt' % self.frames[idx])
         if self.inzip:
             with ZipFile(self.base_path / "data_object_label_2.zip") as source:
-                return load_label(source, fname)
+                label = utils.load_label(source, fname)
         else:
-            return load_label(self.base_path, fname)
+            label = utils.load_label(self.base_path, fname)
 
-    def lidar_objects(self, idx):
-        '''
-        Return list of converted ground truth targets. Objects labelled as `DontCare` are removed
-        '''
-        return parse_label(self.lidar_label(idx), self.calibration_data(idx, raw=True))
+        if raw:
+            return label
+        return parse_label(label, self.calibration_data(idx, raw=True))
 
     def identity(self, idx):
         '''
@@ -223,7 +185,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         data = TransformSet("velo")
 
         # load the calibration file
-        filename = self.phase_path / 'calib' / ('%06d.txt' % self.frames[idx])
+        filename = Path(self.phase_path, 'calib', '%06d.txt' % self.frames[idx])
         filedata = utils.load_calib_file(basepath, filename)
 
         if raw:
@@ -414,7 +376,7 @@ def parse_detection_output():
     output_path.mkdir(parents=True, exist_ok=True)
     for txtpath in tqdm(input_path.iterdir(), total=sum(1 for _ in input_path.iterdir())):
         relpath = txtpath.relative_to(input_path)
-        boxes = load_label(input_path, relpath)
+        boxes = utils.load_label(input_path, relpath)
         calib = loader.calibration_data(int(relpath.stem), raw=True)
         boxes = parse_label(boxes, calib)
         boxes.dump(output_path / relpath.with_suffix('.pkl'))

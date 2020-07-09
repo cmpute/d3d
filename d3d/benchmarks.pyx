@@ -39,8 +39,9 @@ cdef inline scalar_t calc_recall(int tp, int fn) nogil:
 cdef inline scalar_t calc_fscore(int tp, int fp, int fn, scalar_t b2) nogil:
     return (1+b2) * tp / ((1+b2)*tp + b2*fn + fp)
 
-cdef class ObjectBenchmark: # TODO: rename as evaluator
+cdef class DetectionEvaluator:
     '''Benchmark for object detection'''
+
     # member declarations
     cdef int _pr_nsamples
     cdef scalar_t _min_score
@@ -372,11 +373,10 @@ cdef class ObjectBenchmark: # TODO: rename as evaluator
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(iter.first): iter.second[score_idx] for iter in self._acc_angular}
 
-    def summary(self):
+    def summary(self, scalar_t score_thres = 0.8):
         '''
         Print default summary (into returned string)
         '''
-        cdef scalar_t score_thres = 0.8
         cdef int score_idx = self._get_score_idx(score_thres)
 
         cdef list lines = [''] # prepend an empty line
