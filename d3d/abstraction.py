@@ -168,7 +168,7 @@ class ObjectTarget3DArray(list):
             with Path(output).open('rb') as fout:
                 return pickle.load(fout)
 
-    def __str__(self):
+    def __repr__(self):
         return "<ObjectTarget3DArray with %d objects>" % len(self)
 
 CameraMetadata = namedtuple('CameraMetadata', [
@@ -317,7 +317,12 @@ class TransformSet:
 
     @property
     def frames(self):
+        '''
+        Report registered frame names (excluding base_frame)
+        '''
         return list(self.intrinsics.keys())
+    def __repr__(self):
+        return "<TransformSet with frames: *%s>" % ", ".join([self.base_frame] + self.frames)
 
     def transform_objects(self, objects: ObjectTarget3DArray, frame_to=None):
         '''

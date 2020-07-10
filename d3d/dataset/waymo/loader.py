@@ -48,7 +48,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
     VALID_CAM_NAMES = ["camera_front", "camera_front_left", "camera_front_right", "camera_side_left", "camera_side_right"]
     VALID_LIDAR_NAMES = ["lidar_top", "lidar_front", "lidar_side_left", "lidar_side_right", "lidar_rear"]
 
-    def __init__(self, base_path, phase="training", inzip=True, trainval_split=None, trainval_random=False):
+    def __init__(self, base_path, phase="training", inzip=False, trainval_split=None, trainval_random=False):
         """
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders

@@ -159,7 +159,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
     VALID_CAM_NAMES = ["cam_front", "cam_front_left", "cam_front_right", "cam_back", "cam_back_left", "cam_back_right"]
     VALID_LIDAR_NAMES = ["lidar_top"]
 
-    def __init__(self, base_path, inzip=True, phase="training", trainval_split=1, trainval_random=False):
+    def __init__(self, base_path, inzip=False, phase="training", trainval_split=1, trainval_random=False):
         """
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders

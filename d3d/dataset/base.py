@@ -39,6 +39,11 @@ def split_trainval(phase, total_count, trainval_split, trainval_random):
 
 
 def check_frames(names, valid):
+    '''
+    Check wether names is inside valid options.
+    :return: unpack_resule: whether need to unpack results
+             names: frame names converted to list
+    '''
     unpack_result = False
     if names is None:
         names = valid
@@ -162,10 +167,14 @@ class TrackingDatasetBase:
                    concat: bool = False
                    ) -> Union[NdArray, List[NdArray]]:
         '''
+        If multiple frames are requested, the results will be a list of list. Outer list corresponds to frame names and inner
+            list corresponds to time sequence.
+
         :param names: name of requested lidar frames
         :param idx: index of requested lidar frames
-                    if single index is given, then the frame indexing is done on the whole dataset,
-                    if tuple of two integers is given, then first is the sequence index and the second is the frame index.
+                    if single index is given, then the frame indexing is done on the whole dataset with trainval split
+                    if tuple of two integers is given, then first is the sequence index and the second is the frame index,
+                    trainval split is ignored in this way and nframes offset is not added
         :param concat: whether to convert the point clouds to base frame and concat them.
                        If only one frame requested, the conversion to base frame will still be performed.
         '''

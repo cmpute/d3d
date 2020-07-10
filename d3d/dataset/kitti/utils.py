@@ -61,7 +61,10 @@ def load_calib_file(basepath, file):
             if not isinstance(line, str):
                 line = line.decode()
 
-            key, value = line.split(':', 1)
+            if ':' in line:
+                key, value = line.split(':', 1)
+            else:
+                key, value = line.split(" ", 1)
             # The only non-float values in these files are dates, which we don't care about anyway
             try:
                 data[key] = np.array([float(x) for x in value.split()])
@@ -94,30 +97,6 @@ def load_velo_scan(basepath, file, binary=True):
         else:
             scan = np.loadtxt(basepath.open(str(file)), dtype=np.float32)
     return scan.reshape((-1, 4))
-
-
-def load_label(basepath, file):
-    '''
-    Load label or result from text file in KITTI format
-    '''
-    data = []
-    if isinstance(basepath, (str, Path)):
-        fin = Path(basepath, file).open()
-    else:  # assume ZipFile object
-        fin = basepath.open(str(file))
-
-    with fin:
-        for line in fin.readlines():
-            if not line.strip():
-                continue
-            if isinstance(line, bytes):
-                line = line.decode()
-
-            values = [KittiObjectClass[value] if idx == 0 else float(value)
-                      for idx, value in enumerate(line.split(' '))]
-            data.append(values)
-
-    return data
 
 
 class _TrackletPose(object):

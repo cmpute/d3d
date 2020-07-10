@@ -1,6 +1,6 @@
 scikit-build
 pillow
-pcl-py
+pcl-py >= 0.2.6
 addict
 pytorch
 scipy >= 1.4

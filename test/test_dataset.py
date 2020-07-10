@@ -198,5 +198,7 @@ class TestNuscenesDataset(unittest.TestCase, CommonMixin):
         assert NuscenesObjectClass.movable_object_trafficcone.to_detection() == NuscenesDetectionClass.traffic_cone
         assert NuscenesObjectClass.animal.to_detection() == NuscenesDetectionClass.ignore
 
+# TODO: add test for kitti tracking dataset
+
 if __name__ == "__main__":
     TestKittiDataset().test_detection_output()

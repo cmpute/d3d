@@ -13,6 +13,29 @@ from d3d.dataset.base import DetectionDatasetBase, check_frames, split_trainval
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass
 
+def load_label(basepath, file):
+    '''
+    Load label or result from text file in KITTI object detection label format
+    '''
+    data = []
+    if isinstance(basepath, (str, Path)):
+        fin = Path(basepath, file).open()
+    else:  # assume ZipFile object
+        fin = basepath.open(str(file))
+
+    with fin:
+        for line in fin.readlines():
+            if not line.strip():
+                continue
+            if isinstance(line, bytes):
+                line = line.decode()
+
+            values = [KittiObjectClass[value] if idx == 0 else float(value)
+                      for idx, value in enumerate(line.split(' '))]
+            data.append(values)
+
+    return data
+
 def parse_label(label: list, raw_calib: dict):
     '''
     Generate object array from loaded label or result text
@@ -32,7 +55,7 @@ def parse_label(label: list, raw_calib: dict):
         ry = item[14] # rotation of y axis in camera coordinate
         position[1] -= h/2
 
-        # Here we ignore R0_rect since it's basically identity
+        # parse object position and orientation
         position = np.dot(position, RRect.inv().as_matrix().T)
         position = HR.inv().as_matrix().dot(position - HT)
         orientation = HR.inv() * RRect.inv() * Rotation.from_euler('y', ry)
@@ -43,7 +66,7 @@ def parse_label(label: list, raw_calib: dict):
         target = ObjectTarget3D(position, orientation, [l,w,h], tag)
         objects.append(target)
 
-    return objects 
+    return objects
 
 class KittiObjectLoader(DetectionDatasetBase):
     """
@@ -125,8 +148,10 @@ class KittiObjectLoader(DetectionDatasetBase):
                 image = utils.load_image(self.base_path, file_name, gray=False)
 
             outputs.append(image)
-            if idx not in self._image_size_cache:
-                self._image_size_cache[idx] = image.size
+
+        # save image size for calibration
+        if idx not in self._image_size_cache:
+            self._image_size_cache[idx] = image.size
 
         if unpack_result:
             return outputs[0]
@@ -136,16 +161,23 @@ class KittiObjectLoader(DetectionDatasetBase):
     def lidar_data(self, idx, names='velo', concat=True):
         if isinstance(names, str):
             names = [names]
+            unpack_result = True
+        else:
+            unpack_result = False
         if names != self.VALID_LIDAR_NAMES:
             raise ValueError("There's only one lidar in KITTI dataset")
 
         fname = Path(self.phase_path, 'velodyne', '%06d.bin' % self.frames[idx])
         if self.inzip:
             with ZipFile(self.base_path / "data_object_velodyne.zip") as source:
-                return utils.load_velo_scan(source, fname)
+                scan = utils.load_velo_scan(source, fname)
         else:
-            return utils.load_velo_scan(self.base_path, fname)
-        source.close()
+            scan = utils.load_velo_scan(self.base_path, fname)
+
+        if unpack_result:
+            return scan
+        else:
+            return [scan]
 
     def calibration_data(self, idx, raw=False):
         if self.inzip:
@@ -158,7 +190,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         '''
         Return list of converted ground truth targets in lidar frame.
 
-        Note that Objects labelled as `DontCare` are removed
+        Note that objects labelled as `DontCare` are removed
         '''
 
         if self.phase_path == "testing":
@@ -167,9 +199,9 @@ class KittiObjectLoader(DetectionDatasetBase):
         fname = Path(self.phase_path, 'label_2', '%06d.txt' % self.frames[idx])
         if self.inzip:
             with ZipFile(self.base_path / "data_object_label_2.zip") as source:
-                label = utils.load_label(source, fname)
+                label = load_label(source, fname)
         else:
-            label = utils.load_label(self.base_path, fname)
+            label = load_label(self.base_path, fname)
 
         if raw:
             return label
@@ -179,11 +211,9 @@ class KittiObjectLoader(DetectionDatasetBase):
         '''
         For KITTI this method just return the phase and index
         '''
-        return self.phase_path.name, self.frames[idx]
+        return self.phase_path, self.frames[idx]
 
     def _load_calib(self, basepath, idx, raw=False):
-        data = TransformSet("velo")
-
         # load the calibration file
         filename = Path(self.phase_path, 'calib', '%06d.txt' % self.frames[idx])
         filedata = utils.load_calib_file(basepath, filename)
@@ -197,6 +227,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         image_size = self._image_size_cache[idx]
 
         # load matrics
+        data = TransformSet("velo")
         rect = filedata['R0_rect'].reshape(3, 3)
         velo_to_cam = filedata['Tr_velo_to_cam'].reshape(3, 4)
         for i in range(4):
@@ -376,7 +407,7 @@ def parse_detection_output():
     output_path.mkdir(parents=True, exist_ok=True)
     for txtpath in tqdm(input_path.iterdir(), total=sum(1 for _ in input_path.iterdir())):
         relpath = txtpath.relative_to(input_path)
-        boxes = utils.load_label(input_path, relpath)
+        boxes = load_label(input_path, relpath)
         calib = loader.calibration_data(int(relpath.stem), raw=True)
         boxes = parse_label(boxes, calib)
         boxes.dump(output_path / relpath.with_suffix('.pkl'))
