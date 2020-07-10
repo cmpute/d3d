@@ -8,6 +8,41 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+# ====== Common classes ======
+
+# see data format description from raw dataset
+OxtData = namedtuple("OxtData", [
+    'lat',          # latitude of the oxts-unit (deg)
+    'lon',          # longitude of the oxts-unit (deg)
+    'alt',          # altitude of the oxts-unit (m)
+    'roll',         # roll angle (rad),    0 = level, positive = left side up,      range: -pi   .. +pi
+    'pitch',        # pitch angle (rad),   0 = level, positive = front down,        range: -pi/2 .. +pi/2
+    'yaw',          # heading (rad),       0 = east,  positive = counter clockwise, range: -pi   .. +pi
+    'vn',           # velocity towards north (m/s)
+    've',           # velocity towards east (m/s)
+    'vf',           # forward velocity, i.e. parallel to earth-surface (m/s)
+    'vl',           # leftward velocity, i.e. parallel to earth-surface (m/s)
+    'vu',           # upward velocity, i.e. perpendicular to earth-surface (m/s)
+    'ax',           # acceleration in x, i.e. in direction of vehicle front (m/s^2)
+    'ay',           # acceleration in y, i.e. in direction of vehicle left (m/s^2)
+    'az',           # acceleration in z, i.e. in direction of vehicle top (m/s^2)
+    'af',           # forward acceleration (m/s^2)
+    'al',           # leftward acceleration (m/s^2)
+    'au',           # upward acceleration (m/s^2)
+    'wx',           # angular rate around x (rad/s)
+    'wy',           # angular rate around y (rad/s)
+    'wz',           # angular rate around z (rad/s)
+    'wf',           # angular rate around forward axis (rad/s)
+    'wl',           # angular rate around leftward axis (rad/s)
+    'wu',           # angular rate around upward axis (rad/s)
+    'pos_accuracy', # position accuracy (north/east in m)
+    'vel_accuracy', # velocity accuracy (north/east in m/s)
+    'navstat',      # navigation status (see navstat_to_string)
+    'numsats',      # number of satellites tracked by primary GPS receiver
+    'posmode',      # position mode of primary GPS receiver (see gps_mode_to_string)
+    'velmode',      # velocity mode of primary GPS receiver (see gps_mode_to_string)
+    'orimode',      # orientation mode of primary GPS receiver (see gps_mode_to_string)
+])
 
 class KittiObjectClass(Enum):
     DontCare = 0
@@ -15,10 +50,16 @@ class KittiObjectClass(Enum):
     Van = auto()
     Truck = auto()
     Pedestrian = auto()
-    Person_sitting = auto()
+    Person = auto() # Person (sitting). 'Person_sitting' will be converted to this item
     Cyclist = auto()
     Tram = auto()
     Misc = auto()
+
+    @classmethod
+    def _missing_(cls, name):
+        if name == "Person_sitting":
+            return Person
+        return Enum._missing_(name)
 
 # ========== Loaders ==========
 
@@ -98,7 +139,7 @@ def load_velo_scan(basepath, file, binary=True):
             scan = np.loadtxt(basepath.open(str(file)), dtype=np.float32)
     return scan.reshape((-1, 4))
 
-
+# ===== Raw data tracklets =====
 class _TrackletPose(object):
     def __init__(self, xmlnode):
         for prop in xmlnode:

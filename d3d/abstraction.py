@@ -85,9 +85,9 @@ class ObjectTarget3D:
             raise ValueError("Label should be of type ObjectTag")
 
         self.id = id
-        self.position_var = position_var or np.zeros((3, 3))
-        self.dimension_var = dimension_var or np.zeros((3, 3))
-        self.orientation_var = orientation_var or 0
+        self.position_var = np.zeros((3, 3)) if position_var is None else np.array(position_var)
+        self.dimension_var = np.zeros((3, 3)) if dimension_var is None else np.array(dimension_var)
+        self.orientation_var = orientation_var or 0 # XXX: how to describe angle variance?
 
     @property
     def tag_top(self):
@@ -170,6 +170,26 @@ class ObjectTarget3DArray(list):
 
     def __repr__(self):
         return "<ObjectTarget3DArray with %d objects>" % len(self)
+
+class EgoPose:
+    '''
+    This object is used to store dynamic state of ego vehicle. All value is represented
+        in earth-fixed coordinate (absolute coordinate).
+    '''
+    def __init__(self, position, orientation, position_var=None, orientation_var=None):
+        
+        assert len(position) == 3, "Invalid position shape"
+        self.position = np.array(position)
+
+        if isinstance(orientation, Rotation):
+            self.orientation = orientation
+        elif len(orientation) == 4:
+            self.orientation = Rotation.from_quat(orientation)
+        else:
+            raise ValueError("Invalid rotation format")
+
+        self.position_var = np.zeros((3, 3)) if position_var is None else position_var
+        self.orientation_var = np.zeros((3, 3)) if orientation_var is None else orientation_var
 
 CameraMetadata = namedtuple('CameraMetadata', [
     'width', 'height',

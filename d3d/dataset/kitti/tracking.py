@@ -1,16 +1,17 @@
 import numpy as np
+import utm
 from zipfile import ZipFile
 from pathlib import Path
 from collections import defaultdict, OrderedDict
 from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
-                             TransformSet)
+                             TransformSet, EgoPose)
 from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval
 from d3d.dataset.kitti import utils
-from d3d.dataset.kitti.utils import KittiObjectClass
+from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
 
-def parse_label(label: list, raw_calib: dict):
+def parse_label(label: list, raw_calib: dict) -> ObjectTarget3DArray:
     '''
     Generate object array from loaded label or result text
     '''
@@ -37,11 +38,17 @@ def parse_label(label: list, raw_calib: dict):
         orientation *= Rotation.from_euler("x", np.pi/2) # change dimension from l,h,w to l,w,h
 
         score = item[16] if len(item) == 17 else None
-        tag = ObjectTag(item[0], KittiObjectClass, scores=score)
+        tag = ObjectTag(item[1], KittiObjectClass, scores=score)
         target = ObjectTarget3D(position, orientation, [l,w,h], tag, id=track_id)
         objects.append(target)
 
     return objects 
+
+def parse_pose(oxt: OxtData) -> EgoPose:
+    x, y, *_ = utm.from_latlon(oxt.lat, oxt.lon)
+    t = [x, y, oxt.alt]
+    r = Rotation.from_euler("xyz", [oxt.roll, oxt.pitch, oxt.yaw + np.pi/2])
+    return EgoPose(t, r, position_var=np.eye(3) * oxt.pos_accuracy)
 
 class KittiTrackingLoader(TrackingDatasetBase):
     """
@@ -73,6 +80,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
     VALID_CAM_NAMES = ["cam2", "cam3"]
     VALID_LIDAR_NAMES = ["velo"]
 
+    # TODO: add option to split trainval dataset by sequence instead of overall index
     def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8, trainval_random=False, nframes=1):
         base_path = Path(base_path)
         self.base_path = base_path
@@ -125,6 +133,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
         self._image_size_cache = {} # used to store the image size (for each sequence)
         self._label_cache = {} # used to store parsed label data
         self._calib_cache = {} # used to store parsed calibration data
+        self._pose_cache = {} # used to store parsed pose data
 
     def __len__(self):
         return len(self.frames)
@@ -165,12 +174,30 @@ class KittiTrackingLoader(TrackingDatasetBase):
         if seq_id in self._calib_cache:
             return
 
-        filename = Path(self.phase_path, 'calib', '%04d.txt' % seq_id)
+        file_name = Path(self.phase_path, 'calib', '%04d.txt' % seq_id)
         if self.inzip:
             with ZipFile(self.base_path / "data_tracking_calib.zip") as source:    
-                self._calib_cache[seq_id] = utils.load_calib_file(source, filename)
+                self._calib_cache[seq_id] = utils.load_calib_file(source, file_name)
         else:
-            self._calib_cache[seq_id] = utils.load_calib_file(self.base_path, filename)
+            self._calib_cache[seq_id] = utils.load_calib_file(self.base_path, file_name)
+
+    def _preload_pose(self, seq_id):
+        if seq_id in self._pose_cache:
+            return
+
+        file_name = Path(self.phase_path, 'oxts', '%04d.txt' % seq_id)
+        if self.inzip:
+            with ZipFile(self.base_path / "data_tracking_oxt.zip") as source:
+                text = source.read(str(file_name)).decode().split('\n')
+        else:
+            with open(self.base_path / file_name, "r") as fin:
+                text = fin.readlines()
+
+        self._pose_cache[seq_id] = []
+        for line in text:
+            values = list(map(float, line.strip().split(' ')))
+            values[-5:] = list(map(int, values[-5:]))
+            self._pose_cache[seq_id].append(OxtData(*values))
 
     def camera_data(self, idx, names='cam2'):
         if isinstance(idx, int):
@@ -265,12 +292,11 @@ class KittiTrackingLoader(TrackingDatasetBase):
             seq_id, frame_id = idx
 
         self._preload_label(seq_id)
-        if raw:
-            return [self._label_cache[seq_id][fid] for fid in range(frame_id - self.nframes, frame_id+1)]
+        labels = [self._label_cache[seq_id][fid] for fid in range(frame_id - self.nframes, frame_id+1)]
+        if raw: return labels
 
-        self._preload_label(seq_id)
-        return [parse_label(self._label_cache[seq_id][fid], self._calib_cache[seq_id])
-               for fid in range(frame_id - self.nframes, frame_id+1)]
+        self._preload_calib(seq_id)
+        return [parse_label(l, self._calib_cache[seq_id]) for l in labels]
 
     def identity(self, idx):
         '''
@@ -311,3 +337,15 @@ class KittiTrackingLoader(TrackingDatasetBase):
         data.set_extrinsic(filedata['Tr_imu_velo'].reshape(3, 4), frame_from="imu")
 
         return data
+
+    def pose(self, idx, raw=False):
+        if isinstance(idx, int):
+            seq_id, frame_id = self._locate_frame(idx)
+        else:
+            seq_id, frame_id = idx
+
+        self._preload_pose(seq_id)
+        poses = [self._pose_cache[seq_id][fid] for fid in range(frame_id - self.nframes, frame_id+1)]
+
+        if raw: return poses
+        return [parse_pose(p) for p in poses]

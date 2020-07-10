@@ -10,6 +10,7 @@ try:
 except:
     pass
 
+# TODO: support set box_color by id hash
 def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targets: ObjectTarget3DArray, calib: TransformSet,
     text_scale=0.8, box_color=(1, 1, 1), text_color=(1, 0.8, 1), id_prefix="", position_offset=None):
     '''

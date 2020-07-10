@@ -7,8 +7,8 @@ import pcl
 from matplotlib import pyplot as plt
 import time
 
-from d3d.dataset.kitti.object import (KittiObjectClass, KittiObjectLoader,
-                                      dump_detection_output)
+from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
+                                      dump_detection_output, KittiTrackingLoader)
 from d3d.dataset.waymo.loader import WaymoObjectLoader
 from d3d.dataset.nuscenes.loader import NuscenesObjectClass, NuscenesObjectLoader, NuscenesDetectionClass
 from d3d.vis.pcl import visualize_detections as pcl_vis
@@ -31,7 +31,7 @@ if 'INZIP' in os.environ:
 else:
     inzip = True
 
-class CommonMixin:
+class CommonObjectDSMixin:
     def test_point_cloud_projection(self):
         idx = selection or random.randint(0, len(self.loader))
         cam = random.choice(self.loader.VALID_CAM_NAMES)
@@ -86,7 +86,7 @@ class CommonMixin:
             pass
 
 @unittest.skipIf(not kitti_location, "Path to kitti not set")
-class TestKittiDataset(unittest.TestCase, CommonMixin):
+class TestKittiObjectDataset(unittest.TestCase, CommonObjectDSMixin):
     def setUp(self):
         self.loader = KittiObjectLoader(kitti_location, inzip=inzip)
 
@@ -126,7 +126,7 @@ class TestKittiDataset(unittest.TestCase, CommonMixin):
                     assert v == 0
 
 @unittest.skipIf(not waymo_location, "Path to waymo not set")
-class TestWaymoDataset(unittest.TestCase, CommonMixin):
+class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin):
     def setUp(self):
         self.loader = WaymoObjectLoader(waymo_location, inzip=inzip)
 
@@ -166,7 +166,7 @@ class TestWaymoDataset(unittest.TestCase, CommonMixin):
         visualizer.close()
 
 @unittest.skipIf(not nuscenes_location, "Path to nuscenes not set")
-class TestNuscenesDataset(unittest.TestCase, CommonMixin):
+class TestNuscenesObjectDataset(unittest.TestCase, CommonObjectDSMixin):
     def setUp(self):
         self.loader = NuscenesObjectLoader(nuscenes_location, inzip=inzip)
     
@@ -198,7 +198,69 @@ class TestNuscenesDataset(unittest.TestCase, CommonMixin):
         assert NuscenesObjectClass.movable_object_trafficcone.to_detection() == NuscenesDetectionClass.traffic_cone
         assert NuscenesObjectClass.animal.to_detection() == NuscenesDetectionClass.ignore
 
-# TODO: add test for kitti tracking dataset
+@unittest.skipIf(not kitti_location, "Path to kitti not set")
+class TestKittiTrackingDataset(unittest.TestCase):
+    def setUp(self):
+        self.loader = KittiTrackingLoader(kitti_location, inzip=inzip, nframes=1)
+
+    def test_point_cloud_projection(self):
+        idx = selection or random.randint(0, len(self.loader))
+        cam = random.choice(self.loader.VALID_CAM_NAMES)
+        lidar = random.choice(self.loader.VALID_LIDAR_NAMES)
+
+        cloud1, cloud2 = self.loader.lidar_data(idx, lidar)
+        image1, image2 = self.loader.camera_data(idx, cam)
+        calib = self.loader.calibration_data(idx)
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, num="Please check whether the lidar points are aligned")
+        uv1, mask1 = calib.project_points_to_camera(cloud1, cam, lidar)
+        ax1.imshow(image1)
+        ax1.scatter(uv1[:,0], uv1[:,1], s=2, c=cloud1[mask1, 3])
+        ax1.set_xlim([0, 1242])
+        ax1.set_ylim([375, 0])
+        
+        uv2, mask2 = calib.project_points_to_camera(cloud2, cam, lidar)
+        ax2.imshow(image2)
+        ax2.scatter(uv2[:,0], uv2[:,1], s=2, c=cloud2[mask2, 3])
+        ax2.set_xlim([0, 1242])
+        ax2.set_ylim([375, 0])
+        
+        fig.canvas.draw_idle()
+        try:
+            plt.pause(5)
+        except: # skip error if manually closed
+            pass
+
+    def test_ground_truth_visualizer_pcl(self):
+        idx = selection or random.randint(0, len(self.loader))
+        lidar = random.choice(self.loader.VALID_LIDAR_NAMES)
+
+        # load data
+        cloud1, cloud2 = self.loader.lidar_data(idx, lidar)
+        pose1, pose2 = self.loader.pose(idx)
+        targets1, targets2 = self.loader.lidar_objects(idx)
+        calib = self.loader.calibration_data(idx)
+
+        # transform the second frame
+        # TODO: haven't tested for very large offset
+        trans = pose2.position - pose1.position
+        rot = pose2.orientation * pose1.orientation.inv()
+        rot_mt = rot.as_matrix().T
+        cloud = np.concatenate([np.dot(cloud1[:,:3] + trans, rot_mt), cloud2[:,:3]])
+        cloud = np.concatenate([cloud, np.concatenate([cloud1[:,[3]], cloud2[:,[3]]])], axis=1)
+        cloud = pcl.create_xyzi(cloud)
+        for target in targets1:
+            target.position = np.dot(target.position + trans, rot_mt)
+            target.orientation = rot * target.orientation
+
+        visualizer = pcl.Visualizer()
+        visualizer.addPointCloud(cloud, field="intensity")
+        pcl_vis(visualizer, lidar, targets1, calib)
+        pcl_vis(visualizer, lidar, targets2, calib, id_prefix="frame2")
+        visualizer.setRepresentationToWireframeForAllActors()
+        visualizer.setWindowName("Please check whether the gt boxes are aligned!")
+        visualizer.spinOnce(time=5000)
+        visualizer.close()
 
 if __name__ == "__main__":
-    TestKittiDataset().test_detection_output()
+    TestKittiObjectDataset().test_detection_output()

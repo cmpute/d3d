@@ -218,7 +218,7 @@ class TrackingDatasetBase:
         '''
         pass
 
-    def pose(self, idx: Union[int, Tuple[int, int]]):
+    def pose(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False):
         '''
         Return (relative) pose of the vehicle for the frame.
 

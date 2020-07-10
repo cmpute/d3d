@@ -5,3 +5,4 @@ addict
 pytorch
 scipy >= 1.4
 cython
+utm
