@@ -138,6 +138,14 @@ class KittiTrackingLoader(TrackingDatasetBase):
     def __len__(self):
         return len(self.frames)
 
+    @property
+    def sequence_ids(self):
+        return list(self.frame_dict.keys())
+
+    @property
+    def sequence_sizes(self):
+        return dict(self.frame_dict)
+
     def _locate_frame(self, idx):
         # use underlying frame index
         idx = self.frames[idx]

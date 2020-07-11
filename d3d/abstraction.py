@@ -414,3 +414,14 @@ class TransformSet:
             return np.array([u, v]).T, mask, dmask
         else:
             return np.array([u, v]).T, mask
+
+    def dump(self, output):
+        if isinstance(output, (str, Path)):
+            with Path(output).open('wb') as fout:
+                pickle.dump(self, fout)
+
+    @staticmethod
+    def load(output):
+        if isinstance(output, (str, Path)):
+            with Path(output).open('rb') as fout:
+                return pickle.load(fout)

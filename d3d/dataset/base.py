@@ -1,6 +1,6 @@
 import os.path as osp
 from multiprocessing import Manager, Pool
-from typing import Any, List, Optional, Union, Tuple
+from typing import Any, List, Optional, Union, Tuple, Dict
 from zipfile import ZipFile
 
 import numpy as np
@@ -9,7 +9,7 @@ from numpy import ndarray as NdArray
 from PIL.Image import Image
 from tqdm import tqdm
 
-from d3d.abstraction import ObjectTarget3DArray, TransformSet
+from d3d.abstraction import ObjectTarget3DArray, TransformSet, EgoPose
 
 
 def split_trainval(phase, total_count, trainval_split, trainval_random):
@@ -165,7 +165,7 @@ class TrackingDatasetBase:
                    idx: Union[int, Tuple[int, int]],
                    names: Optional[Union[str, List[str]]] = None,
                    concat: bool = False
-                   ) -> Union[NdArray, List[NdArray]]:
+                   ) -> Union[List[NdArray], List[List[NdArray]]]:
         '''
         If multiple frames are requested, the results will be a list of list. Outer list corresponds to frame names and inner
             list corresponds to time sequence.
@@ -183,7 +183,7 @@ class TrackingDatasetBase:
     def camera_data(self,
                     idx: Union[int, Tuple[int, int]],
                     names: Optional[Union[str, List[str]]] = None
-                    ) -> Union[Image, List[Image]]:
+                    ) -> Union[List[Image], List[List[Image]]]:
         '''
         Return the camera image data
 
@@ -201,7 +201,7 @@ class TrackingDatasetBase:
         '''
         pass
 
-    def lidar_objects(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> ObjectTarget3DArray:
+    def lidar_objects(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> List[ObjectTarget3DArray]:
         '''
         Return list of converted ground truth targets in lidar frame.
 
@@ -218,7 +218,7 @@ class TrackingDatasetBase:
         '''
         pass
 
-    def pose(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False):
+    def pose(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> EgoPose:
         '''
         Return (relative) pose of the vehicle for the frame.
 
@@ -226,6 +226,19 @@ class TrackingDatasetBase:
         '''
         pass
 
+    @property
+    def sequence_sizes(self) -> Dict[Any, int]:
+        '''
+        Return the mapping from sequence id to sequence sizes
+        '''
+        pass
+
+    @property
+    def sequence_ids(self) -> List[Any]:
+        '''
+        Return the list of sequence ids
+        '''
+        pass
 
 class ZipCache:
     '''
