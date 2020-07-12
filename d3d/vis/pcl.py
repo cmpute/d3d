@@ -12,7 +12,7 @@ except:
 
 # TODO: support set box_color by id hash
 def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targets: ObjectTarget3DArray, calib: TransformSet,
-    text_scale=0.8, box_color=(1, 1, 1), text_color=(1, 0.8, 1), id_prefix="", position_offset=None):
+    text_scale=0.8, box_color=(1, 1, 1), text_color=(1, 0.8, 1), id_prefix="", tags=None, position_offset=None):
     '''
     Note: To use this visualizer, targets should be in the same frame as the visualizer frame (lidar frame)
     '''
@@ -26,7 +26,7 @@ def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targ
     if targets.frame != visualizer_frame:
         targets = calib.transform_objects(targets, frame_to=visualizer_frame)
 
-    for i, target in enumerate(targets):
+    for i, target in enumerate(targets.filter_tag(tags)):
         # convert coordinate
         orientation = target.orientation.as_quat()
         orientation = [orientation[3]] + orientation[:3].tolist() # To PCL quaternion

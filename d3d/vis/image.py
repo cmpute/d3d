@@ -9,11 +9,11 @@ from matplotlib import axes, lines
 from d3d.abstraction import ObjectTarget3DArray, TransformSet
 
 def visualize_detections(ax: axes.Axes, image_frame: str, targets: ObjectTarget3DArray, calib: TransformSet,
-    box_color=(0, 255, 0), thickness=2):
+    box_color=(0, 255, 0), thickness=2, tags=None):
     '''
     Draw detected object on matplotlib canvas
     '''
-    for target in targets:
+    for target in targets.filter_tag(tags):
         # add points for direction indicator
         points = target.corners
         indicator = np.array([ 
@@ -43,13 +43,13 @@ def visualize_detections(ax: axes.Axes, image_frame: str, targets: ObjectTarget3
         ax.add_artist(lines.Line2D((uv[-2,0], uv[-1,0]), (uv[-2,1], uv[-1,1]), c=box_color, lw=thickness))
 
 def visualize_detections_bev(ax: axes.Axes, visualizer_frame: str, targets: ObjectTarget3DArray, calib: TransformSet,
-    box_color=(0, 255, 0), thickness=2):
+    box_color=(0, 255, 0), thickness=2, tags=None):
     
     # change frame to the same
     if targets.frame != visualizer_frame:
         targets = calib.transform_objects(targets, frame_to=visualizer_frame)
 
-    for target in targets:
+    for target in targets.filter_tag(tags):
         points = target.corners
         pairs = [(0, 1), (2, 3), (0, 2), (1, 3)]
         for i, j in pairs:

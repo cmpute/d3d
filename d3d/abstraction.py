@@ -142,7 +142,7 @@ class ObjectTarget3DArray(list):
 
     def to_numpy(self, box_type="ground"):
         '''
-        :param box_type: Decide how to represent the box
+        :param box_type: Decide how to represent the box. {ground: box projected along z axis}
         '''
         if len(self) == 0:
             return np.empty((0, 8))
@@ -170,6 +170,20 @@ class ObjectTarget3DArray(list):
 
     def __repr__(self):
         return "<ObjectTarget3DArray with %d objects>" % len(self)
+
+    def filter_tag(self, tags):
+        '''
+        Filter the list by select only objects with given tags
+
+        :param tags: None means no filter, otherwise str/enum or list of str/enum
+        '''
+        if not tags:
+            return self
+        if not isinstance(tags, (list, tuple)):
+            tags = [tags]
+        tags = (str(t) if not isinstance(t, str) else t for t in tags) # use tag name to filter
+        tags = [t.lower() for t in tags]
+        return ObjectTarget3DArray([box for box in self if box.tag_name.lower() in tags], self.frame)
 
 class EgoPose:
     '''
