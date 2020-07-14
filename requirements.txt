@@ -2,7 +2,7 @@ scikit-build
 pillow
 pcl-py >= 0.2.6
 addict
-pytorch
+torch
 scipy >= 1.4
 cython
 utm
