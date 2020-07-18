@@ -1,0 +1,20 @@
+# for creating conda environment for building d3d
+name: null
+
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  - cudatoolkit-dev
+  - cudnn
+  - scikit-build
+  - pip
+  - python
+  - pytorch
+  - addict
+  - cython
+  - pillow
+  - scipy>=1.4
+  - utm

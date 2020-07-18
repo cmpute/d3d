@@ -1,0 +1,40 @@
+{% set version = "0.0.4" %}
+
+package:
+  name: d3d
+  version: {{ version }}
+
+source:
+  # path: ..
+  url: https://github.com/cmpute/d3d/releases/download/{{ version }}/d3d-{{ version }}.tar.gz
+
+build:
+  number: 0
+  skip: True  # [win]
+  script:
+    - python setup.py install
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - {{ compiler('cuda') }}  # [linux64 and cuda_compiler_version != "None"]
+  host:
+    - cmake
+    - setuptools
+    - python
+    - pytorch
+  run:
+    - python
+    - pytorch
+    - scipy
+
+about:
+  home: https://github.com/cmpute/d3d
+  # license: BSD
+  summary: Devkit for 3D object detection and tracking
+  dev_url: https://github.com/cmpute/d3d
+
+extra:
+  recipe-maintainers:
+    - cmpute
