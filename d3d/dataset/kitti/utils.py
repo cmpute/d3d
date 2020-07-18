@@ -50,16 +50,11 @@ class KittiObjectClass(Enum):
     Van = auto()
     Truck = auto()
     Pedestrian = auto()
-    Person = auto() # Person (sitting). 'Person_sitting' will be converted to this item
+    Person = auto() # Person (sitting).
+    Person_sitting = Person
     Cyclist = auto()
     Tram = auto()
     Misc = auto()
-
-    @classmethod
-    def _missing_(cls, name):
-        if name == "Person_sitting":
-            return Person
-        return Enum._missing_(name)
 
 # ========== Loaders ==========
 

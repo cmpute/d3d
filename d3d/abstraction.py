@@ -377,7 +377,8 @@ class TransformSet:
 
     def project_points_to_camera(self, points, frame_to, frame_from=None, remove_outlier=True, return_dmask=False):
         '''
-        :param remove_outlier: If set to True, only points that fall into image view will be returned
+        :param remove_outlier: If set to True, the mask will be applied, i.e. only points
+            that fall into image view will be returned
         :param return_dmask: also return the mask for z > 0 only
         :return: return points, mask and dmask if required. The masks are array of indices
         '''
