@@ -12,4 +12,20 @@ Devkit for 3D: Some utils for 3D object detection and tracking based on Numpy an
 
 # Requirements
 
-Python >= 3.6, Pytorch == 1.4. See requirements.txt for libraries
+Installation requirements:
+- `python >= 3.6`
+- `pytorch == 1.4`
+- `scipy >= 1.4`
+- `addict`
+- `pillow`
+
+Build requirements:
+- `cython >= 0.29.16`
+- `scikit-build`
+- `setuptools-scm`
+
+Optional requirements:
+- `utm`: support converting GPS coordinate to local frame
+- `pcl.py`: support visualization in PCL
+- `matplotlib`: support visualization in 2D figures
+- `waymo_open_dataset`: support converting Waymo Dataset

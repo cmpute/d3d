@@ -1,12 +1,12 @@
-{% set version = "0.0.4" %}
+{% set version = "0.0.4b" %}
 
 package:
   name: d3d
   version: {{ version }}
 
 source:
-  # path: ..
-  url: https://github.com/cmpute/d3d/releases/download/{{ version }}/d3d-{{ version }}.tar.gz
+  path: ..
+  # url: https://github.com/cmpute/d3d/archive/v{{ version }}.tar.gz
 
 build:
   number: 0
@@ -22,11 +22,16 @@ requirements:
   host:
     - cmake
     - setuptools
-    - python
+    - python {{ python }}
     - pytorch
+    - cudatoolkit-dev
+    - cudnn
+    - scikit-build
+    - cython
   run:
-    - python
+    - python {{ python }}
     - pytorch
+    - cudatoolkit
     - scipy
 
 about:

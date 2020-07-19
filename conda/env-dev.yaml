@@ -7,14 +7,15 @@ channels:
   - defaults
 
 dependencies:
+  - python
+  - pip
+  - setuptools_scm
+  - scikit-build
+  - cython
   - cudatoolkit-dev
   - cudnn
-  - scikit-build
-  - pip
-  - python
   - pytorch
   - addict
-  - cython
   - pillow
   - scipy>=1.4
   - utm

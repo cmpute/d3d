@@ -1,0 +1,15 @@
+c_compiler_version:
+- '7'
+cxx_compiler_version:
+- '7'
+cuda_compiler:
+- nvcc
+cuda_compiler_version:
+# - '9.2'
+- '10.1'
+python:
+- '3.6'
+# - '3.7'
+# zip_keys:
+# - - cuda_compiler_version
+#   - docker_image

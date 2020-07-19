@@ -1,5 +1,4 @@
 import numpy as np
-import utm
 from zipfile import ZipFile
 from pathlib import Path
 from collections import defaultdict, OrderedDict
@@ -45,6 +44,7 @@ def parse_label(label: list, raw_calib: dict) -> ObjectTarget3DArray:
     return objects 
 
 def parse_pose(oxt: OxtData) -> EgoPose:
+    import utm
     x, y, *_ = utm.from_latlon(oxt.lat, oxt.lon)
     t = [x, y, oxt.alt]
     r = Rotation.from_euler("xyz", [oxt.roll, oxt.pitch, oxt.yaw + np.pi/2])

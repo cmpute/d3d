@@ -9,9 +9,27 @@ except ImportError:
 import torch
 torch_root = os.path.dirname(torch.__file__)
 
+def cuda_version(): # get 
+    from subprocess import check_output
+    from setuptools_scm.version import get_local_node_and_date
+
+    cuda_ver = check_output(["nvcc", "-V"]).decode()
+    ver_aidx = cuda_ver.find("release")
+    ver_bidx = cuda_ver.find(',', ver_aidx)
+    cuda_ver = 'cu' + cuda_ver[ver_aidx+8:ver_bidx].replace('.', '')
+    def cuda_scheme(version):
+        ver_str = get_local_node_and_date(version)
+        if ver_str.find("+") < 0:
+            ver_str += "+" + cuda_ver
+        else:
+            ver_str += "." + cuda_ver
+        return ver_str
+
+    return {'local_scheme': cuda_scheme}
+
 setup(
     name="d3d",
-    version="0.0.4",
+    use_scm_version=cuda_version,
     description="Customized tools for 3D object detection",
     long_description='(see project homepage)',
     author='Jacob Zhong',
@@ -20,8 +38,8 @@ setup(
     download_url='https://github.com/cmpute/d3d/archive/master.zip',
     license='BSD-3-Clause',
     packages=find_packages(),
-    install_requires=['numpy', 'torch', 'py3nvml', 'scipy>=1.4'],
-    setup_requires=['pybind11', 'torch', 'scikit-build'],
+    install_requires=['numpy', 'torch', 'scipy>=1.4', 'addict', 'pillow'],
+    setup_requires=['torch', 'scikit-build', 'setuptools_scm'],
     extras_require={'test': ['pytest']},
     classifiers=[
         'Programming Language :: C++',
