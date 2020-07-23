@@ -3,6 +3,12 @@ add_subdirectory(math)
 add_subdirectory(point)
 add_subdirectory(voxel)
 
+add_cython_target(abstraction CXX)
+add_library(abstraction MODULE ${abstraction})
+target_compile_definitions(abstraction PRIVATE $<$<NOT:$<CONFIG:Debug>>:CYTHON_WITHOUT_ASSERTIONS>)
+python_extension_module(abstraction)
+install(TARGETS abstraction LIBRARY DESTINATION d3d)
+
 add_cython_target(benchmarks CXX)
 add_library(benchmarks MODULE ${benchmarks})
 target_compile_definitions(benchmarks PRIVATE $<$<NOT:$<CONFIG:Debug>>:CYTHON_WITHOUT_ASSERTIONS>)

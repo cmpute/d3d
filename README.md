@@ -39,6 +39,7 @@ Optional requirements:
 - `pcl.py`: support visualization in PCL
 - `matplotlib`: support visualization in 2D figures
 - `waymo_open_dataset`: support converting Waymo Dataset
+- `msgpack`: support serialization/deserialization
 
 # Build
 

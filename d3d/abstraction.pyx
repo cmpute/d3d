@@ -1,6 +1,6 @@
 import enum
-import logging
 import pickle
+import logging
 from collections import namedtuple
 from pathlib import Path
 
@@ -9,7 +9,19 @@ from scipy.spatial.transform import Rotation
 
 _logger = logging.getLogger("d3d")
 
-class ObjectTag:
+def _d3d_enum_mapping():
+    import d3d.dataset as dd
+    return {
+        dd.kitti.KittiObjectClass: 1,
+        dd.waymo.WaymoObjectClass: 2,
+        dd.nuscenes.NuscenesObjectClass: 3,
+        dd.nuscenes.NuscenesDetectionClass: 4
+    }
+
+def _d3d_enum_lookup():
+    return {v: k for k, v in _d3d_enum_mapping().items()}
+
+cdef class ObjectTag:
     '''
     This class stands for label tags associate with object target
     '''
@@ -51,12 +63,29 @@ class ObjectTag:
             name = self.labels[0].name
         return "<ObjectTag, top class: %s>" % name
 
-class ObjectTarget3D:
+    def serialize(self):
+        '''
+        Serialize this object to primitives
+        '''
+        labels = [l.value for l in self.labels]
+        return (_d3d_enum_mapping()[self.mapping], labels, self.scores)
+
+    @staticmethod
+    def deserialize(data):
+        '''
+        Deserialize this object to primitives
+        TODO: test this
+        '''
+        mapping = _d3d_enum_lookup()[data[0]]
+        labels = [mapping(l) for l in data[1]]
+        return ObjectTag(data[1], mapping, data[2])
+
+cdef class ObjectTarget3D:
     '''
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
     '''
     def __init__(self, position, orientation, dimension, tag,
-        id=None, position_var=None, orientation_var=None, dimension_var=None):
+        id_=None, position_var=None, orientation_var=None, dimension_var=None):
         '''
         :param position: Position of object center (x,y,z)
         :param orientation: Object heading (direction of x-axis attached on body)
@@ -67,10 +96,10 @@ class ObjectTarget3D:
         '''
 
         assert len(position) == 3, "Invalid position shape"
-        self.position = np.array(position)
+        self.position = np.asarray(position, dtype=np.float32)
 
         assert len(dimension) == 3, "Invalid dimension shape"
-        self.dimension = np.array(dimension)
+        self.dimension = np.asarray(dimension, dtype=np.float32)
 
         if isinstance(orientation, Rotation):
             self.orientation = orientation
@@ -84,10 +113,16 @@ class ObjectTarget3D:
         else:
             raise ValueError("Label should be of type ObjectTag")
 
-        self.id = id
-        self.position_var = np.zeros((3, 3)) if position_var is None else np.array(position_var)
-        self.dimension_var = np.zeros((3, 3)) if dimension_var is None else np.array(dimension_var)
-        self.orientation_var = orientation_var or 0 # XXX: how to describe angle variance?
+        self.id = id_
+        if position_var is None:
+            self.position_var = np.zeros((3, 3), dtype=np.float32)
+        else:
+            self.position_var = np.asarray(position_var, dtype=np.float32).reshape(3, 3)
+        if dimension_var is None:
+            self.dimension_var = np.zeros((3, 3), dtype=np.float32)
+        else:
+            self.dimension_var = np.asarray(dimension_var, dtype=np.float32).reshape(3, 3)
+        # self.orientation_var = orientation_var or 0 # XXX: how to describe angle variance?
 
     @property
     def tag_top(self):
@@ -128,7 +163,31 @@ class ObjectTarget3D:
         offsets = offsets.dot(self.orientation.as_matrix().T)
         return self.position + offsets
 
-class ObjectTarget3DArray(list):
+    cpdef np.ndarray to_numpy(self, str box_type="ground"):
+        # store only 3D box and label
+        cls_value = self.tag_top.value
+        cdef np.ndarray arr = np.concatenate([self.position, self.dimension, [self.yaw, cls_value]])
+        return arr
+
+    def serialize(self):
+        return (
+            np.asarray(self.position).tolist(),
+            np.ravel(self.position_var).tolist(),
+            np.asarray(self.dimension).tolist(),
+            np.ravel(self.dimension_var).tolist(),
+            self.orientation.as_quat().tolist(),
+            self.id,
+            self.tag.serialize()
+        )
+
+    @staticmethod
+    def deserialize(data):
+        pos, pos_var, dim, dim_var, ori_data, id_, tag_data = data
+        ori = Rotation.from_quat(ori_data)
+        tag = ObjectTag.deserialize(tag_data)
+        return ObjectTarget3D(pos, ori, dim, tag, id_, pos_var, dim_var)
+
+cdef class ObjectTarget3DArray(list):
     def __init__(self, iterable=[], frame=None):
         '''
         :param frame: Frame that the box parameters used. None means base frame (in TransformSet)
@@ -140,33 +199,38 @@ class ObjectTarget3DArray(list):
         if isinstance(iterable, ObjectTarget3DArray) and not frame:
             self.frame = iterable.frame
 
-    def to_numpy(self, box_type="ground"):
+    cpdef np.ndarray to_numpy(self, str box_type="ground"):
         '''
         :param box_type: Decide how to represent the box. {ground: box projected along z axis}
         '''
         if len(self) == 0:
             return np.empty((0, 8))
-
-        def to_ground(box): # store only 3D box and label
-            cls_value = box.tag_top.value
-            arr = np.concatenate([box.position, box.dimension, [box.yaw, cls_value]])
-            return arr
-        return np.stack([to_ground(box) for box in self])
+        return np.stack([box.to_ground(box_type) for box in self])
 
     def to_torch(self, box_type="ground"):
         import torch
-        return torch.tensor(self.to_numpy(box_type=box_type))
+        return torch.tensor(self.to_numpy(box_type))
+
+    def serialize(self):
+        return (self.frame, [obj.serialize() for obj in self])
+
+    @staticmethod
+    def deserialize(data):
+        objs = [ObjectTarget3D.deserialize(obj) for obj in data[1]]
+        return ObjectTarget3DArray(objs, frame=data[0])
 
     def dump(self, output):
+        import msgpack
         if isinstance(output, (str, Path)):
             with Path(output).open('wb') as fout:
-                pickle.dump(self, fout)
+                fout.write(msgpack.packb(self.serialize(), use_single_float=True))
 
     @staticmethod
     def load(output):
+        import msgpack
         if isinstance(output, (str, Path)):
             with Path(output).open('rb') as fout:
-                return pickle.load(fout)
+                return ObjectTarget3DArray.deserialize(msgpack.unpackb(fout.read()))
 
     def __repr__(self):
         return "<ObjectTarget3DArray with %d objects>" % len(self)
@@ -204,7 +268,7 @@ class EgoPose:
 
         self.position_var = np.zeros((3, 3)) if position_var is None else position_var
         self.orientation_var = np.zeros((3, 3)) if orientation_var is None else orientation_var
-
+ 
 CameraMetadata = namedtuple('CameraMetadata', [
     'width', 'height',
     'distort_coeffs', # coefficients of camera distortion model, follow OpenCV format
