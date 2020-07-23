@@ -76,8 +76,10 @@ cdef class DetectionEvaluator:
         if isinstance(min_overlaps, (list, tuple)):
             # take negative since iou distance is defined as negative
             self._min_overlaps = {classes[i].value: -v for i, v in enumerate(min_overlaps)}
-        else:
+        elif isinstance(min_overlaps, (int, float)):
             self._min_overlaps = {c: -min_overlaps for c in self._classes}
+        else:
+            raise ValueError("min_overlaps should be a list or a single value")
 
         self._pr_nsamples = pr_sample_count
         self._min_score = min_score
@@ -241,77 +243,10 @@ cdef class DetectionEvaluator:
                     var_acc[score_idx][gt_idx] = -np.inf
 
             # process detection match results
-            for dt_idx in dt_indices:                
+            for dt_idx in dt_indices:           
+                dt_tagv = dt_boxes[dt_idx].tag_top.value     
                 if matcher.query_src_match(dt_idx) < 0:
                     fp[dt_tagv][score_idx] += 1
-
-        # for gt_idx in range(len(gt_boxes)):
-        #     # skip classes not required
-        #     gt_tag = gt_boxes[gt_idx].tag_top
-        #     gt_tagv = gt_tag.value
-        #     if self._classes.find(gt_tagv) == self._classes.end():
-        #         continue
-           
-        #     for order_idx in range(len(order)):
-        #         dt_idx = order[order_idx]
-        #         # compare class information
-        #         if dt_boxes[dt_idx].tag_top != gt_tag:
-        #             continue
-
-        #         # true positive if overlap is larger than threshold
-        #         if iou[gt_idx, dt_idx] > self._min_overlaps[gt_tagv]:
-        #             thres_loc = bisect(self._pr_thresholds, dt_boxes[dt_idx].tag_score)
-        #             assert thres_loc >= 0, "Box score should be larger than min_score!"
-
-        #             # assign box
-        #             for score_idx in range(0, thres_loc):
-        #                 # skip already assigned box
-        #                 if dt_assignment[score_idx].find(dt_idx) != dt_assignment[score_idx].end():
-        #                     continue
-
-        #                 dt_assignment[score_idx][dt_idx] = gt_idx
-        #                 gt_assignment[score_idx][gt_idx] = dt_idx
-
-        #                 # caculate accuracy values for various criteria
-        #                 iou_acc[score_idx][gt_idx] = iou[gt_idx, dt_idx]
-        #                 dist_acc[score_idx][gt_idx] = np.linalg.norm(
-        #                     gt_boxes[gt_idx].position - dt_boxes[dt_idx].position)
-        #                 box_acc[score_idx][gt_idx] = np.linalg.norm(
-        #                     gt_boxes[gt_idx].dimension - dt_boxes[dt_idx].dimension)
-
-        #                 angular_acc_cur = (gt_boxes[gt_idx].orientation.inv() * dt_boxes[dt_idx].orientation).magnitude()
-        #                 angular_acc[score_idx][gt_idx] = angular_acc_cur / PI
-
-        #                 if dt_boxes[dt_idx].orientation_var > 0:
-        #                     var_acc_cur = sps.multivariate_normal.logpdf(gt_boxes[gt_idx].position,
-        #                         dt_boxes[dt_idx].position, cov=dt_boxes[dt_idx].position_var)
-        #                     var_acc_cur += sps.multivariate_normal.logpdf(gt_boxes[gt_idx].dimension,
-        #                         dt_boxes[dt_idx].dimension, cov=dt_boxes[dt_idx].dimension_var)
-        #                     var_acc_cur += sps.vonmises.logpdf(angular_acc_cur, kappa=1/dt_boxes[dt_idx].orientation_var)
-        #                     var_acc[score_idx][gt_idx] = var_acc_cur
-        #                 else:
-        #                     var_acc[score_idx][gt_idx] = -np.inf
-        #             break
-
-        #     ngt[gt_tagv] += 1
-        #     for score_idx in range(self._pr_nsamples):
-        #         if gt_assignment[score_idx].find(gt_idx) != gt_assignment[score_idx].end():
-        #             tp[gt_tagv][score_idx] += 1
-        #         else:
-        #             fn[gt_tagv][score_idx] += 1
-
-        # # compute false positives
-        # for dt_idx in range(len(dt_boxes)):
-        #     dt_box = dt_boxes[dt_idx]
-        #     dt_tagv = dt_box.tag_top.value
-        #     if self._classes.find(dt_tagv) == self._classes.end():
-        #         continue
-
-        #     thres_loc = bisect(self._pr_thresholds, dt_boxes[dt_idx].tag_score)
-        #     for score_idx in range(thres_loc):
-        #         ndt[dt_tagv][score_idx] += 1
-        #         if dt_assignment[score_idx].find(dt_idx) == dt_assignment[score_idx].end():
-        #             fp[dt_tagv][score_idx] += 1
 
         # compute accuracy metrics
         cdef vector[int] gt_tags

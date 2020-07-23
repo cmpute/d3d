@@ -9,7 +9,7 @@ from d3d.benchmarks import DetectionEvaluator
 class TestBenchmark(unittest.TestCase):
     def test_get_stats(self):
         eval_classes = [KittiObjectClass.Car, KittiObjectClass.Van]
-        evaluator = DetectionEvaluator(eval_classes, -0.5)
+        evaluator = DetectionEvaluator(eval_classes, [0.1, 0.2])
 
         r = Rotation.from_euler("Z", 0)
         d = [2, 2, 2]
@@ -41,3 +41,44 @@ class TestBenchmark(unittest.TestCase):
             assert np.isclose(result.acc_dist[clsid][0], 0) and np.isnan(result.acc_dist[clsid][-1])
             assert np.isclose(result.acc_box[clsid][0], 0) and np.isnan(result.acc_box[clsid][-1])
             assert np.isinf(result.acc_var[clsid][0]) and np.isnan(result.acc_var[clsid][-1])
+
+        # test match with other boxes
+        r = Rotation.from_euler("Z", 0.01)
+        d = [2.1, 2.1, 2.1]
+        gt1 = ObjectTarget3D(
+            [0, 0, 0], r, d,
+            ObjectTag(KittiObjectClass.Van)
+        )
+        gt2 = ObjectTarget3D(
+            [-1, 1, 0], r, d,
+            ObjectTag(KittiObjectClass.Car)
+        )
+        gt3 = ObjectTarget3D(
+            [1, -1, 0], r, d,
+            ObjectTag(KittiObjectClass.Pedestrian)
+        )
+        gt_boxes = ObjectTarget3DArray([gt1, gt2, gt3], frame="test")
+        result = evaluator.get_stats(gt_boxes, dt_boxes)
+        for clsobj in eval_classes:
+            clsid = clsobj.value
+            assert result.ngt[clsid] == 1
+            assert result.ndt[clsid][0] == 1 and result.ndt[clsid][-1] == 0
+
+            if clsobj == KittiObjectClass.Car:
+                assert result.tp[clsid][0] == 1 and result.tp[clsid][-1] == 0
+                assert result.fp[clsid][0] == 0 and result.fp[clsid][-1] == 0
+                assert result.fn[clsid][0] == 0 and result.fn[clsid][-1] == 1
+                assert result.acc_iou[clsid][0] > 0.1 and np.isnan(result.acc_iou[clsid][-1])
+                assert result.acc_angular[clsid][0] > 0 and np.isnan(result.acc_angular[clsid][-1])
+                assert result.acc_dist[clsid][0] > 1 and np.isnan(result.acc_dist[clsid][-1])
+                assert result.acc_box[clsid][0] > 0 and np.isnan(result.acc_box[clsid][-1])
+                assert np.isinf(result.acc_var[clsid][0]) and np.isnan(result.acc_var[clsid][-1])
+            else:
+                assert result.tp[clsid][0] == 0 and result.tp[clsid][-1] == 0
+                assert result.fp[clsid][0] == 1 and result.fp[clsid][-1] == 0
+                assert result.fn[clsid][0] == 1 and result.fn[clsid][-1] == 1
+                assert np.isnan(result.acc_iou[clsid][0]) and np.isnan(result.acc_iou[clsid][-1])
+                assert np.isnan(result.acc_angular[clsid][0]) and np.isnan(result.acc_angular[clsid][-1])
+                assert np.isnan(result.acc_dist[clsid][0]) and np.isnan(result.acc_dist[clsid][-1])
+                assert np.isnan(result.acc_box[clsid][0]) and np.isnan(result.acc_box[clsid][-1])
+                assert np.isnan(result.acc_var[clsid][0]) and np.isnan(result.acc_var[clsid][-1])
