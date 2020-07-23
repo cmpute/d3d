@@ -8,6 +8,7 @@ cdef class ObjectTag:
 cdef class ObjectTarget3D:
     cdef public float [:] position, dimension
     cdef public float [:, :] position_var, dimension_var
+    cdef public float orientation_var  # XXX: how to describe angle variance?
     cdef public object orientation # TODO: export scipy definition
     cdef public object id
     cdef public ObjectTag tag

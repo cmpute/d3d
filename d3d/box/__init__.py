@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from .box_impl import (
     iou2d as iou2d_cc, iou2d_cuda,
@@ -9,6 +10,13 @@ def box2d_iou(boxes1, boxes2, method="box"):
     '''
     :param method: 'box' - normal box, 'rbox' - rotated box
     '''
+    convert_numpy = False
+    if isinstance(boxes1, np.ndarray):
+        assert isinstance(boxes2, np.ndarray), "Input should be both numpy tensor or pytorch tensor!"
+        boxes1 = torch.from_numpy(boxes1)
+        boxes2 = torch.from_numpy(boxes2)
+        convert_numpy = True
+
     if len(boxes1.shape) != 2 or len(boxes2.shape) != 2:
         raise ValueError("Input of rbox_2d_iou should be Nx2 tensors!")
     if boxes1.shape[1] != 5 or boxes2.shape[1] != 5:
@@ -19,7 +27,11 @@ def box2d_iou(boxes1, boxes2, method="box"):
         impl = iou2d_cuda
     else:
         impl = iou2d_cc
-    return impl(boxes1, boxes2, iou_type)
+    result = impl(boxes1, boxes2, iou_type)
+
+    if convert_numpy:
+        return result.numpy()
+    return result
 
 # TODO: implement IoU loss, GIoU, DIoU, CIoU: https://zhuanlan.zhihu.com/p/104236411
 
@@ -30,6 +42,13 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
 
     Soft-NMS: Bodla, Navaneeth, et al. "Soft-NMS--improving object detection with one line of code." Proceedings of the IEEE international conference on computer vision. 2017.
     '''
+    convert_numpy = False
+    if isinstance(boxes, np.ndarray):
+        assert isinstance(scores, np.ndarray), "Input should be both numpy tensor or pytorch tensor!"
+        boxes = torch.from_numpy(boxes)
+        scores = torch.from_numpy(scores)
+        convert_numpy = True
+
     if len(boxes) != len(scores):
         raise ValueError("Numbers of boxes and scores are inconsistent!")
     if len(scores.shape) == 2:
@@ -50,7 +69,11 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
         iou_type, supression_type,
         iou_threshold, score_threshold, supression_param
     )
-    return ~suppressed
+    mask = ~suppressed
+
+    if convert_numpy:
+        return mask.numpy()
+    return mask
 
 def box2d_crop(cloud, boxes):
     '''

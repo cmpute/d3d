@@ -12,6 +12,7 @@ _logger = logging.getLogger("d3d")
 def _d3d_enum_mapping():
     import d3d.dataset as dd
     return {
+        # 0 for non-built-in mapping
         dd.kitti.KittiObjectClass: 1,
         dd.waymo.WaymoObjectClass: 2,
         dd.nuscenes.NuscenesObjectClass: 3,
@@ -24,9 +25,11 @@ def _d3d_enum_lookup():
 cdef class ObjectTag:
     '''
     This class stands for label tags associate with object target
+
+    TODO: store label in value and create equal operator
     '''
-    def __init__(self, labels, mapping, scores=None):
-        if not issubclass(mapping, enum.Enum):
+    def __init__(self, labels, mapping=None, scores=None):
+        if mapping is not None and not issubclass(mapping, enum.Enum):
             raise ValueError("The object class mapping should be an Enum")
         self.mapping = mapping
 
@@ -50,6 +53,8 @@ cdef class ObjectTag:
                 self.labels[i] = self.mapping[self.labels[i]]
             elif isinstance(self.labels[i], int):
                 self.labels[i] = self.mapping(self.labels[i])
+            elif self.mapping is None: # infer mapping type
+                self.mapping = type(self.labels[i])
                 
         # sort labels descending
         order = list(reversed(np.argsort(self.scores)))
@@ -74,7 +79,6 @@ cdef class ObjectTag:
     def deserialize(data):
         '''
         Deserialize this object to primitives
-        TODO: test this
         '''
         mapping = _d3d_enum_lookup()[data[0]]
         labels = [mapping(l) for l in data[1]]
@@ -122,7 +126,7 @@ cdef class ObjectTarget3D:
             self.dimension_var = np.zeros((3, 3), dtype=np.float32)
         else:
             self.dimension_var = np.asarray(dimension_var, dtype=np.float32).reshape(3, 3)
-        # self.orientation_var = orientation_var or 0 # XXX: how to describe angle variance?
+        self.orientation_var = orientation_var or 0
 
     @property
     def tag_top(self):
@@ -205,11 +209,11 @@ cdef class ObjectTarget3DArray(list):
         '''
         if len(self) == 0:
             return np.empty((0, 8))
-        return np.stack([box.to_ground(box_type) for box in self])
+        return np.stack([box.to_numpy(box_type) for box in self])
 
     def to_torch(self, box_type="ground"):
         import torch
-        return torch.tensor(self.to_numpy(box_type))
+        return torch.from_numpy(self.to_numpy(box_type))
 
     def serialize(self):
         return (self.frame, [obj.serialize() for obj in self])

@@ -1,0 +1,43 @@
+import unittest
+import numpy as np
+
+from scipy.spatial.transform import Rotation
+from d3d.dataset.kitti import KittiObjectClass
+from d3d.abstraction import ObjectTarget3DArray, ObjectTarget3D, ObjectTag
+from d3d.benchmarks import DetectionEvaluator
+
+class TestBenchmark(unittest.TestCase):
+    def test_get_stats(self):
+        eval_classes = [KittiObjectClass.Car, KittiObjectClass.Van]
+        evaluator = DetectionEvaluator(eval_classes, -0.5)
+
+        r = Rotation.from_euler("Z", 0)
+        d = [2, 2, 2]
+        dt1 = ObjectTarget3D(
+            [0, 0, 0], r, d,
+            ObjectTag(KittiObjectClass.Car, scores=0.8)
+        )
+        dt2 = ObjectTarget3D(
+            [1, 1, 1], r, d,
+            ObjectTag(KittiObjectClass.Van, scores=0.7)
+        )
+        dt3 = ObjectTarget3D(
+            [-1, -1, -1], r, d,
+            ObjectTag(KittiObjectClass.Pedestrian, scores=0.8)
+        )
+        dt_boxes = ObjectTarget3DArray([dt1, dt2, dt3], frame="test")
+        
+        # test match with self
+        result = evaluator.get_stats(dt_boxes, dt_boxes)
+        for clsobj in eval_classes:
+            clsid = clsobj.value
+            assert result.ngt[clsid] == 1
+            assert result.ndt[clsid][0] == 1 and result.ndt[clsid][-1] == 0
+            assert result.tp[clsid][0] == 1 and result.tp[clsid][-1] == 0
+            assert result.fp[clsid][0] == 0 and result.fp[clsid][-1] == 0
+            assert result.fn[clsid][0] == 0 and result.fn[clsid][-1] == 1
+            assert np.isclose(result.acc_iou[clsid][0], 1) and np.isnan(result.acc_iou[clsid][-1])
+            assert np.isclose(result.acc_angular[clsid][0], 0) and np.isnan(result.acc_angular[clsid][-1])
+            assert np.isclose(result.acc_dist[clsid][0], 0) and np.isnan(result.acc_dist[clsid][-1])
+            assert np.isclose(result.acc_box[clsid][0], 0) and np.isnan(result.acc_box[clsid][-1])
+            assert np.isinf(result.acc_var[clsid][0]) and np.isnan(result.acc_var[clsid][-1])
