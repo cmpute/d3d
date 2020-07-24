@@ -6,8 +6,9 @@ cdef class ObjectTag:
     cdef public list scores
 
 cdef class ObjectTarget3D:
-    cdef public float [:] position, dimension
-    cdef public float [:, :] position_var, dimension_var
+    # variables with underscore at the end are cython variable, python version is exposed as property
+    cdef float [:] position_, dimension_
+    cdef float [:, :] position_var_, dimension_var_
     cdef public float orientation_var  # XXX: how to describe angle variance?
     cdef public object orientation # TODO: export scipy definition
     cdef public object id

@@ -1,5 +1,6 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True
 
+cimport cython
 import numpy as np
 cimport numpy as np
 import scipy.stats as sps
@@ -20,9 +21,9 @@ cdef inline float weighted_mean(float a, int wa, float b, int wb) nogil:
     elif wb == 0: return a
     else: return (a * wa + b * wb) / (wa + wb)
 
-cdef inline int bisect(float[:] arr, float x) nogil:
+cdef inline int bisect(vector[float] &arr, float x) nogil:
     '''Cython version of bisect.bisect_left'''
-    cdef int lo=0, hi=arr.shape[0], mid
+    cdef int lo=0, hi=arr.size(), mid
     while lo < hi:
         mid = (lo+hi)//2
         if arr[mid] < x: lo = mid+1
@@ -38,6 +39,14 @@ cdef inline float calc_recall(int tp, int fn) nogil:
 cdef inline float calc_fscore(int tp, int fp, int fn, float b2) nogil:
     return (1+b2) * tp / ((1+b2)*tp + b2*fn + fp)
 
+@cython.auto_pickle(True)
+cdef class DetectionEvalStats:
+    '''Stats summary of a evaluation step'''
+    cdef public unordered_map[int, vector[float]] acc_iou, acc_angular, acc_dist, acc_box, acc_var
+    cdef public unordered_map[int, int] ngt
+    cdef public unordered_map[int, vector[int]] tp, fp, fn, ndt
+
+@cython.auto_pickle(True)
 cdef class DetectionEvaluator:
     '''Benchmark for object detection'''
 
@@ -47,7 +56,7 @@ cdef class DetectionEvaluator:
     cdef unordered_set[int] _classes
     cdef object _class_type
     cdef unordered_map[int, float] _min_overlaps
-    cdef float[:] _pr_thresholds
+    cdef vector[float] _pr_thresholds
 
     # aggregated statistics declarations
     cdef unordered_map[int, int] _total_gt
@@ -67,6 +76,7 @@ cdef class DetectionEvaluator:
         '''
         # parse parameters
         if isinstance(classes, (list, tuple)):
+            assert len(classes) > 0
             self._class_type = type(classes[0])
             for c in classes:
                 self._classes.insert(c.value)
@@ -92,7 +102,7 @@ cdef class DetectionEvaluator:
             logstart, logend = 1, int(pr_sample_scale[3:] or "10")
             thresholds = np.geomspace(logstart, logend, pr_sample_count+1, dtype=np.float32)
             thresholds = (thresholds - logstart) * (1 - min_score) / (logend - logstart)
-            thresholds = (1 - thresholds)[:1:-1]
+            thresholds = (1 - thresholds)[:0:-1]
         else:
             raise ValueError("Unrecognized PR sample type")
         self._pr_thresholds = thresholds
@@ -125,7 +135,8 @@ cdef class DetectionEvaluator:
             self._acc_dist[k].assign(self._pr_nsamples, NAN)
             self._acc_var[k].assign(self._pr_nsamples, NAN)
 
-    cdef inline dict _aggregate_stats(self, vector[unordered_map[int, float]]& acc, vector[int]& gt_tags):
+    cdef inline unordered_map[int, vector[float]] _aggregate_stats(self,
+        vector[unordered_map[int, float]]& acc, vector[int]& gt_tags) nogil:
         '''Help put accuracy values into categories'''
         # init intermediate vars
         cdef unordered_map[int, vector[float]] sorted_sum, aggregated
@@ -151,7 +162,7 @@ cdef class DetectionEvaluator:
                     aggregated[k][score_idx] = NAN
         return aggregated
 
-    def get_stats(self, ObjectTarget3DArray gt_boxes, ObjectTarget3DArray dt_boxes):
+    cpdef DetectionEvalStats get_stats(self, ObjectTarget3DArray gt_boxes, ObjectTarget3DArray dt_boxes):
         assert gt_boxes.frame == dt_boxes.frame        
 
         # forward definitions
@@ -162,20 +173,14 @@ cdef class DetectionEvaluator:
         matcher.prepare_boxes(dt_boxes, gt_boxes, DistanceTypes.RIoU)
 
         # initialize statistics
-        cdef unordered_map[int, int] ngt
-        cdef unordered_map[int, vector[int]] tp, fp, fn, ndt
-        cdef vector[unordered_map[int, int]] dt_assignment, gt_assignment
+        cdef DetectionEvalStats summary = DetectionEvalStats()
         cdef vector[unordered_map[int, float]] iou_acc, angular_acc, dist_acc, box_acc, var_acc
-
         for k in self._classes:
-            ngt[k] = 0
-            ndt[k] = vector[int](self._pr_nsamples, 0)
-            tp[k] = vector[int](self._pr_nsamples, 0)
-            fp[k] = vector[int](self._pr_nsamples, 0)
-            fn[k] = vector[int](self._pr_nsamples, 0)
-
-            dt_assignment.resize(self._pr_nsamples)
-            gt_assignment.resize(self._pr_nsamples)
+            summary.ngt[k] = 0
+            summary.ndt[k] = vector[int](self._pr_nsamples, 0)
+            summary.tp[k] = vector[int](self._pr_nsamples, 0)
+            summary.fp[k] = vector[int](self._pr_nsamples, 0)
+            summary.fn[k] = vector[int](self._pr_nsamples, 0)
 
             iou_acc.resize(self._pr_nsamples)
             angular_acc.resize(self._pr_nsamples)
@@ -192,7 +197,7 @@ cdef class DetectionEvaluator:
                 continue
 
             gt_indices.push_back(gt_idx)
-            ngt[gt_tagv] += 1
+            summary.ngt[gt_tagv] += 1
 
         # loop over score thres
         for score_idx in range(self._pr_nsamples):
@@ -208,7 +213,7 @@ cdef class DetectionEvaluator:
                     continue
 
                 dt_indices.push_back(dt_idx)
-                ndt[dt_tagv][score_idx] += 1
+                summary.ndt[dt_tagv][score_idx] += 1
 
             # match boxes
             matcher.match(dt_indices, gt_indices, self._min_overlaps)
@@ -218,9 +223,9 @@ cdef class DetectionEvaluator:
                 gt_tagv = gt_boxes[gt_idx].tag_top.value
                 dt_idx = matcher.query_dst_match(gt_idx)
                 if dt_idx < 0:
-                    fn[gt_tagv][score_idx] += 1
+                    summary.fn[gt_tagv][score_idx] += 1
                     continue
-                tp[gt_tagv][score_idx] += 1
+                summary.tp[gt_tagv][score_idx] += 1
 
                 # caculate accuracy values for various criteria
                 iou_acc[score_idx][gt_idx] = -matcher._distance_cache[dt_idx, gt_idx] # FIXME: not elegant here
@@ -246,7 +251,7 @@ cdef class DetectionEvaluator:
             for dt_idx in dt_indices:           
                 dt_tagv = dt_boxes[dt_idx].tag_top.value     
                 if matcher.query_src_match(dt_idx) < 0:
-                    fp[dt_tagv][score_idx] += 1
+                    summary.fp[dt_tagv][score_idx] += 1
 
         # compute accuracy metrics
         cdef vector[int] gt_tags
@@ -254,14 +259,12 @@ cdef class DetectionEvaluator:
         for box in gt_boxes:
             gt_tags.push_back(box.tag_top.value)
 
-        return edict(ngt=ngt, ndt=ndt,
-            tp=tp, fp=fp, fn=fn,
-            acc_iou=self._aggregate_stats(iou_acc, gt_tags),
-            acc_angular=self._aggregate_stats(angular_acc, gt_tags),
-            acc_dist=self._aggregate_stats(dist_acc, gt_tags),
-            acc_box=self._aggregate_stats(box_acc, gt_tags),
-            acc_var=self._aggregate_stats(var_acc, gt_tags)
-        )
+        summary.acc_iou = self._aggregate_stats(iou_acc, gt_tags)
+        summary.acc_angular = self._aggregate_stats(angular_acc, gt_tags)
+        summary.acc_dist = self._aggregate_stats(dist_acc, gt_tags)
+        summary.acc_box = self._aggregate_stats(box_acc, gt_tags)
+        summary.acc_var = self._aggregate_stats(var_acc, gt_tags)
+        return summary
 
     def add_stats(self, stats):
         '''

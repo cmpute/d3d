@@ -4,7 +4,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 from d3d.dataset.kitti import KittiObjectClass
 from d3d.abstraction import ObjectTarget3DArray, ObjectTarget3D, ObjectTag
-from d3d.benchmarks import DetectionEvaluator
+from d3d.benchmarks import DetectionEvaluator, DetectionEvalStats
 
 class TestBenchmark(unittest.TestCase):
     def test_get_stats(self):
@@ -82,3 +82,28 @@ class TestBenchmark(unittest.TestCase):
                 assert np.isnan(result.acc_dist[clsid][0]) and np.isnan(result.acc_dist[clsid][-1])
                 assert np.isnan(result.acc_box[clsid][0]) and np.isnan(result.acc_box[clsid][-1])
                 assert np.isnan(result.acc_var[clsid][0]) and np.isnan(result.acc_var[clsid][-1])
+
+    def test_pickling(self):
+        import pickle, io
+
+        evaluator = DetectionEvaluator([KittiObjectClass.Car], [0.2])
+
+        buffer = io.BytesIO()
+        pickle.dump(evaluator, buffer)
+        buffer.seek(0)
+        evaluator_copy = pickle.load(buffer)
+
+        assert np.allclose(evaluator.score_thresholds, evaluator_copy.score_thresholds)
+
+        summary = DetectionEvalStats()
+        summary.ngt = {1:1, 2:1}
+        summary.ndt = {1:[2,2,1,1], 2:[2,1,1,1]}
+        summary.acc_iou = {1:[0.2,0.2,0.1,0.2], 2:[0.2,0.1,0.1,0.1]}
+
+        buffer = io.BytesIO()
+        pickle.dump(summary, buffer)
+        buffer.seek(0)
+        summary_copy = pickle.load(buffer)
+        assert summary.ngt == summary_copy.ngt
+        assert summary.ndt == summary_copy.ndt
+        assert summary.acc_iou == summary_copy.acc_iou

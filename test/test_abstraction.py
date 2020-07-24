@@ -17,7 +17,8 @@ class TestAbstraction(unittest.TestCase):
             orientation = Rotation.from_euler("Z", i)
             id_ = "test%d" % i
             tag = ObjectTag(KittiObjectClass.Car, KittiObjectClass, 0.9)
-            obj = ObjectTarget3D(position, orientation, dimension, tag, id_, position_var, dimension_var)
+            obj = ObjectTarget3D(position, orientation, dimension, tag, id_,
+                position_var=position_var, dimension_var=dimension_var)
             arr.append(obj)
         
         data = msgpack.packb(arr.serialize(), use_single_float=True)

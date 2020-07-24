@@ -119,14 +119,40 @@ cdef class ObjectTarget3D:
 
         self.id = id_
         if position_var is None:
-            self.position_var = np.zeros((3, 3), dtype=np.float32)
+            self.position_var_ = np.zeros((3, 3), dtype=np.float32)
         else:
-            self.position_var = np.asarray(position_var, dtype=np.float32).reshape(3, 3)
+            self.position_var_ = np.asarray(position_var, dtype=np.float32).reshape(3, 3)
         if dimension_var is None:
-            self.dimension_var = np.zeros((3, 3), dtype=np.float32)
+            self.dimension_var_ = np.zeros((3, 3), dtype=np.float32)
         else:
-            self.dimension_var = np.asarray(dimension_var, dtype=np.float32).reshape(3, 3)
-        self.orientation_var = orientation_var or 0
+            self.dimension_var_ = np.asarray(dimension_var, dtype=np.float32).reshape(3, 3)
+        self.orientation_var = 0 if orientation_var is None else orientation_var
+
+    # exposes basic members
+    @property
+    def position(self):
+        return np.asarray(self.position_)
+    @position.setter
+    def position(self, value):
+        self.position_ = np.asarray(value, dtype=np.float32)
+    @property
+    def position_var(self):
+        return np.asarray(self.position_var_)
+    @position_var.setter
+    def position_var(self, value):
+        self.position_var_ = np.asarray(value, dtype=np.float32)
+    @property
+    def dimension(self):
+        return np.asarray(self.dimension_)
+    @dimension.setter
+    def dimension(self, value):
+        self.dimension_ = np.asarray(value, dtype=np.float32)
+    @property
+    def dimension_var(self):
+        return np.asarray(self.dimension_var)
+    @dimension_var.setter
+    def dimension_var(self, value):
+        self.dimension_var_ = np.asarray(value, dtype=np.float32)
 
     @property
     def tag_top(self):
@@ -180,16 +206,19 @@ cdef class ObjectTarget3D:
             np.asarray(self.dimension).tolist(),
             np.ravel(self.dimension_var).tolist(),
             self.orientation.as_quat().tolist(),
+            self.orientation_var,
             self.id,
             self.tag.serialize()
         )
 
     @staticmethod
     def deserialize(data):
-        pos, pos_var, dim, dim_var, ori_data, id_, tag_data = data
+        pos, pos_var, dim, dim_var, ori_data, ori_var, id_, tag_data = data
         ori = Rotation.from_quat(ori_data)
         tag = ObjectTag.deserialize(tag_data)
-        return ObjectTarget3D(pos, ori, dim, tag, id_, pos_var, dim_var)
+        return ObjectTarget3D(pos, ori, dim, tag, id_=id_,
+            position_var=pos_var, orientation_var=ori_var, dimension_var=dim_var
+        )
 
 cdef class ObjectTarget3DArray(list):
     def __init__(self, iterable=[], frame=None):
