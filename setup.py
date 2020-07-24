@@ -52,7 +52,7 @@ setup(
     license='BSD-3-Clause',
     packages=find_packages(),
     install_requires=['numpy', 'torch', 'scipy>=1.4', 'addict', 'pillow'],
-    setup_requires=['scikit-build', 'setuptools_scm'],
+    setup_requires=['scikit-build', 'setuptools_scm', 'cython>=0.29.16'],
     extras_require={'test': ['pytest']},
     classifiers=[
         'Programming Language :: C++',

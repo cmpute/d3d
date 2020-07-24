@@ -15,11 +15,7 @@ from libcpp.unordered_set cimport unordered_set
 from d3d.abstraction cimport ObjectTarget3DArray
 from d3d.tracking.matcher cimport ScoreMatcher, DistanceTypes
 from d3d.box import box2d_iou
-
-cdef inline float weighted_mean(float a, int wa, float b, int wb) nogil:
-    if wa == 0: return b
-    elif wb == 0: return a
-    else: return (a * wa + b * wb) / (wa + wb)
+from d3d.math cimport wmean, diffnorm3
 
 cdef inline int bisect(vector[float] &arr, float x) nogil:
     '''Cython version of bisect.bisect_left'''
@@ -192,7 +188,7 @@ cdef class DetectionEvaluator:
         # select ground-truth boxes to match
         cdef vector[int] gt_indices, dt_indices
         for gt_idx in range(len(gt_boxes)):
-            gt_tagv = gt_boxes[gt_idx].tag_top.value
+            gt_tagv = gt_boxes[gt_idx].tag_top.value # TODO: make these access in C
             if self._min_overlaps.find(gt_tagv) == self._min_overlaps.end():
                 continue
 
@@ -229,10 +225,8 @@ cdef class DetectionEvaluator:
 
                 # caculate accuracy values for various criteria
                 iou_acc[score_idx][gt_idx] = -matcher._distance_cache[dt_idx, gt_idx] # FIXME: not elegant here
-                dist_acc[score_idx][gt_idx] = np.linalg.norm(
-                    np.asarray(gt_boxes[gt_idx].position) - np.asarray(dt_boxes[dt_idx].position)) # TODO: specialize these
-                box_acc[score_idx][gt_idx] = np.linalg.norm(
-                    np.asarray(gt_boxes[gt_idx].dimension) - np.asarray(dt_boxes[dt_idx].dimension))
+                dist_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).position_, dt_boxes.get(dt_idx).position_)
+                box_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).dimension_, dt_boxes.get(dt_idx).dimension_)
 
                 angular_acc_cur = (gt_boxes[gt_idx].orientation.inv() * dt_boxes[dt_idx].orientation).magnitude()
                 angular_acc[score_idx][gt_idx] = angular_acc_cur / PI
@@ -266,7 +260,7 @@ cdef class DetectionEvaluator:
         summary.acc_var = self._aggregate_stats(var_acc, gt_tags)
         return summary
 
-    def add_stats(self, stats):
+    cpdef add_stats(self, DetectionEvalStats stats):
         '''
         Add statistics from get_stats into database
         '''
@@ -276,15 +270,15 @@ cdef class DetectionEvaluator:
             for i in range(self._pr_nsamples):
                 # aggregate accuracies
                 otp, ntp = self._tp[k][i], stats.tp[k][i]
-                self._acc_angular[k][i] = weighted_mean(
+                self._acc_angular[k][i] = wmean(
                     self._acc_angular[k][i], otp, stats.acc_angular[k][i], ntp)
-                self._acc_box[k][i] = weighted_mean(
+                self._acc_box[k][i] = wmean(
                     self._acc_box[k][i], otp, stats.acc_box[k][i], ntp)
-                self._acc_iou[k][i] = weighted_mean(
+                self._acc_iou[k][i] = wmean(
                     self._acc_iou[k][i], otp, stats.acc_iou[k][i], ntp)
-                self._acc_dist[k][i] = weighted_mean(
+                self._acc_dist[k][i] = wmean(
                     self._acc_dist[k][i], otp, stats.acc_dist[k][i], ntp)
-                self._acc_var[k][i] = weighted_mean(
+                self._acc_var[k][i] = wmean(
                     self._acc_var[k][i], otp, stats.acc_var[k][i], ntp)
 
                 # aggregate common stats

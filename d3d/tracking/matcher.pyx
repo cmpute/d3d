@@ -2,6 +2,7 @@ import torch
 cimport numpy as np
 import numpy as np
 
+from scipy.spatial.distance import cdist
 from d3d.box import box2d_iou
 
 cdef class ScoreMatcher:
@@ -30,7 +31,7 @@ cdef class ScoreMatcher:
                 dst_arr[:, [0,1,3,4,6]],
                 method="rbox")
         elif distance_metric == DistanceTypes.Euclidean:
-            pass # TODO: implement
+            self._distance_cache = cdist(src_arr[:, :3], dst_arr[:, :3], metric='euclidean').astype(np.float32)
 
     cpdef match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold):
         '''

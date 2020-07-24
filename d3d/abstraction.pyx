@@ -149,7 +149,7 @@ cdef class ObjectTarget3D:
         self.dimension_ = np.asarray(value, dtype=np.float32)
     @property
     def dimension_var(self):
-        return np.asarray(self.dimension_var)
+        return np.asarray(self.dimension_var_)
     @dimension_var.setter
     def dimension_var(self, value):
         self.dimension_var_ = np.asarray(value, dtype=np.float32)
@@ -201,10 +201,10 @@ cdef class ObjectTarget3D:
 
     def serialize(self):
         return (
-            np.asarray(self.position).tolist(),
-            np.ravel(self.position_var).tolist(),
-            np.asarray(self.dimension).tolist(),
-            np.ravel(self.dimension_var).tolist(),
+            np.asarray(self.position_).tolist(),
+            np.ravel(self.position_var_).tolist(),
+            np.asarray(self.dimension_).tolist(),
+            np.ravel(self.dimension_var_).tolist(),
             self.orientation.as_quat().tolist(),
             self.orientation_var,
             self.id,
@@ -231,6 +231,9 @@ cdef class ObjectTarget3DArray(list):
         # copy frame value
         if isinstance(iterable, ObjectTarget3DArray) and not frame:
             self.frame = iterable.frame
+
+    cdef ObjectTarget3D get(self, int index):
+        return <ObjectTarget3D>(self[index])
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
         '''
@@ -266,7 +269,7 @@ cdef class ObjectTarget3DArray(list):
                 return ObjectTarget3DArray.deserialize(msgpack.unpackb(fout.read()))
 
     def __repr__(self):
-        return "<ObjectTarget3DArray with %d objects>" % len(self)
+        return "<ObjectTarget3DArray with %d objects @ %s>" % (len(self), self.frame)
 
     def filter_tag(self, tags):
         '''
