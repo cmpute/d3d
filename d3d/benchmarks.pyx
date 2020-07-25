@@ -13,7 +13,7 @@ from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
 
 from d3d.abstraction cimport ObjectTarget3DArray
-from d3d.tracking.matcher cimport ScoreMatcher, DistanceTypes
+from d3d.track.matcher cimport ScoreMatcher, DistanceTypes
 from d3d.box import box2d_iou
 from d3d.math cimport wmean, diffnorm3
 

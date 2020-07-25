@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 import pcl
 from matplotlib import pyplot as plt
-import time
+from tkinter import TclError
 
 from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
                                       dump_detection_output, KittiTrackingLoader)
@@ -49,7 +49,7 @@ class CommonObjectDSMixin:
         plt.draw()
         try:
             plt.pause(5)
-        except: # skip error if manually closed
+        except TclError: # skip error if manually closed
             pass
 
     def test_ground_truth_visualizer_pcl(self):
@@ -79,11 +79,11 @@ class CommonObjectDSMixin:
         
         fig, ax = plt.subplots(num="Please check whether the bounding boxes are aligned")
         plt.imshow(image)
-        img_vis(ax, cam, targets, calib, box_color=(255, 255, 0))
+        img_vis(ax, cam, targets, calib, box_color=(1, 1, 0, 0.5))
         plt.draw()
         try:
             plt.pause(5)
-        except: # skip error if manually closed
+        except TclError: # skip error if manually closed
             pass
 
 @unittest.skipIf(not kitti_location, "Path to kitti not set")
@@ -146,7 +146,7 @@ class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin):
         plt.draw()
         try:
             plt.pause(5)
-        except: # skip error if manually closed
+        except TclError: # skip error if manually closed
             pass
 
     def test_ground_truth_visualizer_pcl(self):
@@ -227,7 +227,7 @@ class TestKittiTrackingDataset(unittest.TestCase):
         ax2.set_ylim([375, 0])
         
         fig.canvas.draw_idle()
-        try:
+        try TclError:
             plt.pause(5)
         except: # skip error if manually closed
             pass
