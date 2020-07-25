@@ -13,7 +13,7 @@ from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
 
 from d3d.abstraction cimport ObjectTarget3DArray
-from d3d.track.matcher cimport ScoreMatcher, DistanceTypes
+from d3d.tracking.matcher cimport ScoreMatcher, DistanceTypes
 from d3d.box import box2d_iou
 from d3d.math cimport wmean, diffnorm3
 
@@ -205,7 +205,7 @@ cdef class DetectionEvaluator:
                 dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
                 if self._min_overlaps.find(dt_tag) == self._min_overlaps.end():
                     continue
-                if dt_boxes[dt_idx].tag_score < score_thres:
+                if dt_boxes.get(dt_idx).tag.scores[0] < score_thres:
                     continue
 
                 dt_indices.push_back(dt_idx)

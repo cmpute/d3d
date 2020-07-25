@@ -5,7 +5,7 @@ endif()
 add_subdirectory(box)
 add_subdirectory(math)
 add_subdirectory(point)
-add_subdirectory(track)
+add_subdirectory(tracking)
 add_subdirectory(voxel)
 
 add_cython_target(abstraction CXX)
