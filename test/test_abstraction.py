@@ -15,9 +15,9 @@ class TestAbstraction(unittest.TestCase):
             dimension = np.array([i] * 3)
             dimension_var = np.diag(position)
             orientation = Rotation.from_euler("Z", i)
-            id_ = "test%d" % i
+            tid = "test%d" % i
             tag = ObjectTag(KittiObjectClass.Car, KittiObjectClass, 0.9)
-            obj = ObjectTarget3D(position, orientation, dimension, tag, id_,
+            obj = ObjectTarget3D(position, orientation, dimension, tag, tid,
                 position_var=position_var, dimension_var=dimension_var)
             arr.append(obj)
         
@@ -32,7 +32,7 @@ class TestAbstraction(unittest.TestCase):
             assert np.allclose(arr_copy[i].dimension, arr[i].dimension)
             assert np.allclose(arr_copy[i].dimension_var, arr[i].dimension_var)
             assert np.allclose(arr_copy[i].orientation.as_quat(), arr[i].orientation.as_quat())
-            assert arr_copy[i].id == arr[i].id
+            assert arr_copy[i].tid == arr[i].tid
 
             assert arr_copy[i].tag.mapping == arr[i].tag.mapping
             assert arr_copy[i].tag.labels == arr[i].tag.labels

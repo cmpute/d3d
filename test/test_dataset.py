@@ -16,6 +16,7 @@ from d3d.vis.image import visualize_detections as img_vis
 
 # set the location of the dataset in environment variable
 # if not set, then the corresponding test will be skipped
+# TODO: create mini samples for these datasets to test
 kitti_location = os.environ['KITTI'] if 'KITTI' in os.environ else None
 waymo_location = os.environ['WAYMO'] if 'WAYMO' in os.environ else None
 nuscenes_location = os.environ['NUSCENES'] if 'NUSCENES' in os.environ else None

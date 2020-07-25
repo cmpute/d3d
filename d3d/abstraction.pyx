@@ -25,8 +25,6 @@ def _d3d_enum_lookup():
 cdef class ObjectTag:
     '''
     This class stands for label tags associate with object target
-
-    TODO: store label in value and create equal operator
     '''
     def __init__(self, labels, mapping=None, scores=None):
         if mapping is not None and not issubclass(mapping, enum.Enum):
@@ -35,45 +33,41 @@ cdef class ObjectTag:
 
         # sanity check
         if scores is None:
-            if isinstance(labels, (list, tuple)):
+            if isinstance(labels, (list, tuple)) and len(labels) != 1:
                 raise ValueError("There cannot be multiple labels without scores")
-            self.labels = [labels]
-            self.scores = [1]
+            labels = [labels]
+            scores = [1]
         else:
             if not isinstance(labels, (list, tuple)):
-                self.labels = [labels]
-                self.scores = [scores]
-            else:
-                self.labels = labels
-                self.scores = scores
+                labels = [labels]
+            if not isinstance(scores, (list, tuple)):
+                scores = [scores]
 
-        # convert labels to enum object
-        for i in range(len(self.labels)):
-            if isinstance(self.labels[i], str):
-                self.labels[i] = self.mapping[self.labels[i]]
-            elif isinstance(self.labels[i], int):
-                self.labels[i] = self.mapping(self.labels[i])
-            elif self.mapping is None: # infer mapping type
-                self.mapping = type(self.labels[i])
+        # convert labels to enum id value
+        for i in range(len(labels)):
+            if isinstance(labels[i], str):
+                labels[i] = self.mapping[labels[i]].value
+            elif isinstance(labels[i], int):
+                continue
+            else:
+                if self.mapping is None: # infer mapping type
+                    self.mapping = type(labels[i])
+                labels[i] = labels[i].value
                 
         # sort labels descending
-        order = list(reversed(np.argsort(self.scores)))
-        self.labels = [self.labels[i] for i in order]
-        self.scores = [self.scores[i] for i in order]
+        order = list(reversed(np.argsort(scores)))
+        self.labels = [labels[i] for i in order]
+        self.scores = [scores[i] for i in order]
 
     def __str__(self):
-        if hasattr(self.labels[0], "uname"):
-            name = self.labels[0].uname
-        else:
-            name = self.labels[0].name
+        name = self.mapping(self.labels[0]).name
         return "<ObjectTag, top class: %s>" % name
 
     def serialize(self):
         '''
         Serialize this object to primitives
         '''
-        labels = [l.value for l in self.labels]
-        return (_d3d_enum_mapping()[self.mapping], labels, self.scores)
+        return (_d3d_enum_mapping()[self.mapping], self.labels, self.scores)
 
     @staticmethod
     def deserialize(data):
@@ -81,7 +75,6 @@ cdef class ObjectTag:
         Deserialize this object to primitives
         '''
         mapping = _d3d_enum_lookup()[data[0]]
-        labels = [mapping(l) for l in data[1]]
         return ObjectTag(data[1], mapping, data[2])
 
 cdef class ObjectTarget3D:
@@ -89,14 +82,14 @@ cdef class ObjectTarget3D:
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
     '''
     def __init__(self, position, orientation, dimension, tag,
-        id_=None, position_var=None, orientation_var=None, dimension_var=None):
+        tid=None, position_var=None, orientation_var=None, dimension_var=None):
         '''
         :param position: Position of object center (x,y,z)
         :param orientation: Object heading (direction of x-axis attached on body)
             with regard to x-axis of the world at the object center.
         :param dimension: Length of the object in 3 dimensions (lx,ly,lz)
         :param tag: Classification information of the object
-        :param id: ID of the object used for tracking (optional)
+        :param tid: ID of the object used for tracking (optional)
         '''
 
         assert len(position) == 3, "Invalid position shape"
@@ -117,7 +110,7 @@ cdef class ObjectTarget3D:
         else:
             raise ValueError("Label should be of type ObjectTag")
 
-        self.id = id_
+        self.tid = tid
         if position_var is None:
             self.position_var_ = np.zeros((3, 3), dtype=np.float32)
         else:
@@ -156,14 +149,14 @@ cdef class ObjectTarget3D:
 
     @property
     def tag_top(self):
-        return self.tag.labels[0]
+        return self.tag.mapping(self.tag.labels[0])
 
     @property
     def tag_name(self):
         '''
         Return the name of the target's top tag
         '''
-        return self.tag_top.uname if hasattr(self.tag_top, "uname") else self.tag_top.name
+        return self.tag_top.name
 
     @property
     def tag_score(self):
@@ -207,16 +200,16 @@ cdef class ObjectTarget3D:
             np.ravel(self.dimension_var_).tolist(),
             self.orientation.as_quat().tolist(),
             self.orientation_var,
-            self.id,
+            self.tid,
             self.tag.serialize()
         )
 
     @staticmethod
     def deserialize(data):
-        pos, pos_var, dim, dim_var, ori_data, ori_var, id_, tag_data = data
+        pos, pos_var, dim, dim_var, ori_data, ori_var, tid, tag_data = data
         ori = Rotation.from_quat(ori_data)
         tag = ObjectTag.deserialize(tag_data)
-        return ObjectTarget3D(pos, ori, dim, tag, id_=id_,
+        return ObjectTarget3D(pos, ori, dim, tag, tid=tid,
             position_var=pos_var, orientation_var=ori_var, dimension_var=dim_var
         )
 
@@ -471,7 +464,7 @@ class TransformSet:
         for obj in objects:
             position = np.dot(r.as_matrix(), obj.position) + t
             orientation = r * obj.orientation
-            new_obj = ObjectTarget3D(position, orientation, obj.dimension, obj.tag, obj.id)
+            new_obj = ObjectTarget3D(position, orientation, obj.dimension, obj.tag, obj.tid)
             new_objs.append(new_obj)
         return new_objs
 

@@ -162,7 +162,7 @@ cdef class DetectionEvaluator:
         assert gt_boxes.frame == dt_boxes.frame        
 
         # forward definitions
-        cdef int thres_loc, gt_tagv, dt_idx, dt_tagv
+        cdef int thres_loc, gt_tag, dt_idx, dt_tag
 
         # initialize matcher
         cdef ScoreMatcher matcher = ScoreMatcher()
@@ -188,12 +188,12 @@ cdef class DetectionEvaluator:
         # select ground-truth boxes to match
         cdef vector[int] gt_indices, dt_indices
         for gt_idx in range(len(gt_boxes)):
-            gt_tagv = gt_boxes[gt_idx].tag_top.value # TODO: make these access in C
-            if self._min_overlaps.find(gt_tagv) == self._min_overlaps.end():
+            gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
+            if self._min_overlaps.find(gt_tag) == self._min_overlaps.end():
                 continue
 
             gt_indices.push_back(gt_idx)
-            summary.ngt[gt_tagv] += 1
+            summary.ngt[gt_tag] += 1
 
         # loop over score thres
         for score_idx in range(self._pr_nsamples):
@@ -202,26 +202,26 @@ cdef class DetectionEvaluator:
             # select detection boxes to match
             dt_indices.clear()
             for dt_idx in range(len(dt_boxes)):
-                dt_tagv = dt_boxes[dt_idx].tag_top.value
-                if self._min_overlaps.find(dt_tagv) == self._min_overlaps.end():
+                dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
+                if self._min_overlaps.find(dt_tag) == self._min_overlaps.end():
                     continue
                 if dt_boxes[dt_idx].tag_score < score_thres:
                     continue
 
                 dt_indices.push_back(dt_idx)
-                summary.ndt[dt_tagv][score_idx] += 1
+                summary.ndt[dt_tag][score_idx] += 1
 
             # match boxes
             matcher.match(dt_indices, gt_indices, self._min_overlaps)
 
             # process ground-truth match results
             for gt_idx in gt_indices:
-                gt_tagv = gt_boxes[gt_idx].tag_top.value
+                gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
                 dt_idx = matcher.query_dst_match(gt_idx)
                 if dt_idx < 0:
-                    summary.fn[gt_tagv][score_idx] += 1
+                    summary.fn[gt_tag][score_idx] += 1
                     continue
-                summary.tp[gt_tagv][score_idx] += 1
+                summary.tp[gt_tag][score_idx] += 1
 
                 # caculate accuracy values for various criteria
                 iou_acc[score_idx][gt_idx] = -matcher._distance_cache[dt_idx, gt_idx] # FIXME: not elegant here
@@ -242,16 +242,16 @@ cdef class DetectionEvaluator:
                     var_acc[score_idx][gt_idx] = -np.inf
 
             # process detection match results
-            for dt_idx in dt_indices:           
-                dt_tagv = dt_boxes[dt_idx].tag_top.value     
+            for dt_idx in dt_indices:
+                dt_tag = dt_boxes.get(dt_idx).tag.labels[0]     
                 if matcher.query_src_match(dt_idx) < 0:
-                    summary.fp[dt_tagv][score_idx] += 1
+                    summary.fp[dt_tag][score_idx] += 1
 
         # compute accuracy metrics
         cdef vector[int] gt_tags
         gt_tags.reserve(len(gt_boxes))
-        for box in gt_boxes:
-            gt_tags.push_back(box.tag_top.value)
+        for gt_idx in range(len(gt_boxes)):
+            gt_tags.push_back(gt_boxes.get(gt_idx).tag.labels[0])
 
         summary.acc_iou = self._aggregate_stats(iou_acc, gt_tags)
         summary.acc_angular = self._aggregate_stats(angular_acc, gt_tags)

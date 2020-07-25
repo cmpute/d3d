@@ -96,9 +96,6 @@ class NuscenesObjectClass(IntFlag):
         name = name.replace("n_", "n.")
         return name
     @property
-    def uname(self):
-        return self.category_name
-    @property
     def pretty_name(self):
         return f"{self.category_name}[{self.attribute_name}]"
 
@@ -285,7 +282,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
             size = [label.size[1], label.size[0], label.size[2]] # wlh -> lwh
 
             # create object
-            target = ObjectTarget3D(rel_t, rel_r, size, tag, id=label.instance)
+            target = ObjectTarget3D(rel_t, rel_r, size, tag, tid=label.instance)
             outputs.append(target)
 
         return outputs

@@ -172,7 +172,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
                 Rotation.from_euler("z", label.heading),
                 label.size,
                 ObjectTag(label.label, WaymoObjectClass),
-                id=label.id
+                tid=label.id
             )
             outputs.append(target)
 

@@ -38,10 +38,10 @@ def parse_label(label: list, raw_calib: dict) -> ObjectTarget3DArray:
 
         score = item[16] if len(item) == 17 else None
         tag = ObjectTag(item[1], KittiObjectClass, scores=score)
-        target = ObjectTarget3D(position, orientation, [l,w,h], tag, id=track_id)
+        target = ObjectTarget3D(position, orientation, [l,w,h], tag, tid=track_id)
         objects.append(target)
 
-    return objects 
+    return objects
 
 def parse_pose(oxt: OxtData) -> EgoPose:
     import utm
