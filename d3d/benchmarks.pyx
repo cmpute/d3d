@@ -80,10 +80,9 @@ cdef class DetectionEvaluator:
             self._class_type = type(classes)
             self._classes.insert(classes.value)
         if isinstance(min_overlaps, (list, tuple)):
-            # take negative since iou distance is defined as negative
-            self._min_overlaps = {classes[i].value: -v for i, v in enumerate(min_overlaps)}
+            self._min_overlaps = {classes[i].value: 1 - v for i, v in enumerate(min_overlaps)}
         elif isinstance(min_overlaps, (int, float)):
-            self._min_overlaps = {c: -min_overlaps for c in self._classes}
+            self._min_overlaps = {c: 1 - min_overlaps for c in self._classes}
         else:
             raise ValueError("min_overlaps should be a list or a single value")
 
@@ -224,7 +223,7 @@ cdef class DetectionEvaluator:
                 summary.tp[gt_tag][score_idx] += 1
 
                 # caculate accuracy values for various criteria
-                iou_acc[score_idx][gt_idx] = -matcher._distance_cache[dt_idx, gt_idx] # FIXME: not elegant here
+                iou_acc[score_idx][gt_idx] = 1 - matcher._distance_cache[dt_idx, gt_idx] # FIXME: not elegant here
                 dist_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).position_, dt_boxes.get(dt_idx).position_)
                 box_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).dimension_, dt_boxes.get(dt_idx).dimension_)
 

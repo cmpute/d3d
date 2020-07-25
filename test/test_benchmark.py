@@ -84,6 +84,9 @@ class TestBenchmark(unittest.TestCase):
                 assert np.isnan(result.acc_var[clsid][0]) and np.isnan(result.acc_var[clsid][-1])
 
     def test_pickling(self):
+        '''
+        Pickling functionality is essential for multiprocessing
+        '''
         import pickle, io
 
         evaluator = DetectionEvaluator([KittiObjectClass.Car], [0.2])
