@@ -7,7 +7,7 @@ import scipy.stats as sps
 import torch
 from addict import Dict as edict
 
-from numpy.math cimport NAN, isnan, PI, isinf
+from numpy.math cimport NAN, isnan, PI, isinf, INFINITY
 from libcpp.vector cimport vector
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
@@ -161,7 +161,8 @@ cdef class DetectionEvaluator:
         assert gt_boxes.frame == dt_boxes.frame        
 
         # forward definitions
-        cdef int thres_loc, gt_tag, dt_idx, dt_tag
+        cdef int gt_tag, dt_idx, dt_tag
+        cdef float score_thres, angular_acc_cur, var_acc_cur
 
         # initialize matcher
         cdef ScoreMatcher matcher = ScoreMatcher()
@@ -227,7 +228,7 @@ cdef class DetectionEvaluator:
                 dist_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).position_, dt_boxes.get(dt_idx).position_)
                 box_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).dimension_, dt_boxes.get(dt_idx).dimension_)
 
-                angular_acc_cur = (gt_boxes[gt_idx].orientation.inv() * dt_boxes[dt_idx].orientation).magnitude()
+                angular_acc_cur = (gt_boxes.get(gt_idx).orientation.inv() * dt_boxes.get(dt_idx).orientation).magnitude()
                 angular_acc[score_idx][gt_idx] = angular_acc_cur / PI
 
                 if dt_boxes[dt_idx].orientation_var > 0:
@@ -238,7 +239,7 @@ cdef class DetectionEvaluator:
                     var_acc_cur += sps.vonmises.logpdf(angular_acc_cur, kappa=1/dt_boxes[dt_idx].orientation_var)
                     var_acc[score_idx][gt_idx] = var_acc_cur
                 else:
-                    var_acc[score_idx][gt_idx] = -np.inf
+                    var_acc[score_idx][gt_idx] = -INFINITY
 
             # process detection match results
             for dt_idx in dt_indices:

@@ -387,7 +387,7 @@ def parse_detection_output():
     from argparse import ArgumentParser
     from tqdm import tqdm
 
-    parser = ArgumentParser(description='Convert detection output to pickle files with d3d object array.')
+    parser = ArgumentParser(description='Convert detection output to dumped binary files with d3d object array.')
 
     parser.add_argument('input', type=str,
         help='Directory of detection output files')
@@ -410,4 +410,4 @@ def parse_detection_output():
         boxes = load_label(input_path, relpath)
         calib = loader.calibration_data(int(relpath.stem), raw=True)
         boxes = parse_label(boxes, calib)
-        boxes.dump(output_path / relpath.with_suffix('.pkl'))
+        boxes.dump(output_path / relpath.with_suffix('.objs'))
