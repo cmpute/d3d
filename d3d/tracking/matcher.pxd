@@ -24,3 +24,6 @@ cdef class ScoreMatcher(BaseMatcher):
 
 cdef class NearestNeighborMatcher(BaseMatcher):
     cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold)
+
+cdef class HungarianMatcher(BaseMatcher):
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold)

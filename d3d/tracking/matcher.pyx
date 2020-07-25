@@ -3,6 +3,7 @@ cimport numpy as np
 import numpy as np
 
 from scipy.spatial.distance import cdist
+from scipy.optimize import linear_sum_assignment
 from d3d.box import box2d_iou
 
 cdef class BaseMatcher:
@@ -120,13 +121,63 @@ cdef class NearestNeighborMatcher:
 
         # sort the match pairs by distance
         cdef list src_list = src_subset, dst_list = dst_subset
-        distance_subset = np.asarray(self._distance_cache)[np.ix_(src_list, dst_list)] # not using cdef here since ndarray.shape returns npy_intp*
-        distance_order = np.argsort(distance_subset, axis=None)
+        cdef np.ndarray distance_subset = np.asarray(self._distance_cache)[np.ix_(src_list, dst_list)]
+        cdef np.ndarray distance_order = np.argsort(distance_subset, axis=None)
 
         # reform the match pairs into vectors
-        sorted_src_indices, sorted_dst_indices = np.unravel_index(distance_order, distance_subset.shape)
-        cdef vector[int] src_indices = sorted_src_indices.tolist()
-        cdef vector[int] dst_indices = sorted_dst_indices.tolist()
+        cdef np.ndarray[long, ndim=1] sorted_src_indices, sorted_dst_indices
+        sorted_src_indices, sorted_dst_indices = np.unravel_index(distance_order, (src_subset.size(), dst_subset.size()))
+
+        cdef vector[int] src_indices, dst_indices
+        src_indices.reserve(sorted_src_indices.size)
+        dst_indices.reserve(sorted_dst_indices.size)
+        for i in range(sorted_src_indices.size):
+            src_indices.push_back(src_subset[sorted_src_indices[i]])
+            dst_indices.push_back(dst_subset[sorted_dst_indices[i]])
 
         # actual matching
         self.match_by_order(src_indices, dst_indices, distance_threshold)
+
+cdef class HungarianMatcher:
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold):
+        # split the input by categories
+        cdef dict src_classes = {}, dst_classes = {}
+        cdef int src_idx, dst_idx
+
+        for src_idx in src_subset:
+            src_tag = self._src_boxes.get(src_idx).tag.labels[0]
+            if src_tag in src_classes:
+                src_classes[src_tag].append(src_idx)
+            else:
+                src_classes[src_tag] = [src_idx]
+        for dst_idx in dst_subset:
+            dst_tag = self._dst_boxes.get(dst_idx).tag.labels[0]
+            if dst_tag in dst_classes:
+                dst_classes[dst_tag].append(dst_idx)
+            else:
+                dst_classes[dst_tag] = [dst_idx]
+            
+        # forward definitions
+        cdef list src_list, dst_list
+        cdef np.ndarray distance_subset
+        cdef np.ndarray[long, ndim=1] src_optim_indices, dst_optim_indices
+
+        for clsid in src_classes.keys():
+            if clsid not in dst_classes.keys():
+                continue # only consider common categories
+
+            # extract submatrix
+            src_list = src_classes[clsid]
+            dst_list = dst_classes[clsid]
+            distance_subset = np.asarray(self._distance_cache)[np.ix_(src_list, dst_list)]
+
+            # optimize using scipy
+            src_optim_indices, dst_optim_indices = linear_sum_assignment(distance_subset)
+            
+            # store the results and apply threshold
+            for i in range(src_optim_indices.size):
+                src_idx = src_list[src_optim_indices[i]]
+                dst_idx = dst_list[dst_optim_indices[i]]
+                if self._distance_cache[src_idx, dst_idx] <= distance_threshold[clsid]:
+                    self._src_assignment[src_idx] = dst_idx
+                    self._dst_assignment[dst_idx] = src_idx
