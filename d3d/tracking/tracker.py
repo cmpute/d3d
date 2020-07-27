@@ -1,0 +1,148 @@
+
+import numpy as np
+
+from d3d.abstraction import ObjectTarget3D, ObjectTarget3DArray, TrackingTarget3D
+from d3d.tracking.filter import Pose_3DOF_UKF_CTRA, Box_KF
+from d3d.tracking.matcher import NearestNeighborMatcher, DistanceTypes
+
+class VanillaTracker:
+    def __init__(self,
+        pose_tracker_factory=Pose_3DOF_UKF_CTRA,
+        feature_tracker_factory=Box_KF,
+        matcher_factory=NearestNeighborMatcher,
+        lost_time=1
+    ):
+        '''
+        :param lost_time: determine the time length of a target being lost before it's removed from tracking
+        :param pose_tracker_factory: factory function to generate a new pose tracker, takes only initial detection as input
+        :param feature_tracker_factory: factory function to generate a new feature tracker, takes only initial detection as input
+        '''
+        self._tracked_poses = dict() # Object trackers
+        self._tracked_features = dict() # Feature trackers (shape, class, etc)
+        self._timer_track = dict() # Timer for frames tracked consecutively
+        self._timer_lost = dict() # Timer for frames lost consecutively
+
+        self._last_timestamp = None
+        self._last_frameid = None
+        self._id_counter = 0 # Counter for id generation of tracked objects
+        self._lost_time = lost_time
+
+        self._pose_factory = pose_tracker_factory
+        self._feature_factory = feature_tracker_factory
+        self._matcher = matcher_factory()
+        self._match_distance = DistanceTypes.RIoU # TODO: set from args
+        self._match_threshold = 0.5
+
+    def _initialize(self, target: ObjectTarget3D):
+        '''
+        Initialize a new target
+        '''
+        self._tracked_poses[self._id_counter] = self._pose_factory(target)
+        self._tracked_features[self._id_counter] = self._feature_factory(target)
+        self._timer_track[self._id_counter] = 0
+        self._timer_lost[self._id_counter] = 0
+        self._id_counter += 1
+
+    @property
+    def tracked_ids(self):
+        '''
+        Return a ID list of actively tracked targets
+        '''
+        return list(self._tracked_poses.keys())
+
+    def _current_objects_array(self) -> ObjectTarget3DArray:
+        '''
+        Create ObjectTarget3DArray from current tracked objects
+        '''
+        array = ObjectTarget3DArray()
+        for tid in self.tracked_ids:
+            target = ObjectTarget3D(
+                position=self._tracked_poses[tid].position,
+                orientation=self._tracked_poses[tid].orientation,
+                dimension=self._tracked_features[tid].dimension,
+                tag=self._tracked_features[tid].classification,
+                tid=tid,
+                position_var=self._tracked_poses[tid].position_var,
+                orientation_var=self._tracked_poses[tid].orientation_var,
+                dimension_var=self._tracked_poses[tid].dimension_var
+            )
+            array.append(target)
+        return array
+
+    def update(self, detections: ObjectTarget3DArray, timestamp: float):
+        '''
+        Update the filters when receiving new detections
+        '''
+        if self._last_timestamp is None:
+            # Initialize all trackers
+            for target in detections:
+                self._initialize(target)
+        else:
+            # Match existing trackers
+            dt = timestamp - self._last_timestamp
+            for tracker in self._tracked_poses.values():
+                tracker.predict(dt)
+            for tracker in self._tracked_features.values():
+                tracker.predict(dt)
+
+            current_targets = self._current_objects_array()
+            self._matcher.prepare_boxes(detections, current_targets, self._match_distance)
+            self._matcher.match(list(range(len(detections))), list(range(len(current_targets))), self._match_distance)
+
+            lost_indices = set(self.tracked_ids)
+            for idx, target in enumerate(detections):
+                idx_match = self._matcher.query_dst_match(idx)
+                if idx_match < 0:
+                    # Initialize this detector
+                    self._initialize(target)
+                else:
+                    tid = current_targets[idx_match].tid
+                    self._tracked_poses[tid].update(target)
+                    self._tracked_features[tid].update(target)
+                    self._timer_lost[tid] = 0
+                    self._timer_track[tid] += dt
+
+                    if tid in lost_indices:
+                        lost_indices.remove(tid)
+
+            for idx in lost_indices:
+                self._timer_lost[idx] += dt
+                self._timer_track[idx] = 0
+    
+        # Deal with out-dated or invalid trackers
+        rm_list = []
+        for tid, time in self._timer_lost.items():
+            if time > self._lost_time: # XXX: also remove if variance is too large
+                rm_list.append(tid)
+        for idx in rm_list:
+            del self._tracked_poses[idx]
+            del self._tracked_features[idx]
+
+        # Update times
+        self._last_timestamp = timestamp
+        self._last_frameid = detections.frame
+
+    def report(self):
+        '''
+        Return the collection of valid tracked targets
+        '''
+        array = []
+        for tid in self.tracked_ids:
+            target = TrackingTarget3D(
+                position=self._tracked_poses[tid].position,
+                orientation=self._tracked_poses[tid].orientation,
+                dimension=self._tracked_features[tid].dimension,
+                velocity=self._tracked_poses[tid].velocity,
+                angular_velocity=self._tracked_poses[tid].angular_velocity,
+                tag=self._tracked_features[tid].classification,
+                tid=tid,
+                position_var=self._tracked_poses[tid].position_var,
+                orientation_var=self._tracked_poses[tid].orientation_var,
+                dimension_var=self._tracked_poses[tid].dimension_var,
+                velocity_var=self._tracked_poses[tid].velocity_var,
+                angular_velocity_var=self._tracked_poses[tid].angular_velocity_var,
+                history=self._timer_track[tid]
+            )
+            array.append(target)
+
+        return array

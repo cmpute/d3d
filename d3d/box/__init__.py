@@ -6,6 +6,8 @@ from .box_impl import (
     rbox_2d_crop as rbox_2d_crop_cc,
     IouType, SupressionType)
 
+# TODO: add box2dz_iou, which also considering z value input
+
 def box2d_iou(boxes1, boxes2, method="box"):
     '''
     :param method: 'box' - normal box, 'rbox' - rotated box

@@ -77,6 +77,17 @@ cdef class ObjectTag:
         mapping = _d3d_enum_lookup()[data[0]]
         return ObjectTag(data[1], mapping, data[2])
 
+cdef inline float[:] create_vector3(values):
+    if len(values) != 3:
+        raise ValueError("Incorrect vector length")
+    return np.asarray(values, dtype=np.float32)
+
+cdef inline float[:, :] create_matrix33(values):
+    if values is None:
+        return np.zeros((3, 3), dtype=np.float32)
+    else:
+        return np.asarray(values, dtype=np.float32).reshape(3, 3)
+
 cdef class ObjectTarget3D:
     '''
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
@@ -92,11 +103,8 @@ cdef class ObjectTarget3D:
         :param tid: ID of the object used for tracking (optional)
         '''
 
-        assert len(position) == 3, "Invalid position shape"
-        self.position = np.asarray(position, dtype=np.float32)
-
-        assert len(dimension) == 3, "Invalid dimension shape"
-        self.dimension = np.asarray(dimension, dtype=np.float32)
+        self.position_ = create_vector3(position)
+        self.dimension_ = create_vector3(dimension)
 
         if isinstance(orientation, Rotation):
             self.orientation = orientation
@@ -111,15 +119,9 @@ cdef class ObjectTarget3D:
             raise ValueError("Label should be of type ObjectTag")
 
         self.tid = tid
-        if position_var is None:
-            self.position_var_ = np.zeros((3, 3), dtype=np.float32)
-        else:
-            self.position_var_ = np.asarray(position_var, dtype=np.float32).reshape(3, 3)
-        if dimension_var is None:
-            self.dimension_var_ = np.zeros((3, 3), dtype=np.float32)
-        else:
-            self.dimension_var_ = np.asarray(dimension_var, dtype=np.float32).reshape(3, 3)
-        self.orientation_var = 0 if orientation_var is None else orientation_var
+        self.position_var_ = create_matrix33(position_var)
+        self.dimension_var_ = create_matrix33(dimension_var)
+        self.orientation_var_ = 0 if orientation_var is None else orientation_var
 
     # exposes basic members
     @property
@@ -127,25 +129,25 @@ cdef class ObjectTarget3D:
         return np.asarray(self.position_)
     @position.setter
     def position(self, value):
-        self.position_ = np.asarray(value, dtype=np.float32)
+        self.position_ = create_vector3(value)
     @property
     def position_var(self):
         return np.asarray(self.position_var_)
     @position_var.setter
     def position_var(self, value):
-        self.position_var_ = np.asarray(value, dtype=np.float32)
+        self.position_var_ = create_matrix33(value)
     @property
     def dimension(self):
         return np.asarray(self.dimension_)
     @dimension.setter
     def dimension(self, value):
-        self.dimension_ = np.asarray(value, dtype=np.float32)
+        self.dimension_ = create_vector3(value)
     @property
     def dimension_var(self):
         return np.asarray(self.dimension_var_)
     @dimension_var.setter
     def dimension_var(self, value):
-        self.dimension_var_ = np.asarray(value, dtype=np.float32)
+        self.dimension_var_ = create_matrix33(value)
 
     @property
     def tag_top(self):
@@ -204,12 +206,12 @@ cdef class ObjectTarget3D:
             self.tag.serialize()
         )
 
-    @staticmethod
-    def deserialize(data):
+    @classmethod
+    def deserialize(cls, data):
         pos, pos_var, dim, dim_var, ori_data, ori_var, tid, tag_data = data
         ori = Rotation.from_quat(ori_data)
         tag = ObjectTag.deserialize(tag_data)
-        return ObjectTarget3D(pos, ori, dim, tag, tid=tid,
+        return cls(pos, ori, dim, tag, tid=tid,
             position_var=pos_var, orientation_var=ori_var, dimension_var=dim_var
         )
 
@@ -277,6 +279,91 @@ cdef class ObjectTarget3DArray(list):
         tags = (str(t) if not isinstance(t, str) else t for t in tags) # use tag name to filter
         tags = [t.lower() for t in tags]
         return ObjectTarget3DArray([box for box in self if box.tag_name.lower() in tags], self.frame)
+
+cdef class TrackingTarget3D:
+    def __init__(self, position, orientation, dimension, velocity, angular_velocity, tag,
+        tid=None, position_var=None, orientation_var=None, dimension_var=None,
+        velocity_var=None, angular_velocity_var=None, history=None):
+
+        self.position_ = create_vector3(position)
+        self.dimension_ = create_vector3(dimension)
+        self.velocity_ = create_vector3(velocity)
+        self.angular_velocity_ = create_vector3(angular_velocity)
+
+        if isinstance(orientation, Rotation):
+            self.orientation = orientation
+        elif len(orientation) == 4:
+            self.orientation = Rotation.from_quat(orientation)
+        else:
+            raise ValueError("Invalid rotation format")
+
+        if isinstance(tag, ObjectTag):
+            self.tag = tag
+        else:
+            raise ValueError("Label should be of type ObjectTag")
+
+        self.tid = tid
+        self.history = history
+
+        self.position_var_ = create_matrix33(position_var)
+        self.dimension_var_ = create_matrix33(dimension_var)
+        self.orientation_var = 0 if orientation_var is None else orientation_var
+        self.velocity_var_ = create_matrix33(velocity_var)
+        self.angular_velocity_var_ = create_matrix33(angular_velocity_var)
+
+    # exposes basic members
+    @property
+    def velocity(self):
+        return np.asarray(self.velocity_)
+    @velocity.setter
+    def velocity(self, value):
+        self.velocity_ = create_vector3(value)
+    @property
+    def velocity_var(self):
+        return np.asarray(self.velocity_var_)
+    @velocity_var.setter
+    def velocity_var(self, value):
+        self.velocity_var_ = create_matrix33(value)
+    @property
+    def angular_velocity(self):
+        return np.asarray(self.angular_velocity_)
+    @angular_velocity.setter
+    def angular_velocity(self, value):
+        self.angular_velocity_ = create_vector3(value)
+    @property
+    def angular_velocity_var(self):
+        return np.asarray(self.angular_velocity_var_)
+    @angular_velocity_var.setter
+    def angular_velocity_var(self, value):
+        self.angular_velocity_var_ = create_matrix33(value)
+
+    def serialize(self):
+        return (
+            np.asarray(self.position_).tolist(),
+            np.ravel(self.position_var_).tolist(),
+            np.asarray(self.dimension_).tolist(),
+            np.ravel(self.dimension_var_).tolist(),
+            self.orientation.as_quat().tolist(),
+            self.orientation_var,
+            np.asarray(self.velocity_).tolist(),
+            np.asarray(self.velocity_var_).tolist(),
+            np.asarray(self.angular_velocity_).tolist(),
+            np.asarray(self.angular_velocity_var_).tolist(),
+            self.tid,
+            self.tag.serialize(),
+            self.history
+        )
+
+    @classmethod
+    def deserialize(cls, data):
+        (pos, pos_var, dim, dim_var, ori_data, ori_var,
+            vel, vel_var, avel, avel_var, tid, tag_data, history) = data
+        ori = Rotation.from_quat(ori_data)
+        tag = ObjectTag.deserialize(tag_data)
+        return cls(pos, ori, dim, vel, avel, tag, tid=tid,
+            position_var=pos_var, orientation_var=ori_var, dimension_var=dim_var,
+            velocity_var=vel_var, angular_velocity_var=avel_var, history=history
+        )
 
 class EgoPose:
     '''
