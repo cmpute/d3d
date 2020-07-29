@@ -64,12 +64,12 @@ class VanillaTracker:
                 tid=tid,
                 position_var=self._tracked_poses[tid].position_var,
                 orientation_var=self._tracked_poses[tid].orientation_var,
-                dimension_var=self._tracked_poses[tid].dimension_var
+                dimension_var=self._tracked_features[tid].dimension_var
             )
             array.append(target)
         return array
 
-    def update(self, detections: ObjectTarget3DArray, timestamp: float):
+    def update(self, detections: ObjectTarget3DArray):
         '''
         Update the filters when receiving new detections
         '''
@@ -79,15 +79,25 @@ class VanillaTracker:
                 self._initialize(target)
         else:
             # Match existing trackers
-            dt = timestamp - self._last_timestamp
+            dt = detections.timestamp - self._last_timestamp
             for tracker in self._tracked_poses.values():
                 tracker.predict(dt)
             for tracker in self._tracked_features.values():
                 tracker.predict(dt)
 
             current_targets = self._current_objects_array()
+            
+            if isinstance(self._match_threshold, float):
+                thresholds = {box.tag_top.value: self._match_threshold for box in (current_targets + detections)}
+            else:
+                assert isinstance(self._match_threshold, dict)
+                thresholds = self._match_threshold
             self._matcher.prepare_boxes(detections, current_targets, self._match_distance)
-            self._matcher.match(list(range(len(detections))), list(range(len(current_targets))), self._match_distance)
+            self._matcher.match(
+                list(range(len(detections))),
+                list(range(len(current_targets))),
+                thresholds
+            )
 
             lost_indices = set(self.tracked_ids)
             for idx, target in enumerate(detections):
@@ -117,9 +127,11 @@ class VanillaTracker:
         for idx in rm_list:
             del self._tracked_poses[idx]
             del self._tracked_features[idx]
+            del self._timer_lost[idx]
+            del self._timer_track[idx]
 
         # Update times
-        self._last_timestamp = timestamp
+        self._last_timestamp = detections.timestamp
         self._last_frameid = detections.frame
 
     def report(self):
@@ -138,7 +150,7 @@ class VanillaTracker:
                 tid=tid,
                 position_var=self._tracked_poses[tid].position_var,
                 orientation_var=self._tracked_poses[tid].orientation_var,
-                dimension_var=self._tracked_poses[tid].dimension_var,
+                dimension_var=self._tracked_features[tid].dimension_var,
                 velocity_var=self._tracked_poses[tid].velocity_var,
                 angular_velocity_var=self._tracked_poses[tid].angular_velocity_var,
                 history=self._timer_track[tid]

@@ -121,7 +121,7 @@ cdef class ObjectTarget3D:
         self.tid = tid
         self.position_var_ = create_matrix33(position_var)
         self.dimension_var_ = create_matrix33(dimension_var)
-        self.orientation_var_ = 0 if orientation_var is None else orientation_var
+        self.orientation_var = 0 if orientation_var is None else orientation_var
 
     # exposes basic members
     @property
@@ -216,12 +216,13 @@ cdef class ObjectTarget3D:
         )
 
 cdef class ObjectTarget3DArray(list):
-    def __init__(self, iterable=[], frame=None):
+    def __init__(self, iterable=[], frame=None, timestamp=float("nan")):
         '''
         :param frame: Frame that the box parameters used. None means base frame (in TransformSet)
         '''
         super().__init__(iterable)
         self.frame = frame
+        self.timestamp = timestamp
 
         # copy frame value
         if isinstance(iterable, ObjectTarget3DArray) and not frame:
@@ -243,12 +244,12 @@ cdef class ObjectTarget3DArray(list):
         return torch.from_numpy(self.to_numpy(box_type))
 
     def serialize(self):
-        return (self.frame, [obj.serialize() for obj in self])
+        return (self.frame, self.timestamp, [obj.serialize() for obj in self])
 
     @staticmethod
     def deserialize(data):
-        objs = [ObjectTarget3D.deserialize(obj) for obj in data[1]]
-        return ObjectTarget3DArray(objs, frame=data[0])
+        objs = [ObjectTarget3D.deserialize(obj) for obj in data[2]]
+        return ObjectTarget3DArray(objs, frame=data[0], timestamp=data[1])
 
     def dump(self, output):
         import msgpack

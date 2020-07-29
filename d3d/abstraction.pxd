@@ -19,6 +19,7 @@ cdef class ObjectTarget3D:
 
 cdef class ObjectTarget3DArray(list):
     cdef public str frame
+    cdef public float timestamp
 
     cdef ObjectTarget3D get(self, int index)
     cpdef np.ndarray to_numpy(self, str box_type=*)

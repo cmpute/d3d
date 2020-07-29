@@ -93,17 +93,15 @@ class KittiTrackingLoader(TrackingDatasetBase):
             raise ValueError("Invalid phase tag")
 
         # count total number of frames
-        seq_count = None
         frame_count = defaultdict(int)
         if self.inzip:
             for folder in ['image_2', 'image_3', 'velodyne']:
                 data_zip = base_path / ("data_tracking_%s.zip" % folder)
                 if data_zip.exists():
-                    seq_count = 0
                     with ZipFile(data_zip) as data:
                         for name in data.namelist():
                             name = Path(name)
-                            if len(name.parts) != 4:
+                            if len(name.parts) != 4: # skip directories
                                 continue
 
                             phase, _, seq, frame = name.parts
@@ -111,22 +109,21 @@ class KittiTrackingLoader(TrackingDatasetBase):
                                 continue
 
                             seq = int(seq)
-                            seq_count = max(seq+1, seq_count) # index starts from 0
-                            frame_count[seq] = max(frame_count[seq]+1, int(frame[:-4]))
+                            frame_count[seq] = max(frame_count[seq],
+                                int(frame[:-4]) + 1) # idx starts from 0
                     break
         else:
             for folder in ['image_02', 'image_03', 'velodyne']:
                 fpath = base_path / self.phase_path / folder
                 if fpath.exists():
-                    seq_count = 0
                     for seq_path in fpath.iterdir():
                         seq = int(seq_path.name)
                         frame_count[seq] = sum(1 for _ in seq_path.iterdir())
-                        seq_count += 1
                     break
-        if not seq_count:
+
+        if not len(frame_count):
             raise ValueError("Cannot parse dataset, please check path, inzip option and file structure")
-        total_count = sum(frame_count.values()) - nframes * seq_count
+        total_count = sum(frame_count.values()) - nframes * len(frame_count)
         self.frame_dict = OrderedDict(frame_count)
 
         self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
@@ -195,7 +192,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         file_name = Path(self.phase_path, 'oxts', '%04d.txt' % seq_id)
         if self.inzip:
-            with ZipFile(self.base_path / "data_tracking_oxt.zip") as source:
+            with ZipFile(self.base_path / "data_tracking_oxts.zip") as source:
                 text = source.read(str(file_name)).decode().split('\n')
         else:
             with open(self.base_path / file_name, "r") as fin:
@@ -203,6 +200,10 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         self._pose_cache[seq_id] = []
         for line in text:
+            line = line.strip()
+            if not line:
+                continue
+
             values = list(map(float, line.strip().split(' ')))
             values[-5:] = list(map(int, values[-5:]))
             self._pose_cache[seq_id].append(OxtData(*values))

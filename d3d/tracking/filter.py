@@ -117,13 +117,13 @@ class PropertyFilter:
         '''
         pass
     @property
-    def classifcation(self):
+    def classification(self):
         '''
         Current classification estimation
         '''
         pass
     @property
-    def classifcation_var(self):
+    def classification_var(self):
         '''
         Covariance for current classification estimation
         '''
@@ -137,7 +137,7 @@ class PoseFilter:
         Current position estimation
         '''
         pass
-    @property:
+    @property
     def position_var(self):
         '''
         Covariance for current position estimation
@@ -202,14 +202,14 @@ class Box_KF(PropertyFilter):
         self._saved_tag = init.tag
 
     def predict(self, dt):
-        self._filter.predict(dt=dt)
+        self._filter.predict()
 
     def update(self, detection: ObjectTarget3D):
         self._filter.update(detection.dimension, R=detection.dimension_var)
 
         # Update classification
         # TODO: do bayesian filtering for classification?
-        self._saved_tag = init.tag
+        self._saved_tag = detection.tag
 
     @property
     def dimension(self):
@@ -220,8 +220,8 @@ class Box_KF(PropertyFilter):
         return self._filter.P
 
     @property
-    def classifcation(self):
-        return self._classes
+    def classification(self):
+        return self._saved_tag
 
     @property
     def classification_var(self):
@@ -240,7 +240,7 @@ class Pose_3DOF_UKF_CV:
         # create filter
         sigma_points = kf.MerweScaledSigmaPoints(4, alpha=.1, beta=.2, kappa=-1)
         self._filter = kf.UnscentedKalmanFilter(dim_x=4, dim_z=2, dt=None,
-            fx=dm.motion_CV, hx=lambda s: s[:2], points=sigma_points
+            fx=motion_CV, hx=lambda s: s[:2], points=sigma_points
         )
         self._filter.Q = np.asarray(Q).reshape(4, 4)
 
@@ -289,7 +289,7 @@ class Pose_3DOF_UKF_CV:
 
     @property
     def velocity_var(self):
-        cov = np.zeros(3, 3)
+        cov = np.zeros((3, 3))
         cov[:2, :2] = self._filter.P[3:5, 3:5]
         return cov
 
@@ -336,8 +336,8 @@ class Pose_3DOF_UKF_CTRA:
 
     def __init__(self, init: ObjectTarget3D, Q=np.eye(6)):
         sigma_points = kf.MerweScaledSigmaPoints(6, alpha=.1, beta=.2, kappa=-1)
-        self._filter = kf.UnscentedKalmanFilter(dim_x=6, dim_z=3, dt=None
-            fx=dm.motion_CTRA, hx=lambda s: s[:3], points=sigma_points,
+        self._filter = kf.UnscentedKalmanFilter(dim_x=6, dim_z=3, dt=None,
+            fx=motion_CTRA, hx=lambda s: s[:3], points=sigma_points,
             x_mean_fn=self._state_mean, z_mean_fn=self._state_mean,
             residual_x=self._state_diff, residual_z=self._state_diff,
         )
@@ -347,8 +347,8 @@ class Pose_3DOF_UKF_CTRA:
         yaw, pitch, roll = init.orientation.as_euler("ZYX")
         self._filter.x = np.array([init.position[0], init.position[1], yaw, 0, 0, 0])
         self._filter.P = np.copy(self._filter.Q)
-        self._filter.P[:2,:2] = init.position_var[:2, :2]
-        self._filter.P[2] = init.orientation_var
+        self._filter.P[:2, :2] = init.position_var[:2, :2]
+        self._filter.P[2, 2] = init.orientation_var
 
         self._save_z = init.position[2] 
         self._save_z_var = init.position_var[2, 2]
@@ -368,13 +368,13 @@ class Pose_3DOF_UKF_CTRA:
 
         obsv = np.array([detection.position[0], detection.position[1], yaw])
         R = np.zeros((3, 3))
-        R[:2, :2] = detection.position_var
+        R[:2, :2] = detection.position_var[:2, :2]
         R[2, 2] = detection.orientation_var
-        self._filter.update(obsv, R=R])
+        self._filter.update(obsv, R=R)
         self._filter.x[2] = wrap_angle(self._filter.x[2])
 
     @property
-    def pose(self):
+    def position(self):
         return np.array([self._filter.x[0], self._filter.x[1], self._save_z])
 
     @property
@@ -389,8 +389,8 @@ class Pose_3DOF_UKF_CTRA:
             [self._filter.x[2], self._save_pitch, self._save_roll])
 
     @property
-    def orientation_var(self);
-        return self._save_ori_var
+    def orientation_var(self):
+        return self._save_z_var
 
     @property
     def velocity(self):
@@ -403,7 +403,7 @@ class Pose_3DOF_UKF_CTRA:
     @property
     def velocity_var(self):
         # here we will return the linearized covariance
-        cov = np.zeros(3, 3)
+        cov = np.zeros((3, 3))
         A = np.array([
             [-self._filter.x[3] * np.cos(self._filter.x[2]), np.cos(self._filter.x[2])],
             [ self._filter.x[3] * np.sin(self._filter.x[2]), np.sin(self._filter.x[2])]
@@ -416,7 +416,7 @@ class Pose_3DOF_UKF_CTRA:
         return np.array([0, 0, self._filter.x[5]])
 
     @property
-    def angular_velocity(self):
+    def angular_velocity_var(self):
         return np.diag([0, 0, self._filter.P[5, 5]])
 
 class Pose_IMM:

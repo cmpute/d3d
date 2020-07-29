@@ -40,6 +40,7 @@ Optional requirements:
 - `matplotlib`: support visualization in 2D figures
 - `waymo_open_dataset`: support converting Waymo Dataset
 - `msgpack`: support serialization/deserialization
+- `filterpy`: support KF tracking
 
 # Build
 
