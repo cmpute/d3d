@@ -10,12 +10,17 @@ class VanillaTracker:
         pose_tracker_factory=Pose_3DOF_UKF_CTRA,
         feature_tracker_factory=Box_KF,
         matcher_factory=NearestNeighborMatcher,
+        matcher_distance_type="position",
+        matcher_distance_threshold=1,
         lost_time=1
     ):
         '''
         :param lost_time: determine the time length of a target being lost before it's removed from tracking
         :param pose_tracker_factory: factory function to generate a new pose tracker, takes only initial detection as input
         :param feature_tracker_factory: factory function to generate a new feature tracker, takes only initial detection as input
+        :param matcher_factory: factory function to generate a new target matcher
+        :param matcher_distance_type: distance type used to match targets
+        :param matcher_distance_threshold: distance threshold used in target matcher
         '''
         self._tracked_poses = dict() # Object trackers
         self._tracked_features = dict() # Feature trackers (shape, class, etc)
@@ -30,8 +35,17 @@ class VanillaTracker:
         self._pose_factory = pose_tracker_factory
         self._feature_factory = feature_tracker_factory
         self._matcher = matcher_factory()
-        self._match_distance = DistanceTypes.RIoU # TODO: set from args
-        self._match_threshold = 0.5
+
+        matcher_mapping = {
+            "iou": DistanceTypes.IoU,
+            "riou": DistanceTypes.RIoU,
+            "position": DistanceTypes.Position
+        }
+        if isinstance(matcher_distance_type, str):
+            self._match_distance = matcher_mapping[matcher_distance_type.lower()]
+        else:
+            self._match_distance = matcher_distance_type
+        self._match_threshold = matcher_distance_threshold
 
     def _initialize(self, target: ObjectTarget3D):
         '''
@@ -87,8 +101,9 @@ class VanillaTracker:
 
             current_targets = self._current_objects_array()
             
-            if isinstance(self._match_threshold, float):
-                thresholds = {box.tag_top.value: self._match_threshold for box in (current_targets + detections)}
+            if isinstance(self._match_threshold, (float, int)):
+                thresholds = {box.tag_top.value: float(self._match_threshold)
+                    for box in (current_targets + detections)}
             else:
                 assert isinstance(self._match_threshold, dict)
                 thresholds = self._match_threshold

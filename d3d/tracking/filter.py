@@ -13,7 +13,7 @@ from d3d.abstraction import ObjectTarget3D
 
 def wrap_angle(theta):
     '''
-    Normalize the angle to [-pi, pi]
+    Normalize the angle to [-pi, pi)
 
     :param float theta: angle to be wrapped
     :return: wrapped angle
@@ -238,7 +238,7 @@ class Pose_3DOF_UKF_CV:
     '''
     def __init__(self, init: ObjectTarget3D, Q=np.eye(4)):
         # create filter
-        sigma_points = kf.MerweScaledSigmaPoints(4, alpha=.1, beta=.2, kappa=-1)
+        sigma_points = kf.JulierSigmaPoints(6)
         self._filter = kf.UnscentedKalmanFilter(dim_x=4, dim_z=2, dt=None,
             fx=motion_CV, hx=lambda s: s[:2], points=sigma_points
         )
@@ -285,12 +285,12 @@ class Pose_3DOF_UKF_CV:
 
     @property
     def velocity(self):
-        return np.array([self._filter.x[3], self._filter.x[4], 0])
+        return np.array([self._filter.x[2], self._filter.x[3], 0])
 
     @property
     def velocity_var(self):
         cov = np.zeros((3, 3))
-        cov[:2, :2] = self._filter.P[3:5, 3:5]
+        cov[:2, :2] = self._filter.P[2:4, 2:4]
         return cov
 
     @property
@@ -324,8 +324,8 @@ class Pose_3DOF_UKF_CTRA:
     '''
     def _state_mean(self, sigmas, Wm):
         x = np.average(sigmas, axis=0, weights=Wm)
-        s = np.average(np.sin(sigmas[:, 2]), axis=0, weights=Wm)
-        c = np.average(np.cos(sigmas[:, 2]), axis=0, weights=Wm)
+        s = np.average(np.sin(sigmas[:, 2]), weights=Wm)
+        c = np.average(np.cos(sigmas[:, 2]), weights=Wm)
         x[2] = np.arctan2(s, c)
         return x
 
@@ -335,7 +335,7 @@ class Pose_3DOF_UKF_CTRA:
         return d
 
     def __init__(self, init: ObjectTarget3D, Q=np.eye(6)):
-        sigma_points = kf.MerweScaledSigmaPoints(6, alpha=.1, beta=.2, kappa=-1)
+        sigma_points = kf.JulierSigmaPoints(6)
         self._filter = kf.UnscentedKalmanFilter(dim_x=6, dim_z=3, dt=None,
             fx=motion_CTRA, hx=lambda s: s[:3], points=sigma_points,
             x_mean_fn=self._state_mean, z_mean_fn=self._state_mean,
