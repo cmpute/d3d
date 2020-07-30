@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from d3d.abstraction import ObjectTag, ObjectTarget3D, ObjectTarget3DArray
+from d3d.abstraction import ObjectTag, ObjectTarget3D, Target3DArray
 from d3d.dataset.kitti import KittiObjectClass
 from d3d.tracking.matcher import (DistanceTypes, HungarianMatcher,
                                   NearestNeighborMatcher, ScoreMatcher)
@@ -26,7 +26,7 @@ class TestMatchers(unittest.TestCase):
             [-1, -1, 0], r, d,
             ObjectTag(KittiObjectClass.Car, scores=0.8)
         )
-        dt_boxes = ObjectTarget3DArray([dt1, dt2, dt3], frame="test")
+        dt_boxes = Target3DArray([dt1, dt2, dt3], frame="test")
 
         # dst boxes
         r = Rotation.from_euler("Z", 0)
@@ -43,7 +43,7 @@ class TestMatchers(unittest.TestCase):
             [1, -1, 0], r, d,
             ObjectTag(KittiObjectClass.Van)
         )
-        gt_boxes = ObjectTarget3DArray([gt1, gt2, gt3], frame="test")
+        gt_boxes = Target3DArray([gt1, gt2, gt3], frame="test")
 
         self.matcher_case1 = (dt_boxes, gt_boxes)
 

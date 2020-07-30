@@ -7,7 +7,7 @@ from scipy.optimize import linear_sum_assignment
 from d3d.box import box2d_iou
 
 cdef class BaseMatcher:
-    cpdef void prepare_boxes(self, ObjectTarget3DArray src_boxes, ObjectTarget3DArray dst_boxes, DistanceTypes distance_metric):
+    cpdef void prepare_boxes(self, Target3DArray src_boxes, Target3DArray dst_boxes, DistanceTypes distance_metric):
         '''
         This method add two arrays of boxes and prepare related informations, it will also clean previous
         results.

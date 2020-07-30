@@ -6,9 +6,9 @@ import numpy as np
 import cv2
 from matplotlib import pyplot as plt
 from matplotlib import axes, lines
-from d3d.abstraction import ObjectTarget3DArray, TransformSet
+from d3d.abstraction import Target3DArray, TransformSet
 
-def visualize_detections(ax: axes.Axes, image_frame: str, targets: ObjectTarget3DArray, calib: TransformSet,
+def visualize_detections(ax: axes.Axes, image_frame: str, targets: Target3DArray, calib: TransformSet,
     box_color=(0, 1, 0), thickness=2, tags=None):
     '''
     Draw detected object on matplotlib canvas
@@ -43,7 +43,7 @@ def visualize_detections(ax: axes.Axes, image_frame: str, targets: ObjectTarget3
         # draw direction
         ax.add_artist(lines.Line2D((uv[-2,0], uv[-1,0]), (uv[-2,1], uv[-1,1]), c=box_color, lw=thickness))
 
-def visualize_detections_bev(ax: axes.Axes, visualizer_frame: str, targets: ObjectTarget3DArray, calib: TransformSet,
+def visualize_detections_bev(ax: axes.Axes, visualizer_frame: str, targets: Target3DArray, calib: TransformSet,
     box_color=(0, 1, 0), thickness=2, tags=None):
     
     # change frame to the same

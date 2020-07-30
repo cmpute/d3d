@@ -12,7 +12,7 @@ from libcpp.vector cimport vector
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
 
-from d3d.abstraction cimport ObjectTarget3DArray
+from d3d.abstraction cimport Target3DArray
 from d3d.tracking.matcher cimport ScoreMatcher, DistanceTypes
 from d3d.box import box2d_iou
 from d3d.math cimport wmean, diffnorm3
@@ -157,7 +157,7 @@ cdef class DetectionEvaluator:
                     aggregated[k][score_idx] = NAN
         return aggregated
 
-    cpdef DetectionEvalStats get_stats(self, ObjectTarget3DArray gt_boxes, ObjectTarget3DArray dt_boxes):
+    cpdef DetectionEvalStats get_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes):
         assert gt_boxes.frame == dt_boxes.frame        
 
         # forward definitions

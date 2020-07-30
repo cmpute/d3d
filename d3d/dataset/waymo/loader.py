@@ -18,7 +18,7 @@ from addict import Dict as edict
 from PIL import Image
 from scipy.spatial.transform import Rotation
 
-from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
+from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
 from d3d.dataset.base import DetectionDatasetBase, ZipCache, check_frames
 
@@ -165,7 +165,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
         if raw:
             return labels
 
-        outputs = ObjectTarget3DArray(frame="vehicle") # or frame=None
+        outputs = Target3DArray(frame="vehicle") # or frame=None
         for label in labels:
             target = ObjectTarget3D(
                 label.center,
@@ -213,7 +213,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
         with self._locate_file(idx, "timestamp", "txt") as fin:
             return int(fin.read().decode())
 
-def dump_detection_output(detections: ObjectTarget3DArray, context: str, timestamp: int):
+def dump_detection_output(detections: Target3DArray, context: str, timestamp: int):
     '''
     :param detections: detection result
     :param ids: auxiliary information for output, each item contains context name and timestamp

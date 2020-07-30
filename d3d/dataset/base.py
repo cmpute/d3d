@@ -9,7 +9,7 @@ from numpy import ndarray as NdArray
 from PIL.Image import Image
 from tqdm import tqdm
 
-from d3d.abstraction import ObjectTarget3DArray, TransformSet, EgoPose
+from d3d.abstraction import Target3DArray, TransformSet, EgoPose
 
 
 def split_trainval(phase, total_count, trainval_split, trainval_random):
@@ -118,12 +118,12 @@ class DetectionDatasetBase:
         '''
         pass
 
-    def lidar_objects(self, idx: int, raw: Optional[bool] = None) -> ObjectTarget3DArray:
+    def lidar_objects(self, idx: int, raw: Optional[bool] = None) -> Target3DArray:
         '''
         Return list of converted ground truth targets in lidar frame.
 
         :param idx: index of requested frame
-        :param raw: if false, targets will be converted to d3d ObjectTarget3DArray format, otherwise raw data will be returned in original format
+        :param raw: if false, targets will be converted to d3d Target3DArray format, otherwise raw data will be returned in original format
         '''
         pass
 
@@ -201,12 +201,12 @@ class TrackingDatasetBase:
         '''
         pass
 
-    def lidar_objects(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> List[ObjectTarget3DArray]:
+    def lidar_objects(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> List[Target3DArray]:
         '''
         Return list of converted ground truth targets in lidar frame.
 
         :param idx: index of requested frame
-        :param raw: if false, targets will be converted to d3d ObjectTarget3DArray format, otherwise raw data will be returned in original format
+        :param raw: if false, targets will be converted to d3d Target3DArray format, otherwise raw data will be returned in original format
         '''
         pass
 

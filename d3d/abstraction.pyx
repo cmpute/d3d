@@ -215,73 +215,7 @@ cdef class ObjectTarget3D:
             position_var=pos_var, orientation_var=ori_var, dimension_var=dim_var
         )
 
-cdef class ObjectTarget3DArray(list):
-    def __init__(self, iterable=[], frame=None, timestamp=float("nan")):
-        '''
-        :param frame: Frame that the box parameters used. None means base frame (in TransformSet)
-        '''
-        super().__init__(iterable)
-        self.frame = frame
-        self.timestamp = timestamp
-
-        # copy frame value
-        if isinstance(iterable, ObjectTarget3DArray) and not frame:
-            self.frame = iterable.frame
-
-    cdef ObjectTarget3D get(self, int index):
-        return <ObjectTarget3D>(self[index])
-
-    cpdef np.ndarray to_numpy(self, str box_type="ground"):
-        '''
-        :param box_type: Decide how to represent the box. {ground: box projected along z axis}
-        '''
-        if len(self) == 0:
-            return np.empty((0, 8))
-        return np.stack([box.to_numpy(box_type) for box in self])
-
-    def to_torch(self, box_type="ground"):
-        import torch
-        return torch.from_numpy(self.to_numpy(box_type))
-
-    def serialize(self):
-        return (self.frame, self.timestamp, [obj.serialize() for obj in self])
-
-    @staticmethod
-    def deserialize(data):
-        objs = [ObjectTarget3D.deserialize(obj) for obj in data[2]]
-        return ObjectTarget3DArray(objs, frame=data[0], timestamp=data[1])
-
-    def dump(self, output):
-        import msgpack
-        if isinstance(output, (str, Path)):
-            with Path(output).open('wb') as fout:
-                fout.write(msgpack.packb(self.serialize(), use_single_float=True))
-
-    @staticmethod
-    def load(output):
-        import msgpack
-        if isinstance(output, (str, Path)):
-            with Path(output).open('rb') as fout:
-                return ObjectTarget3DArray.deserialize(msgpack.unpackb(fout.read()))
-
-    def __repr__(self):
-        return "<ObjectTarget3DArray with %d objects @ %s>" % (len(self), self.frame)
-
-    def filter_tag(self, tags):
-        '''
-        Filter the list by select only objects with given tags
-
-        :param tags: None means no filter, otherwise str/enum or list of str/enum
-        '''
-        if not tags:
-            return self
-        if not isinstance(tags, (list, tuple)):
-            tags = [tags]
-        tags = (str(t) if not isinstance(t, str) else t for t in tags) # use tag name to filter
-        tags = [t.lower() for t in tags]
-        return ObjectTarget3DArray([box for box in self if box.tag_name.lower() in tags], self.frame)
-
-cdef class TrackingTarget3D:
+cdef class TrackingTarget3D(ObjectTarget3D):
     def __init__(self, position, orientation, dimension, velocity, angular_velocity, tag,
         tid=None, position_var=None, orientation_var=None, dimension_var=None,
         velocity_var=None, angular_velocity_var=None, history=None):
@@ -365,6 +299,100 @@ cdef class TrackingTarget3D:
             position_var=pos_var, orientation_var=ori_var, dimension_var=dim_var,
             velocity_var=vel_var, angular_velocity_var=avel_var, history=history
         )
+
+    cpdef np.ndarray to_numpy(self, str box_type="ground"):
+        # store only 3D box and label
+        cls_value = self.tag_top.value
+        cdef np.ndarray arr = np.concatenate([self.position, self.dimension, [self.yaw, cls_value]])
+        return arr
+
+cdef class Target3DArray(list):
+    def __init__(self, iterable=[], frame=None, timestamp=float("nan")):
+        '''
+        :param frame: Frame that the box parameters used. None means base frame (in TransformSet)
+        '''
+        super().__init__(iterable)
+        self.frame = frame
+        self.timestamp = timestamp
+
+        # copy frame value
+        if isinstance(iterable, Target3DArray) and not frame:
+            self.frame = iterable.frame
+            self.timestamp = iterable.timestamp
+
+    cdef ObjectTarget3D get(self, int index):
+        return <ObjectTarget3D>(self[index])
+
+    cdef TrackingTarget3D tget(self, int index):
+        return <TrackingTarget3D>(self[index])
+
+    cpdef np.ndarray to_numpy(self, str box_type="ground"):
+        '''
+        :param box_type: Decide how to represent the box. {ground: box projected along z axis}
+        '''
+        if len(self) == 0:
+            return np.empty((0, 8))
+        return np.stack([box.to_numpy(box_type) for box in self])
+
+    def to_torch(self, box_type="ground"):
+        import torch
+        return torch.from_numpy(self.to_numpy(box_type))
+
+    def serialize(self):
+        if len(self) > 0:
+            if any(type(obj) != type(self[0]) for obj in self):
+                raise ValueError("All elements are required to be the same type (ObjectTarget3D"
+                    "or TrackingTarget3D) before dumping!")
+            type_mapping = {
+                # empty list is 0
+                ObjectTarget3D: 1,
+                TrackingTarget3D: 2
+            }
+            type_code = type_mapping[type(self[0])]
+        else:
+            type_code = 0
+        return (self.frame, self.timestamp, type_code, [obj.serialize() for obj in self])
+
+    @staticmethod
+    def deserialize(data):
+        if data[2] == 1:
+            objs = [ObjectTarget3D.deserialize(obj) for obj in data[3]]
+        elif data[2] == 2:
+            objs = [TrackingTarget3D.deserialize(obj) for obj in data[3]]
+        else:
+            assert data[2] == 0 and len(data[3]) == 0
+            objs = []
+        return Target3DArray(objs, frame=data[0], timestamp=data[1])
+
+    def dump(self, output):
+        import msgpack
+        if isinstance(output, (str, Path)):
+            with Path(output).open('wb') as fout:
+                fout.write(msgpack.packb(self.serialize(), use_single_float=True))
+
+    @staticmethod
+    def load(output):
+        import msgpack
+        if isinstance(output, (str, Path)):
+            with Path(output).open('rb') as fout:
+                return Target3DArray.deserialize(msgpack.unpackb(fout.read()))
+
+    def __repr__(self):
+        return "<Target3DArray with %d objects @ %s>" % (len(self), self.frame)
+
+    def filter_tag(self, tags):
+        '''
+        Filter the list by select only objects with given tags
+
+        :param tags: None means no filter, otherwise str/enum or list of str/enum
+        '''
+        if not tags:
+            return self
+        if not isinstance(tags, (list, tuple)):
+            tags = [tags]
+        tags = (str(t) if not isinstance(t, str) else t for t in tags) # use tag name to filter
+        tags = [t.lower() for t in tags]
+        return Target3DArray([box for box in self if box.tag_name.lower() in tags], self.frame)
 
 class EgoPose:
     '''
@@ -539,7 +567,7 @@ class TransformSet:
     def __repr__(self):
         return "<TransformSet with frames: *%s>" % ", ".join([self.base_frame] + self.frames)
 
-    def transform_objects(self, objects: ObjectTarget3DArray, frame_to=None):
+    def transform_objects(self, objects: Target3DArray, frame_to=None):
         '''
         Change the representing frame of a object array
         '''
@@ -548,7 +576,7 @@ class TransformSet:
 
         rt = self.get_extrinsic(frame_from=objects.frame, frame_to=frame_to)
         r, t = Rotation.from_matrix(rt[:3, :3]), rt[:3, 3]
-        new_objs = ObjectTarget3DArray(frame=frame_to)
+        new_objs = Target3DArray(frame=frame_to)
         for obj in objects:
             position = np.dot(r.as_matrix(), obj.position) + t
             orientation = r * obj.orientation

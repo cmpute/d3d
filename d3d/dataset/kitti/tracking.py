@@ -4,20 +4,20 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from scipy.spatial.transform import Rotation
 
-from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
+from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet, EgoPose)
 from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
 
-def parse_label(label: list, raw_calib: dict) -> ObjectTarget3DArray:
+def parse_label(label: list, raw_calib: dict) -> Target3DArray:
     '''
     Generate object array from loaded label or result text
     '''
     Tr = raw_calib['Tr_velo_cam'].reshape(3, 4)
     RRect = Rotation.from_matrix(raw_calib['R_rect'].reshape(3, 3))
     HR, HT = Rotation.from_matrix(Tr[:,:3]), Tr[:,3]
-    objects = ObjectTarget3DArray()
+    objects = Target3DArray()
     objects.frame = "velo"
 
     for item in label:

@@ -13,7 +13,7 @@ from PIL import Image
 from enum import Enum, IntFlag, auto
 from scipy.spatial.transform import Rotation
 
-from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
+from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
 from d3d.dataset.base import DetectionDatasetBase, ZipCache, check_frames, split_trainval
 
@@ -263,7 +263,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
             return labels
 
         ego_r, ego_t = self.pose(idx)
-        outputs = ObjectTarget3DArray(frame="ego")
+        outputs = Target3DArray(frame="ego")
         for label in labels:
             # convert tags
             tag = NuscenesObjectClass.parse(label.category)

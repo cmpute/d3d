@@ -1,6 +1,6 @@
 import numpy as np
 
-from d3d.abstraction import ObjectTarget3DArray, TransformSet
+from d3d.abstraction import Target3DArray, TransformSet
 
 _pcl_available = False
 try:
@@ -11,7 +11,7 @@ except:
     pass
 
 # TODO: support set box_color by id hash
-def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targets: ObjectTarget3DArray, calib: TransformSet,
+def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targets: Target3DArray, calib: TransformSet,
     text_scale=0.8, box_color=(1, 1, 1), text_color=(1, 0.8, 1), id_prefix="", tags=None, position_offset=None):
     '''
     Note: To use this visualizer, targets should be in the same frame as the visualizer frame (lidar frame)

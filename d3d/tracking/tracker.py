@@ -1,7 +1,7 @@
 
 import numpy as np
 
-from d3d.abstraction import ObjectTarget3D, ObjectTarget3DArray, TrackingTarget3D
+from d3d.abstraction import ObjectTarget3D, Target3DArray, TrackingTarget3D
 from d3d.tracking.filter import Pose_3DOF_UKF_CTRA, Box_KF
 from d3d.tracking.matcher import NearestNeighborMatcher, DistanceTypes
 
@@ -64,11 +64,11 @@ class VanillaTracker:
         '''
         return list(self._tracked_poses.keys())
 
-    def _current_objects_array(self) -> ObjectTarget3DArray:
+    def _current_objects_array(self) -> Target3DArray:
         '''
-        Create ObjectTarget3DArray from current tracked objects
+        Create Target3DArray from current tracked objects
         '''
-        array = ObjectTarget3DArray()
+        array = Target3DArray()
         for tid in self.tracked_ids:
             target = ObjectTarget3D(
                 position=self._tracked_poses[tid].position,
@@ -83,7 +83,7 @@ class VanillaTracker:
             array.append(target)
         return array
 
-    def update(self, detections: ObjectTarget3DArray):
+    def update(self, detections: Target3DArray):
         '''
         Update the filters when receiving new detections
         '''
@@ -149,11 +149,11 @@ class VanillaTracker:
         self._last_timestamp = detections.timestamp
         self._last_frameid = detections.frame
 
-    def report(self):
+    def report(self) -> Target3DArray:
         '''
         Return the collection of valid tracked targets
         '''
-        array = []
+        array = Target3DArray(frame=self._last_frameid, timestamp=self._last_timestamp)
         for tid in self.tracked_ids:
             target = TrackingTarget3D(
                 position=self._tracked_poses[tid].position,

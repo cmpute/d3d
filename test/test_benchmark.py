@@ -3,7 +3,7 @@ import numpy as np
 
 from scipy.spatial.transform import Rotation
 from d3d.dataset.kitti import KittiObjectClass
-from d3d.abstraction import ObjectTarget3DArray, ObjectTarget3D, ObjectTag
+from d3d.abstraction import Target3DArray, ObjectTarget3D, ObjectTag
 from d3d.benchmarks import DetectionEvaluator, DetectionEvalStats
 
 class TestBenchmark(unittest.TestCase):
@@ -25,7 +25,7 @@ class TestBenchmark(unittest.TestCase):
             [-1, -1, -1], r, d,
             ObjectTag(KittiObjectClass.Pedestrian, scores=0.8)
         )
-        dt_boxes = ObjectTarget3DArray([dt1, dt2, dt3], frame="test")
+        dt_boxes = Target3DArray([dt1, dt2, dt3], frame="test")
         
         # test match with self
         result = evaluator.get_stats(dt_boxes, dt_boxes)
@@ -57,7 +57,7 @@ class TestBenchmark(unittest.TestCase):
             [1, -1, 0], r, d,
             ObjectTag(KittiObjectClass.Pedestrian)
         )
-        gt_boxes = ObjectTarget3DArray([gt1, gt2, gt3], frame="test")
+        gt_boxes = Target3DArray([gt1, gt2, gt3], frame="test")
         result = evaluator.get_stats(gt_boxes, dt_boxes)
         for clsobj in eval_classes:
             clsid = clsobj.value

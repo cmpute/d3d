@@ -17,14 +17,15 @@ cdef class ObjectTarget3D:
 
     cpdef np.ndarray to_numpy(self, str box_type=*)
 
-cdef class ObjectTarget3DArray(list):
-    cdef public str frame
-    cdef public float timestamp
-
-    cdef ObjectTarget3D get(self, int index)
-    cpdef np.ndarray to_numpy(self, str box_type=*)
-
 cdef class TrackingTarget3D(ObjectTarget3D):
     cdef float[:] velocity_, angular_velocity_
     cdef float[:, :] velocity_var_, angular_velocity_var_
     cdef public float history
+
+cdef class Target3DArray(list):
+    cdef public str frame
+    cdef public float timestamp
+
+    cdef ObjectTarget3D get(self, int index)
+    cdef TrackingTarget3D tget(self, int index)
+    cpdef np.ndarray to_numpy(self, str box_type=*)

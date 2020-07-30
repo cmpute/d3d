@@ -7,7 +7,7 @@ from zipfile import ZipFile
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from d3d.abstraction import (ObjectTag, ObjectTarget3D, ObjectTarget3DArray,
+from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
 from d3d.dataset.base import DetectionDatasetBase, check_frames, split_trainval
 from d3d.dataset.kitti import utils
@@ -43,7 +43,7 @@ def parse_label(label: list, raw_calib: dict):
     Tr = raw_calib['Tr_velo_to_cam'].reshape(3, 4)
     RRect = Rotation.from_matrix(raw_calib['R0_rect'].reshape(3, 3))
     HR, HT = Rotation.from_matrix(Tr[:,:3]), Tr[:,3]
-    objects = ObjectTarget3DArray()
+    objects = Target3DArray()
     objects.frame = "velo"
 
     for item in label:
@@ -287,7 +287,7 @@ def _line_box_intersect(p0, p1, width, height):
     assert 0 <= y <= height, "y = %.2f" % y
     return (x, y)
 
-def dump_detection_output(detections: ObjectTarget3DArray, calib:TransformSet, raw_calib: dict):
+def dump_detection_output(detections: Target3DArray, calib:TransformSet, raw_calib: dict):
     '''
     Save the detection in KITTI output format. We need raw calibration for R0_rect
     '''
