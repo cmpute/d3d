@@ -1,4 +1,4 @@
-# cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True
+# cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True, embedsignature=True
 
 cimport cython
 import numpy as np

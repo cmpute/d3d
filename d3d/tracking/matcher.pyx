@@ -1,3 +1,5 @@
+# cython: language_level=3, embedsignature=True
+
 import torch
 cimport numpy as np
 import numpy as np

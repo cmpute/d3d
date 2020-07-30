@@ -1,6 +1,6 @@
 import numpy as np
 
-from d3d.abstraction import Target3DArray, TransformSet
+from d3d.abstraction import Target3DArray, TransformSet, TrackingTarget3D
 
 _pcl_available = False
 try:
@@ -70,3 +70,10 @@ def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targ
         pstart = target.position
         pend = target.position + direction * lx
         visualizer.addLine(pstart, pend, id=arrow_id)
+
+        # draw velocity
+        if isinstance(target, TrackingTarget3D):
+            arrow_id = (id_prefix + "target%d/velocity") % i
+            pstart = target.position
+            pend = target.position + target.velocity
+            visualizer.addArrow(pstart, pend, id=arrow_id)

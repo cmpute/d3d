@@ -1,3 +1,5 @@
+# cython: language_level=3, embedsignature=True
+
 import enum
 import pickle
 import logging
@@ -421,6 +423,7 @@ CameraMetadata = namedtuple('CameraMetadata', [
 ])
 LidarMetadata = namedtuple('LidarMetadata', [])
 RadarMetadata = namedtuple('RadarMetadata', [])
+PinMetadata = namedtuple('PinMetadata', ['lon', 'lat']) # represent a ground-fixed coordinate
 class TransformSet:
     '''
     This object load a collection of intrinsic and extrinsic parameters
@@ -495,6 +498,10 @@ class TransformSet:
         P = np.array([[fx, s, cx], [0, fy, cy], [0, 0, 1]])
         self.set_intrinsic_camera(frame_id, P, size,
             rotate=True, distort_coeffs=distort_coeffs, intri_matrix=P)
+
+    def set_intrinsic_map_pin(self, frame_id, lon=float('nan'), lat=float('nan')):
+        self.intrinsics[frame_id] = None
+        self.intrinsics_meta[frame_id] = PinMetadata(lon, lat)
 
     def set_extrinsic(self, transform, frame_to=None, frame_from=None):
         '''
@@ -580,8 +587,26 @@ class TransformSet:
         for obj in objects:
             position = np.dot(r.as_matrix(), obj.position) + t
             orientation = r * obj.orientation
-            new_obj = ObjectTarget3D(position, orientation, obj.dimension, obj.tag, obj.tid)
-            new_objs.append(new_obj)
+
+            if isinstance(obj, TrackingTarget3D): # notice that TrackingTarget3D derives from ObjectTarget3D
+                velocity = np.dot(r.as_matrix(), obj.velocity)
+                new_objs.append(TrackingTarget3D(
+                    position=position, position_var=obj.position_var,
+                    orientation=orientation, orientation_var=obj.orientation_var,
+                    dimension=obj.dimension, dimension_var=obj.dimension_var,
+                    velocity=velocity, velocity_var=obj.velocity_var,
+                    angular_velocity=obj.angular_velocity, angular_velocity_var=obj.angular_velocity_var,
+                    tag=obj.tag, tid=obj.tid, history=obj.history
+                ))
+            elif isinstance(obj, ObjectTarget3D):
+                new_objs.append(ObjectTarget3D(
+                    position=position, position_var=obj.position_var,
+                    orientation=orientation, orientation_var=obj.orientation_var,
+                    dimension=obj.dimension, dimension_var=obj.dimension_var,
+                    tag=obj.tag, tid=obj.tid
+                ))
+            else:
+                raise ValueError("Unsupported target type!")
         return new_objs
 
     def project_points_to_camera(self, points, frame_to, frame_from=None, remove_outlier=True, return_dmask=False):

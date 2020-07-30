@@ -6,7 +6,7 @@ import numpy as np
 import cv2
 from matplotlib import pyplot as plt
 from matplotlib import axes, lines
-from d3d.abstraction import Target3DArray, TransformSet
+from d3d.abstraction import Target3DArray, TransformSet, TrackingTarget3D
 
 def visualize_detections(ax: axes.Axes, image_frame: str, targets: Target3DArray, calib: TransformSet,
     box_color=(0, 1, 0), thickness=2, tags=None):
@@ -51,7 +51,14 @@ def visualize_detections_bev(ax: axes.Axes, visualizer_frame: str, targets: Targ
         targets = calib.transform_objects(targets, frame_to=visualizer_frame)
 
     for target in targets.filter_tag(tags):
+        # draw vehicle frames
         points = target.corners
         pairs = [(0, 1), (2, 3), (0, 2), (1, 3)]
         for i, j in pairs:
             ax.add_artist(lines.Line2D((points[i,0], points[j,0]), (points[i,1], points[j,1]), c=box_color, lw=thickness))
+
+        # draw velocity
+        if isinstance(target, TrackingTarget3D):
+            pstart = target.position[:2]
+            pend = target.position[:2] + target.velocity[:2]
+            ax.add_artist(lines.Line2D((pstart[0], pend[0]), (pstart[1], pend[1]), c=box_color, lw=thickness))
