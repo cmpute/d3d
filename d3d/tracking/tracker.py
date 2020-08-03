@@ -3,13 +3,13 @@ import numpy as np
 
 from d3d.abstraction import ObjectTarget3D, Target3DArray, TrackingTarget3D
 from d3d.tracking.filter import Pose_3DOF_UKF_CTRA, Box_KF
-from d3d.tracking.matcher import NearestNeighborMatcher, DistanceTypes
+from d3d.tracking.matcher import HungarianMatcher, DistanceTypes
 
 class VanillaTracker:
     def __init__(self,
         pose_tracker_factory=Pose_3DOF_UKF_CTRA,
         feature_tracker_factory=Box_KF,
-        matcher_factory=NearestNeighborMatcher,
+        matcher_factory=HungarianMatcher,
         matcher_distance_type="position",
         matcher_distance_threshold=1,
         lost_time=1
@@ -68,7 +68,7 @@ class VanillaTracker:
         '''
         Create Target3DArray from current tracked objects
         '''
-        array = Target3DArray()
+        array = Target3DArray(frame=self._last_frameid, timestamp=self._last_timestamp)
         for tid in self.tracked_ids:
             target = ObjectTarget3D(
                 position=self._tracked_poses[tid].position,
@@ -116,7 +116,7 @@ class VanillaTracker:
 
             lost_indices = set(self.tracked_ids)
             for idx, target in enumerate(detections):
-                idx_match = self._matcher.query_dst_match(idx)
+                idx_match = self._matcher.query_src_match(idx)
                 if idx_match < 0:
                     # Initialize this detector
                     self._initialize(target)
@@ -168,8 +168,12 @@ class VanillaTracker:
                 dimension_var=self._tracked_features[tid].dimension_var,
                 velocity_var=self._tracked_poses[tid].velocity_var,
                 angular_velocity_var=self._tracked_poses[tid].angular_velocity_var,
-                history=self._timer_track[tid]
+                history=self._timer_track[tid] # TODO: discount the object score by lost time
             )
             array.append(target)
 
         return array
+
+    @property
+    def match_count(self):
+        return self._matcher.num_of_matches()

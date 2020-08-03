@@ -17,6 +17,10 @@ cdef class BaseMatcher:
         :param src_boxes: boxes to match
         :param dst_boxes: fixed boxes (such as ground truth boxes)
         '''
+        # clear previous assignments
+        self._src_assignment.clear()
+        self._dst_assignment.clear()
+    
         self._src_boxes = src_boxes
         self._dst_boxes = dst_boxes
 
@@ -92,9 +96,6 @@ cdef class BaseMatcher:
 
 cdef class ScoreMatcher:
     cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold):
-        self._src_assignment.clear()
-        self._dst_assignment.clear()
-
         # sort src boxes by their score, and sort dst boxes by its distance to src boxes
         cdef list src_list = src_subset, dst_list = dst_subset
         cdef list src_scores = [self._src_boxes.get(sidx).tag.scores[0] for sidx in src_subset]
@@ -118,9 +119,6 @@ cdef class ScoreMatcher:
 
 cdef class NearestNeighborMatcher:
     cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold):
-        self._src_assignment.clear()
-        self._dst_assignment.clear()
-
         # sort the match pairs by distance
         cdef list src_list = src_subset, dst_list = dst_subset
         cdef np.ndarray distance_subset = np.asarray(self._distance_cache)[np.ix_(src_list, dst_list)]

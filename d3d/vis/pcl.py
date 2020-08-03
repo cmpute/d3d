@@ -76,4 +76,4 @@ def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targ
             arrow_id = (id_prefix + "target%d/velocity") % i
             pstart = target.position
             pend = target.position + target.velocity
-            visualizer.addArrow(pstart, pend, id=arrow_id)
+            visualizer.addLine(pstart, pend, color=(0,0,1), id=arrow_id)

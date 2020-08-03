@@ -39,9 +39,9 @@ def visualize_detections(ax: axes.Axes, image_frame: str, targets: Target3DArray
                 continue
             if i not in dmask or j not in dmask:
                 continue # only calculate for points ahead
-            ax.add_artist(lines.Line2D((uv[i,0], uv[j,0]), (uv[i,1], uv[j,1]), c=box_color, lw=thickness))
+            ax.add_line(lines.Line2D((uv[i,0], uv[j,0]), (uv[i,1], uv[j,1]), c=box_color, lw=thickness))
         # draw direction
-        ax.add_artist(lines.Line2D((uv[-2,0], uv[-1,0]), (uv[-2,1], uv[-1,1]), c=box_color, lw=thickness))
+        ax.add_line(lines.Line2D((uv[-2,0], uv[-1,0]), (uv[-2,1], uv[-1,1]), c=box_color, lw=thickness))
 
 def visualize_detections_bev(ax: axes.Axes, visualizer_frame: str, targets: Target3DArray, calib: TransformSet,
     box_color=(0, 1, 0), thickness=2, tags=None):
@@ -55,10 +55,10 @@ def visualize_detections_bev(ax: axes.Axes, visualizer_frame: str, targets: Targ
         points = target.corners
         pairs = [(0, 1), (2, 3), (0, 2), (1, 3)]
         for i, j in pairs:
-            ax.add_artist(lines.Line2D((points[i,0], points[j,0]), (points[i,1], points[j,1]), c=box_color, lw=thickness))
+            ax.add_line(lines.Line2D((points[i,0], points[j,0]), (points[i,1], points[j,1]), c=box_color, lw=thickness))
 
         # draw velocity
         if isinstance(target, TrackingTarget3D):
             pstart = target.position[:2]
             pend = target.position[:2] + target.velocity[:2]
-            ax.add_artist(lines.Line2D((pstart[0], pend[0]), (pstart[1], pend[1]), c=box_color, lw=thickness))
+            ax.add_line(lines.Line2D((pstart[0], pend[0]), (pstart[1], pend[1]), c=box_color, lw=thickness))
