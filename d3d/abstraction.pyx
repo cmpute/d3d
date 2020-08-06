@@ -95,14 +95,14 @@ cdef class ObjectTarget3D:
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
     '''
     def __init__(self, position, orientation, dimension, tag,
-        tid=None, position_var=None, orientation_var=None, dimension_var=None):
+        tid=0, position_var=None, orientation_var=None, dimension_var=None):
         '''
         :param position: Position of object center (x,y,z)
         :param orientation: Object heading (direction of x-axis attached on body)
             with regard to x-axis of the world at the object center.
         :param dimension: Length of the object in 3 dimensions (lx,ly,lz)
         :param tag: Classification information of the object
-        :param tid: ID of the object used for tracking (optional)
+        :param tid: ID of the object used for tracking (optional), 0 means no tracking id assigned
         '''
 
         self.position_ = create_vector3(position)
@@ -219,7 +219,7 @@ cdef class ObjectTarget3D:
 
 cdef class TrackingTarget3D(ObjectTarget3D):
     def __init__(self, position, orientation, dimension, velocity, angular_velocity, tag,
-        tid=None, position_var=None, orientation_var=None, dimension_var=None,
+        tid=0, position_var=None, orientation_var=None, dimension_var=None,
         velocity_var=None, angular_velocity_var=None, history=None):
 
         self.position_ = create_vector3(position)
@@ -240,7 +240,7 @@ cdef class TrackingTarget3D(ObjectTarget3D):
             raise ValueError("Label should be of type ObjectTag")
 
         self.tid = tid
-        self.history = history
+        self.history = history or float('nan')
 
         self.position_var_ = create_matrix33(position_var)
         self.dimension_var_ = create_matrix33(dimension_var)

@@ -21,7 +21,7 @@ def parse_label(label: list, raw_calib: dict) -> Target3DArray:
     objects.frame = "velo"
 
     for item in label:
-        track_id = int(item[0])
+        track_id = int(item[0]) # add 1 to prevent 0 tid
         if item[1] == KittiObjectClass.DontCare:
             continue
 

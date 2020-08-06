@@ -29,7 +29,7 @@ class VanillaTracker:
 
         self._last_timestamp = None
         self._last_frameid = None
-        self._id_counter = 0 # Counter for id generation of tracked objects
+        self._id_counter = 1 # Counter for id generation of tracked objects, starting from 0 since 0 is considered as no id
         self._lost_time = lost_time
 
         self._pose_factory = pose_tracker_factory

@@ -9,6 +9,14 @@ from scipy.optimize import linear_sum_assignment
 from d3d.box import box2d_iou
 
 cdef class BaseMatcher:
+    cpdef void clear_match(self):
+        '''
+        Clear saved match results
+        '''
+        # clear previous assignments
+        self._src_assignment.clear()
+        self._dst_assignment.clear()
+
     cpdef void prepare_boxes(self, Target3DArray src_boxes, Target3DArray dst_boxes, DistanceTypes distance_metric):
         '''
         This method add two arrays of boxes and prepare related informations, it will also clean previous
@@ -17,10 +25,7 @@ cdef class BaseMatcher:
         :param src_boxes: boxes to match
         :param dst_boxes: fixed boxes (such as ground truth boxes)
         '''
-        # clear previous assignments
-        self._src_assignment.clear()
-        self._dst_assignment.clear()
-    
+        self.clear_match()
         self._src_boxes = src_boxes
         self._dst_boxes = dst_boxes
 

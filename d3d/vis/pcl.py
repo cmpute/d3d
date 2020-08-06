@@ -40,7 +40,7 @@ def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targ
         # draw tag
         text_id = (id_prefix + "target%d/tag") % i
         if target.tid:
-            disp_text = "%s: %s" % (str(target.tid)[:6], target.tag_name)
+            disp_text = "%s: %s" % (hex(target.tid)[2:8], target.tag_name)
         else:
             disp_text = "#%d: %s" % (i, target.tag_name)
         aux_text = []

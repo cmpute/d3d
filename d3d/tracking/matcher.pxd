@@ -12,6 +12,7 @@ cdef class BaseMatcher:
     cdef float[:, :] _distance_cache
     cdef unordered_map[int, int] _src_assignment, _dst_assignment
 
+    cpdef void clear_match(self)
     cpdef void prepare_boxes(self, Target3DArray src_boxes, Target3DArray dst_boxes, DistanceTypes distance_metric)
     cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold)
     cdef void match_by_order(self, vector[int]& src_order, vector[int]& dst_order, unordered_map[int, float]& distance_threshold)

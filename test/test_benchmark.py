@@ -3,10 +3,10 @@ import numpy as np
 
 from scipy.spatial.transform import Rotation
 from d3d.dataset.kitti import KittiObjectClass
-from d3d.abstraction import Target3DArray, ObjectTarget3D, ObjectTag
-from d3d.benchmarks import DetectionEvaluator, DetectionEvalStats
+from d3d.abstraction import Target3DArray, ObjectTarget3D, ObjectTag, TrackingTarget3D
+from d3d.benchmarks import DetectionEvaluator, DetectionEvalStats, TrackingEvaluator
 
-class TestBenchmark(unittest.TestCase):
+class TestDetectionEvaluator(unittest.TestCase):
     def test_get_stats(self):
         eval_classes = [KittiObjectClass.Car, KittiObjectClass.Van]
         evaluator = DetectionEvaluator(eval_classes, [0.1, 0.2])
@@ -110,3 +110,88 @@ class TestBenchmark(unittest.TestCase):
         assert summary.ngt == summary_copy.ngt
         assert summary.ndt == summary_copy.ndt
         assert summary.acc_iou == summary_copy.acc_iou
+
+
+class TestTrackingEvaluator(unittest.TestCase):
+    def test_scenarios(self):
+        eval_classes = [KittiObjectClass.Car, KittiObjectClass.Van]
+        evaluator = TrackingEvaluator(eval_classes, [0.1, 0.2])
+
+
+        # scenario X-crossing switch
+        r = Rotation.from_euler("Z", 0)
+        d = [1, 1, 1]
+        t = ObjectTag(KittiObjectClass.Car, scores=0.8)
+        v = [0, 0, 0]
+        tid = 1
+        traj1 = [
+            TrackingTarget3D([-2, 2, 0], r, d, v, v, t, tid=tid),
+            TrackingTarget3D([-1, 1, 0], r, d, v, v, t, tid=tid),
+            TrackingTarget3D([ 0, 0, 0], r, d, v, v, t, tid=tid),
+            TrackingTarget3D([ 1, 1, 0], r, d, v, v, t, tid=tid),
+            TrackingTarget3D([ 2, 2, 0], r, d, v, v, t, tid=tid),
+        ]
+        t = ObjectTag(KittiObjectClass.Car, scores=0.9)
+        tid = 2
+        traj2 = [
+            TrackingTarget3D([-2, -2, 0], r, d, v, v, t, tid=tid),
+            TrackingTarget3D([-1, -1, 0], r, d, v, v, t, tid=tid),
+            TrackingTarget3D([ 0,  0, 0], r, d, v, v, t, tid=tid),
+            TrackingTarget3D([ 1, -1, 0], r, d, v, v, t, tid=tid),
+            TrackingTarget3D([ 2, -2, 0], r, d, v, v, t, tid=tid),
+        ]
+        dt_trajs = [Target3DArray([t1, t2], frame="test") for t1, t2 in zip(traj1, traj2)]
+
+
+        r = Rotation.from_euler("Z", 0.01)
+        d = [2.1, 2.1, 2.1]
+        t = ObjectTag(KittiObjectClass.Car)
+        tid = 1001
+        gt1 = [
+            ObjectTarget3D([-2.1, 2.1, 0], r, d, t, tid=tid),
+            ObjectTarget3D([-1.1, 0.9, 0], r, d, t, tid=tid),
+            ObjectTarget3D([-0.1, 0.1, 0], r, d, t, tid=tid),
+            ObjectTarget3D([0.9, -1.1, 0], r, d, t, tid=tid),
+            ObjectTarget3D([1.9, -1.9, 0], r, d, t, tid=tid),
+        ]
+        tid = 1002
+        gt2 = [
+            ObjectTarget3D([-2.1, -2.1, 0], r, d, t, tid=tid),
+            ObjectTarget3D([-1.1, -0.9, 0], r, d, t, tid=tid),
+            ObjectTarget3D([-0.1,  0.1, 0], r, d, t, tid=tid),
+            ObjectTarget3D([ 0.9,  1.1, 0], r, d, t, tid=tid),
+            ObjectTarget3D([ 1.9,  1.9, 0], r, d, t, tid=tid),
+        ]
+        gt_trajs = [Target3DArray([t1, t2], frame="test") for t1, t2 in zip(gt1, gt2)]
+
+        for dt_array, gt_array in zip(dt_trajs, gt_trajs):
+            stats = evaluator.get_stats(dt_array, gt_array)
+            print(stats.id_switches)
+            evaluator.add_stats(stats)
+
+        # for clsobj in eval_classes:
+        #     clsid = clsobj.value
+        #     assert result.ngt[clsid] == 1
+        #     assert result.ndt[clsid][0] == 1 and result.ndt[clsid][-1] == 0
+
+        #     if clsobj == KittiObjectClass.Car:
+        #         assert result.tp[clsid][0] == 1 and result.tp[clsid][-1] == 0
+        #         assert result.fp[clsid][0] == 0 and result.fp[clsid][-1] == 0
+        #         assert result.fn[clsid][0] == 0 and result.fn[clsid][-1] == 1
+        #         assert result.acc_iou[clsid][0] > 0.1 and np.isnan(result.acc_iou[clsid][-1])
+        #         assert result.acc_angular[clsid][0] > 0 and np.isnan(result.acc_angular[clsid][-1])
+        #         assert result.acc_dist[clsid][0] > 1 and np.isnan(result.acc_dist[clsid][-1])
+        #         assert result.acc_box[clsid][0] > 0 and np.isnan(result.acc_box[clsid][-1])
+        #         assert np.isinf(result.acc_var[clsid][0]) and np.isnan(result.acc_var[clsid][-1])
+        #     else:
+        #         assert result.tp[clsid][0] == 0 and result.tp[clsid][-1] == 0
+        #         assert result.fp[clsid][0] == 1 and result.fp[clsid][-1] == 0
+        #         assert result.fn[clsid][0] == 1 and result.fn[clsid][-1] == 1
+        #         assert np.isnan(result.acc_iou[clsid][0]) and np.isnan(result.acc_iou[clsid][-1])
+        #         assert np.isnan(result.acc_angular[clsid][0]) and np.isnan(result.acc_angular[clsid][-1])
+        #         assert np.isnan(result.acc_dist[clsid][0]) and np.isnan(result.acc_dist[clsid][-1])
+        #         assert np.isnan(result.acc_box[clsid][0]) and np.isnan(result.acc_box[clsid][-1])
+        #         assert np.isnan(result.acc_var[clsid][0]) and np.isnan(result.acc_var[clsid][-1])
+
+if __name__ == "__main__":
+    TestTrackingEvaluator().test_scenarios()

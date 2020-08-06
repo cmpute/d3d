@@ -1,9 +1,11 @@
+import base64
 import itertools
 import json
 import logging
 import os
 import os.path as osp
 import shutil
+import struct
 import subprocess
 import tempfile
 import zipfile
@@ -167,12 +169,14 @@ class WaymoObjectLoader(DetectionDatasetBase):
 
         outputs = Target3DArray(frame="vehicle") # or frame=None
         for label in labels:
+            tid = base64.urlsafe_b64decode(label.label[:12])
+            tid, = struct.unpack('Q', tid[:8])
             target = ObjectTarget3D(
                 label.center,
                 Rotation.from_euler("z", label.heading),
                 label.size,
                 ObjectTag(label.label, WaymoObjectClass),
-                tid=label.id
+                tid=tid
             )
             outputs.append(target)
 

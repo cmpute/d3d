@@ -116,7 +116,7 @@ cdef class DetectionEvaluator:
             self._acc_dist[k] = vector[float](self._pr_nsamples, NAN)
             self._acc_var[k] = vector[float](self._pr_nsamples, NAN)
 
-    def reset(self):
+    cpdef void reset(self):
         for k in self._classes:
             self._total_gt[k] = 0
             self._total_dt[k].assign(self._pr_nsamples, 0)
@@ -161,7 +161,7 @@ cdef class DetectionEvaluator:
         assert gt_boxes.frame == dt_boxes.frame        
 
         # forward definitions
-        cdef int gt_tag, dt_idx, dt_tag
+        cdef int gt_idx, gt_tag, dt_idx, dt_tag
         cdef float score_thres, angular_acc_cur, var_acc_cur
 
         # initialize matcher
@@ -190,10 +190,10 @@ cdef class DetectionEvaluator:
         for gt_idx in range(len(gt_boxes)):
             gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
             if self._min_overlaps.find(gt_tag) == self._min_overlaps.end():
-                continue
+                continue  # skip objects within ignored category
 
-            gt_indices.push_back(gt_idx)
             summary.ngt[gt_tag] += 1
+            gt_indices.push_back(gt_idx)
 
         # loop over score thres
         for score_idx in range(self._pr_nsamples):
@@ -204,14 +204,15 @@ cdef class DetectionEvaluator:
             for dt_idx in range(len(dt_boxes)):
                 dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
                 if self._min_overlaps.find(dt_tag) == self._min_overlaps.end():
-                    continue
+                    continue  # skip objects within ignored category
                 if dt_boxes.get(dt_idx).tag.scores[0] < score_thres:
-                    continue
+                    continue  # skip objects with lower scores
 
-                dt_indices.push_back(dt_idx)
                 summary.ndt[dt_tag][score_idx] += 1
+                dt_indices.push_back(dt_idx)
 
             # match boxes
+            matcher.clear_match()
             matcher.match(dt_indices, gt_indices, self._min_overlaps)
 
             # process ground-truth match results
@@ -247,7 +248,7 @@ cdef class DetectionEvaluator:
                 if matcher.query_src_match(dt_idx) < 0:
                     summary.fp[dt_tag][score_idx] += 1
 
-        # compute accuracy metrics
+        # aggregate accuracy metrics
         cdef vector[int] gt_tags
         gt_tags.reserve(len(gt_boxes))
         for gt_idx in range(len(gt_boxes)):
@@ -260,7 +261,7 @@ cdef class DetectionEvaluator:
         summary.acc_var = self._aggregate_stats(var_acc, gt_tags)
         return summary
 
-    cpdef add_stats(self, DetectionEvalStats stats):
+    cpdef void add_stats(self, DetectionEvalStats stats):
         '''
         Add statistics from get_stats into database
         '''
@@ -400,3 +401,201 @@ cdef class DetectionEvaluator:
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)
+
+@cython.auto_pickle(True)
+cdef class TrackingEvalStats(DetectionEvalStats):
+    # id_switchs: tracked trajectory matched to different ground-truth trajectories
+    # fragments: ground-truth trajectory matched to different tracked tracjetories
+    cdef public unordered_map[int, vector[int]] id_switches, fragments
+
+ctypedef unsigned long long ull
+
+@cython.auto_pickle(True)
+cdef class TrackingEvaluator(DetectionEvaluator):
+    '''Benchmark for object tracking'''
+
+    # member declarations
+    # TODO: also track the tracking ratio (dictionary of tid -> tracked_frame, total_frame)
+    cdef unordered_map[int, vector[int]] _idsw, _frag
+    cdef vector[unordered_map[ull, ull]] _last_gt_assignment, _last_dt_assignment
+
+    def __init__(self, classes, min_overlaps, int pr_sample_count=40, float min_score=0, str pr_sample_scale="log10"):
+        '''
+        Object tracking benchmark. Targets association is done by score sorting.
+
+        :param classes: Object classes to consider
+        :param min_overlaps: Min overlaps per class for two boxes being considered as overlap.
+            If single value is provided, all class will use the same overlap threshold
+        :param min_score: Min score for precision-recall samples
+        :param pr_sample_count: Number of precision-recall sample points (expect for p=1,r=0 and p=0,r=1)
+        :param pr_sample_scale: PR sample type, {lin: linspace, log: logspace 1~10, logX: logspace 1~X}
+        '''
+        super().__init__(classes, min_overlaps, min_score=min_score,
+            pr_sample_count=pr_sample_count, pr_sample_scale=pr_sample_scale)
+
+        self._last_gt_assignment.resize(self._pr_nsamples)
+        self._last_dt_assignment.resize(self._pr_nsamples)
+
+        for k in self._classes:
+            self._idsw[k] = vector[int](self._pr_nsamples, 0)
+            self._frag[k] = vector[int](self._pr_nsamples, 0)
+
+    cpdef TrackingEvalStats get_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes):
+        assert gt_boxes.frame == dt_boxes.frame        
+
+        # forward definitions
+        cdef int gt_idx, gt_tag, dt_idx, dt_tag
+        cdef ull dt_tid, gt_tid
+        cdef float score_thres, angular_acc_cur, var_acc_cur
+        cdef unordered_map[ull, ull] gt_assignment, dt_assignment
+
+        # initialize matcher
+        cdef ScoreMatcher matcher = ScoreMatcher()
+        matcher.prepare_boxes(dt_boxes, gt_boxes, DistanceTypes.RIoU)
+
+        # initialize statistics
+        cdef TrackingEvalStats summary = TrackingEvalStats()
+        cdef vector[unordered_map[int, float]] iou_acc, angular_acc, dist_acc, box_acc, var_acc
+        for k in self._classes:
+            summary.ngt[k] = 0
+            summary.ndt[k] = vector[int](self._pr_nsamples, 0)
+            summary.tp[k] = vector[int](self._pr_nsamples, 0)
+            summary.fp[k] = vector[int](self._pr_nsamples, 0)
+            summary.fn[k] = vector[int](self._pr_nsamples, 0)
+            summary.id_switches[k] = vector[int](self._pr_nsamples, 0)
+            summary.fragments[k] = vector[int](self._pr_nsamples, 0)
+
+            iou_acc.resize(self._pr_nsamples)
+            angular_acc.resize(self._pr_nsamples)
+            dist_acc.resize(self._pr_nsamples)
+            box_acc.resize(self._pr_nsamples)
+            var_acc.resize(self._pr_nsamples)
+
+        
+        # select ground-truth boxes to match
+        cdef vector[int] gt_indices, dt_indices
+        for gt_idx in range(len(gt_boxes)):
+            gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
+            if self._min_overlaps.find(gt_tag) == self._min_overlaps.end():
+                continue  # skip objects within ignored category
+
+            summary.ngt[gt_tag] += 1
+            gt_indices.push_back(gt_idx)
+
+        # loop over score thres
+        for score_idx in range(self._pr_nsamples):
+            score_thres = self._pr_thresholds[score_idx]
+
+            # select detection boxes to match
+            dt_indices.clear()
+            for dt_idx in range(len(dt_boxes)):
+                dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
+                if self._min_overlaps.find(dt_tag) == self._min_overlaps.end():
+                    continue  # skip objects within ignored category
+                if dt_boxes.get(dt_idx).tag.scores[0] < score_thres:
+                    continue  # skip objects with lower scores
+
+                summary.ndt[dt_tag][score_idx] += 1
+
+                dt_tid = dt_boxes.get(dt_idx).tid
+                if self._last_dt_assignment[score_idx].find(dt_tid) == self._last_dt_assignment[score_idx].end():
+                    dt_indices.push_back(dt_idx) # match objects without previous assignment
+                else:
+                    gt_tid = self._last_dt_assignment[score_idx][dt_tid]
+                    for gt_idx in range(len(gt_boxes)):
+                        if gt_tid != gt_boxes.get(gt_idx).tid:
+                            continue  # find the gt boxes with stored tid
+
+                        if matcher._distance_cache[dt_idx, gt_idx] < self._min_overlaps[dt_tag]:
+                            dt_indices.push_back(dt_idx) # also match objects that are apart from previous assignment
+                        else:
+                            gt_assignment[gt_tid] = dt_tid
+                            dt_assignment[dt_tid] = gt_tid
+
+            # match boxes
+            matcher.match(dt_indices, gt_indices, self._min_overlaps)
+
+            # process ground-truth match results
+            for gt_idx in gt_indices:
+                gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
+                dt_idx = matcher.query_dst_match(gt_idx)
+                if dt_idx < 0:
+                    summary.fn[gt_tag][score_idx] += 1
+                    continue
+                summary.tp[gt_tag][score_idx] += 1
+
+                # calculate fragments
+                gt_tid = gt_boxes.get(gt_idx).tid
+                dt_tid = dt_boxes.get(dt_idx).tid
+                if gt_assignment.find(gt_tid) != gt_assignment.end() and gt_assignment[gt_tid] != dt_tid:
+                    summary.id_switches[gt_tag][score_idx] += 1
+                gt_assignment[gt_tid] = dt_tid
+
+                # caculate accuracy values for various criteria
+                iou_acc[score_idx][gt_idx] = 1 - matcher._distance_cache[dt_idx, gt_idx] # FIXME: not elegant here
+                dist_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).position_, dt_boxes.get(dt_idx).position_)
+                box_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).dimension_, dt_boxes.get(dt_idx).dimension_)
+
+                angular_acc_cur = (gt_boxes.get(gt_idx).orientation.inv() * dt_boxes.get(dt_idx).orientation).magnitude()
+                angular_acc[score_idx][gt_idx] = angular_acc_cur / PI
+
+                if dt_boxes[dt_idx].orientation_var > 0:
+                    var_acc_cur = sps.multivariate_normal.logpdf(gt_boxes[gt_idx].position,
+                        dt_boxes[dt_idx].position, cov=dt_boxes[dt_idx].position_var)
+                    var_acc_cur += sps.multivariate_normal.logpdf(gt_boxes[gt_idx].dimension,
+                        dt_boxes[dt_idx].dimension, cov=dt_boxes[dt_idx].dimension_var)
+                    var_acc_cur += sps.vonmises.logpdf(angular_acc_cur, kappa=1/dt_boxes[dt_idx].orientation_var)
+                    var_acc[score_idx][gt_idx] = var_acc_cur
+                else:
+                    var_acc[score_idx][gt_idx] = -INFINITY
+
+            # process detection match results
+            for dt_idx in dt_indices:
+                dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
+                gt_idx = matcher.query_src_match(dt_idx) 
+                if gt_idx < 0:
+                    summary.fp[dt_tag][score_idx] += 1
+
+                # calculate id_switches
+                dt_tid = dt_boxes.get(dt_idx).tid
+                gt_tid = gt_boxes.get(gt_idx).tid
+                if dt_assignment.find(dt_tid) != dt_assignment.end() and dt_assignment[dt_tid] != gt_tid:
+                    summary.fragments[dt_tag][score_idx] += 1
+                dt_assignment[dt_tid] = gt_tid
+
+            # update assignment storage
+            self._last_gt_assignment[score_idx] = gt_assignment # TODO: it seems that only storing one assignment dict is enough
+            self._last_dt_assignment[score_idx] = dt_assignment
+
+        # aggregates accuracy metrics
+        cdef vector[int] gt_tags
+        gt_tags.reserve(len(gt_boxes))
+        for gt_idx in range(len(gt_boxes)):
+            gt_tags.push_back(gt_boxes.get(gt_idx).tag.labels[0])
+
+        summary.acc_iou = self._aggregate_stats(iou_acc, gt_tags)
+        summary.acc_angular = self._aggregate_stats(angular_acc, gt_tags)
+        summary.acc_dist = self._aggregate_stats(dist_acc, gt_tags)
+        summary.acc_box = self._aggregate_stats(box_acc, gt_tags)
+        summary.acc_var = self._aggregate_stats(var_acc, gt_tags)
+        return summary
+
+    cpdef void add_stats(self, DetectionEvalStats stats):
+        DetectionEvaluator.add_stats(self, stats)
+        cdef TrackingEvalStats tstats = <TrackingEvalStats> stats
+
+        for k in self._classes:
+            for i in range(self._pr_nsamples):
+                self._idsw[k][i] += tstats.id_switches[k][i]
+                self._frag[k][i] += tstats.fragments[k][i]
+
+    cpdef void reset(self):
+        DetectionEvaluator.reset(self)
+
+        for k in self._classes:
+            self._idsw[k].assign(self._pr_nsamples, 0)
+            self._frag[k].assign(self._pr_nsamples, 0)
+
+        for k in range(self._pr_nsamples):
+            self._last_gt_assignment[k].clear()
+            self._last_dt_assignment[k].clear()

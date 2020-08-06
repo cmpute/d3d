@@ -282,7 +282,8 @@ class NuscenesObjectLoader(DetectionDatasetBase):
             size = [label.size[1], label.size[0], label.size[2]] # wlh -> lwh
 
             # create object
-            target = ObjectTarget3D(rel_t, rel_r, size, tag, tid=label.instance)
+            tid = hex(label.instance[:8], 16) # truncate into uint64
+            target = ObjectTarget3D(rel_t, rel_r, size, tag, tid=tid)
             outputs.append(target)
 
         return outputs
