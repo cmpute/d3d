@@ -5,6 +5,9 @@
 - [ ] Include visualization based on [pptk (nvidia/kaolin has example), open3d]
 - [ ] Implement functions as torch script operator? First need to make output stored in function output
 
+Some repos for reference:
+- https://github.com/nicolas-chaulet/torch-points3d
+
 # Minor enhancements
 
 - [x] Make spconv available for pytorch 1.4+
