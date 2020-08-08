@@ -108,7 +108,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         # count total number of frames
         total_count = None
         if self.inzip:
-            for folder in ['label_2', 'image_2', 'image_3', 'velodyne']:
+            for folder in ['image_2', 'image_3', 'velodyne', 'label_2']:
                 data_zip = base_path / ("data_object_%s.zip" % folder)
                 if data_zip.exists():
                     with ZipFile(data_zip) as data:
@@ -116,7 +116,7 @@ class KittiObjectLoader(DetectionDatasetBase):
                             if name.startswith(self.phase_path) and not name.endswith('/'))
                     break
         else:
-            for folder in ['label_2', 'image_2', 'image_3', 'velodyne']:
+            for folder in ['image_2', 'image_3', 'velodyne', 'label_2']:
                 fpath = base_path / self.phase_path / folder
                 if fpath.exists():
                     total_count = sum(1 for _ in fpath.iterdir())
