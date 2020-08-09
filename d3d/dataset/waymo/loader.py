@@ -169,7 +169,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
 
         outputs = Target3DArray(frame="vehicle") # or frame=None
         for label in labels:
-            tid = base64.urlsafe_b64decode(label.label[:12])
+            tid = base64.urlsafe_b64decode(label.id[:12])
             tid, = struct.unpack('Q', tid[:8])
             target = ObjectTarget3D(
                 label.center,
