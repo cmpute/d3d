@@ -154,9 +154,9 @@ class TestBoxModule(unittest.TestCase):
         for iou in ['box', 'rbox']:
             for score_thres in [0, 0.2, 0.5, 0.8, 0.99]:
                 result = box2d_nms(boxes, scores, iou_method=iou, iou_threshold=0.3, score_threshold=score_thres)
-                assert torch.all(result[scores < score_thres] == False)
+                assert torch.all(result[scores <= score_thres] == False)
                 result = box2d_nms(boxes.cuda(), scores.cuda(), iou_method=iou, iou_threshold=0.3, score_threshold=score_thres)
-                assert torch.all(result[scores < score_thres] == False)
+                assert torch.all(result[scores <= score_thres] == False)
 
     def test_softnms(self):
         boxes = torch.tensor([

@@ -47,6 +47,8 @@ PYBIND11_MODULE(geometry, m) {
         "Get the intersection box of two axis aligned boxes");
     m.def("iou", py::overload_cast<const AABox2f&, const AABox2f&>(&d3d::iou<float>),
         "Get the intersection over union of two axis aligned boxes");
+    m.def("iou", py::overload_cast<const Box2f&, const Box2f&>(&d3d::iou<float, 4, 4>),
+        "Get the intersection over union of two boxes");
 
     m.def("line2_from_pp", &d3d::line2_from_pp<float>, "Create a line with two points");
     m.def("line2_from_xyxy", &d3d::line2_from_xyxy<float>, "Create a line with coordinate of two points");

@@ -21,6 +21,9 @@
     #define GEOMETRY_EPS 1e-6 // numerical eps used in the library
 #endif
 
+#define _max(a, b) ( ((a) > (b)) ? (a) : (b) )
+#define _min(a, b) ( ((a) < (b)) ? (a) : (b) )
+
 namespace d3d {
 
 //////////////////// forward declarations //////////////////////
@@ -126,10 +129,10 @@ AABox2<scalar_t> aabox2_from_poly2(const Poly2<scalar_t, MaxPoints> &p)
 
     for (size_t i = 1; i < p.nvertices; i++)
     {
-        result.min_x = fminf(p.vertices[i].x, result.min_x);
-        result.max_x = fmaxf(p.vertices[i].x, result.max_x);
-        result.min_y = fminf(p.vertices[i].y, result.min_y);
-        result.max_y = fmaxf(p.vertices[i].y, result.max_y);
+        result.min_x = _min(p.vertices[i].x, result.min_x);
+        result.max_x = _max(p.vertices[i].x, result.max_x);
+        result.min_y = _min(p.vertices[i].y, result.min_y);
+        result.max_y = _max(p.vertices[i].y, result.max_y);
     }
     return result;
 }
@@ -170,17 +173,17 @@ Point2<scalar_t> intersect(const Line2<scalar_t> &l1, const Line2<scalar_t> &l2)
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 AABox2<scalar_t> intersect(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
 {
-    if (a1.max_x < a2.min_x || a1.min_x > a2.max_x ||
-        a1.max_y < a2.min_y || a1.min_y > a2.max_y)
+    if (a1.max_x <= a2.min_x || a1.min_x >= a2.max_x ||
+        a1.max_y <= a2.min_y || a1.min_y >= a2.max_y)
         // return empty aabox if no intersection
         return {0, 0, 0, 0};
     else
     {
         return {
-            /*.min_x = */ fmaxf(a1.min_x, a2.min_x),
-            /*.min_y = */ fmaxf(a1.min_y, a2.min_y),
-            /*.max_x = */ fminf(a1.max_x, a2.max_x),
-            /*.max_y = */ fminf(a1.max_y, a2.max_y)
+            .min_x = _max(a1.min_x, a2.min_x),
+            .max_x = _min(a1.max_x, a2.max_x),
+            .min_y = _max(a1.min_y, a2.min_y),
+            .max_y = _min(a1.max_y, a2.max_y)
         };
     }
 }
