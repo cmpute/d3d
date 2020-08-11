@@ -4,6 +4,7 @@
 
 using namespace std;
 using namespace torch;
+using namespace d3d;
 
 template <typename scalar_t, IouType Iou>
 __global__ void iou2d_kernel(
@@ -24,7 +25,7 @@ __global__ void iou2d_kernel(
         // FIXME: make one of the box shared among threads? need to benchmark this
         BoxType bi = _BoxUtilCuda<scalar_t, BoxType>::make_box(boxes1_[i]);
         BoxType bj = _BoxUtilCuda<scalar_t, BoxType>::make_box(boxes2_[j]);
-        ious_[i][j] = bi.iou(bj);
+        ious_[i][j] = iou(bi, bj);
     }
 }
 

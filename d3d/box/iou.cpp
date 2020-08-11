@@ -3,6 +3,7 @@
 
 using namespace std;
 using namespace torch;
+using namespace d3d;
 
 template <typename scalar_t, IouType Iou>
 void iou2d_templated(
@@ -23,7 +24,7 @@ void iou2d_templated(
 
             BoxType bi = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes1_[i]);
             BoxType bj = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes2_[j]);
-            ious_[i][j] = bi.iou(bj);
+            ious_[i][j] = iou(bi, bj);
         }
     });
 }

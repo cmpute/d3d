@@ -4,6 +4,7 @@
 
 using namespace std;
 using namespace torch;
+using namespace d3d;
 
 // some configurations
 typedef int64_t bitvec_t;
@@ -53,7 +54,7 @@ __global__ void nms2d_iou_kernel(
         for (int i = start; i < col_size; i++)
         {
             BoxType bcomp = _BoxUtilCuda<scalar_t, BoxType>::make_box(block_boxes[i]);
-            scalar_t iou = bcur.iou(bcomp);
+            scalar_t iou = d3d::iou(bcur, bcomp);
             if (iou <= iou_threshold)
                 continue;
 
