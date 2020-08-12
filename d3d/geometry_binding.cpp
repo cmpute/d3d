@@ -1,8 +1,10 @@
 
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 #include <d3d/geometry.hpp>
 
 namespace py = pybind11;
+using namespace std;
 using namespace d3d;
 using namespace pybind11::literals;
 
@@ -28,11 +30,15 @@ PYBIND11_MODULE(geometry, m) {
         .def_readwrite("min_y", &AABox2f::min_y)
         .def_readwrite("max_y", &AABox2f::max_y);
     py::class_<Box2f>(m, "Box2f")
-        .def(py::init<>());
+        .def(py::init<>())
+        .def_readonly("nvertices", &Box2f::nvertices)
+        .def_property_readonly("vertices", [](const Box2f &b) {
+            return vector<Point2f>(b.vertices, b.vertices + b.nvertices);});
     py::class_<Poly2f<8>>(m, "Poly2f8")
         .def(py::init<>())
         .def_readonly("nvertices", &Poly2f<8>::nvertices)
-        .def_readonly("vertices", &Poly2f<8>::vertices); // TODO: not correct
+        .def_property_readonly("vertices", [](const Poly2f<8> &p) {
+            return vector<Point2f>(p.vertices, p.vertices + p.nvertices);});
 
     m.def("area", py::overload_cast<const AABox2f&>(&d3d::area<float>), "Get the area of axis aligned box");
     m.def("area", py::overload_cast<const Box2f&>(&d3d::area<float, 4>), "Get the area of box");
@@ -49,6 +55,10 @@ PYBIND11_MODULE(geometry, m) {
         "Get the intersection over union of two axis aligned boxes");
     m.def("iou", py::overload_cast<const Box2f&, const Box2f&>(&d3d::iou<float, 4, 4>),
         "Get the intersection over union of two boxes");
+    m.def("merge", py::overload_cast<const Box2f&, const Box2f&>(&d3d::merge<float, 4, 4>),
+        "Get merged convex hull of two polygons");
+    m.def("merge", py::overload_cast<const AABox2f&, const AABox2f&>(&d3d::merge<float>),
+        "Get bounding box of two axis aligned boxes");
 
     m.def("line2_from_pp", &d3d::line2_from_pp<float>, "Create a line with two points");
     m.def("line2_from_xyxy", &d3d::line2_from_xyxy<float>, "Create a line with coordinate of two points");
