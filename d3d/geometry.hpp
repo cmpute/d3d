@@ -6,13 +6,18 @@
  *      .contains: whether the shape contains another shape
  *      .intersects: whether the shape has intersection with another shaoe
  * 
- * Functions:
+ * Unary Functions:
  *      .area: calculate the area of the shape
+ * 
+ * Binary Operations:
  *      .distance: calculate the (minimum) distance between two shapes
  *      .max_distance: calculate the (maximum) distance between two shapes
- *      .intersect: calculate the intersection of the two shapes
- *      .iou: calcuate the intersection over union (about area)
+ *      .intersect: calculate the intersection of the two shapes [unstable]
+ *      .iou: calcuate the intersection over union (about area) [unstable]
  *      .merge: calculate the shape with minimum area that contains the two shapes
+ * 
+ * Note that for unstable operations, parallel edge and vertex on edge should be avoided! This is both due to
+ * the complex implementation and incompatible gradient calculation.
  */
 
 
@@ -25,14 +30,16 @@
 
 ////////////////////////// Helpers //////////////////////////
 #ifndef GEOMETRY_EPS
-    #define GEOMETRY_EPS 1e-6 // numerical eps used in the library, can be customized before import
+    constexpr double _eps = 1e-6;
+#else
+    constexpr double _eps = GEOMETRY_EPS;
 #endif
+constexpr double _pi = 3.14159265358979323846;
 
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
 T _max(T a, T b) { return a > b ? a : b; }
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
 T _min(T a, T b) { return a < b ? a : b; }
-constexpr double _pi = 3.14159265358979323846;
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
 T _mod_inc(T i, T n) { return i < n - 1 ? (i + 1) : 0; }
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
@@ -237,7 +244,6 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
         finished = true;
 
         // traverse down along p2
-        // std::cout << "down along p2 idx1=" << (int)i1 << ", idx2=" << (int)i2 << std::endl;
         edge = line2_from_pp(p1.vertices[_mod_dec(i1, p1.nvertices)], p1.vertices[i1]);
         while (true)
         {
@@ -251,7 +257,6 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
         }
 
         // traverse down along p1
-        // std::cout << "down along p1 idx1=" << (int)i1 << ", idx2=" << (int)i2 << std::endl;
         edge = line2_from_pp(p2.vertices[i2], p2.vertices[_mod_inc(i2, p2.nvertices)]);
         while (true)
         {
@@ -318,41 +323,34 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
     // start rotating to find all intersection points
     scalar_t edge_angle = -_pi; // scan from -pi to pi
     bool edge_flag; // true: intersection connection will start with p1, false: start with p2
+    bool reverse; // temporary var
     uint8_t nx = 0; // number of intersection points
     uint8_t x1indices[MaxPoints1 + MaxPoints2 + 1], x2indices[MaxPoints1 + MaxPoints2 + 1];
 
     while (true)
     {
-        // std::cout << "loop " << (int)pidx1 << " " << (int)pidx2 << std::endl;
         uint8_t pidx1_next = _mod_inc(pidx1, p1.nvertices);
         uint8_t pidx2_next = _mod_inc(pidx2, p2.nvertices);
-        // TODO: we may face precision problem near horizontal edge
-        scalar_t angle1 = atan2(p1.vertices[pidx1_next].y - p1.vertices[pidx1].y,
+        scalar_t angle1 = atan2(p1.vertices[pidx1_next].y - p1.vertices[pidx1].y - _eps, // eps is used to let atan2(0, -1)=-pi
                                 p1.vertices[pidx1_next].x - p1.vertices[pidx1].x);
-        scalar_t angle2 = atan2(p2.vertices[pidx2_next].y - p2.vertices[pidx2].y,
+        scalar_t angle2 = atan2(p2.vertices[pidx2_next].y - p2.vertices[pidx2].y - _eps,
                                 p2.vertices[pidx2_next].x - p2.vertices[pidx2].x);
 
         // compare angles and proceed
         if (edge_angle < angle1 && (angle1 < angle2 || angle2 < edge_angle))
         { // choose p1 edge as part of co-podal pair
 
-            bool reverse;
             if (_check_valid_bridge(p1, p2, pidx1_next, pidx2, reverse)) // valid bridge
             {
-                // std::cout << "valid bridge pidx1=" << (int)pidx1_next << ", pidx2=" << (int)pidx2 << std::endl;
-                uint8_t xidx1, xidx2;
                 bool has_intersection = reverse ?
-                    _find_intersection_under_bridge(p1, p2, pidx1_next, pidx2, xidx1, xidx2):
-                    _find_intersection_under_bridge(p2, p1, pidx2, pidx1_next, xidx2, xidx1);
+                    _find_intersection_under_bridge(p1, p2, pidx1_next, pidx2, x1indices[nx], x2indices[nx]):
+                    _find_intersection_under_bridge(p2, p1, pidx2, pidx1_next, x2indices[nx], x1indices[nx]);
                 if (!has_intersection)
                     return {}; // return empty polygon
                 
                 // save intersection
                 if (nx == 0) edge_flag = !reverse;
-                x1indices[nx] = xidx1;
-                x2indices[nx] = xidx2;
                 nx++;
-                // std::cout << "find intersection idx1=" << (int)xidx1 << ", idx2=" << (int)xidx2 << std::endl;
             }
 
             // update pointer
@@ -362,23 +360,17 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         else if (edge_angle < angle2 && (angle2 < angle1 || angle1 < edge_angle))
         { // choose p2 edge as part of co-podal pair
 
-            bool reverse;
             if (_check_valid_bridge(p1, p2, pidx1, pidx2_next, reverse)) // valid bridge
             {
-                // std::cout << "valid bridge pidx1=" << (int)pidx1 << ", pidx2=" << (int)pidx2_next << std::endl;
-                uint8_t xidx1, xidx2;
                 bool has_intersection = reverse ?
-                    _find_intersection_under_bridge(p1, p2, pidx1, pidx2_next, xidx1, xidx2):
-                    _find_intersection_under_bridge(p2, p1, pidx2_next, pidx1, xidx2, xidx1);
+                    _find_intersection_under_bridge(p1, p2, pidx1, pidx2_next, x1indices[nx], x2indices[nx]):
+                    _find_intersection_under_bridge(p2, p1, pidx2_next, pidx1, x2indices[nx], x1indices[nx]);
                 if (!has_intersection)
                     return {}; // return empty polygon
                 
                 // save intersection
                 if (nx == 0) edge_flag = !reverse;
-                x1indices[nx] = xidx1;
-                x2indices[nx] = xidx2;
                 nx++;
-                // std::cout << "find intersection idx1=" << (int)xidx1 << ", idx2=" << (int)xidx2 << std::endl;
             }
 
             // update pointer
@@ -388,7 +380,7 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         else break; // when both angles are not increasing, the loop is finished
     }
 
-    // if no intersection found but didn't return early, then one polygon contains another
+    // if no intersection found but didn't return early, then containment is detected
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> result;
     if (nx == 0)
     {
@@ -445,7 +437,6 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
                 result.vertices[result.nvertices++] = p2.vertices[jmod];
             }
         }
-        // std::cout << (int)result.nvertices << std::endl;
         edge_flag = !edge_flag;
     }
 
@@ -510,9 +501,9 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
     {
         uint8_t pidx1_next = _mod_inc(pidx1, p1.nvertices);
         uint8_t pidx2_next = _mod_inc(pidx2, p2.nvertices);
-        scalar_t angle1 = atan2(p1.vertices[pidx1_next].y - p1.vertices[pidx1].y,
+        scalar_t angle1 = atan2(p1.vertices[pidx1_next].y - p1.vertices[pidx1].y - _eps,
                                 p1.vertices[pidx1_next].x - p1.vertices[pidx1].x);
-        scalar_t angle2 = atan2(p2.vertices[pidx2_next].y - p2.vertices[pidx2].y,
+        scalar_t angle2 = atan2(p2.vertices[pidx2_next].y - p2.vertices[pidx2].y - _eps,
                                 p2.vertices[pidx2_next].x - p2.vertices[pidx2].x);
 
         // compare angles and proceed

@@ -2,6 +2,8 @@ from d3d.geometry import *
 from shapely.geometry import asPolygon
 import numpy as np
 
+eps = 1e-3 # used to avoid unstability
+
 def test_create_line():
     p1, p2 = Point2d(1, 2), Point2d(3, 4)
     l = line2_from_pp(p1, p2)
@@ -32,33 +34,33 @@ def test_intersect():
     assert bi.max_x == 3 and bi.max_y == 3
 
     # polygon intersection
-    b1 = poly2_from_xywhr(0, 0, 2, 2, 0.01)
+    b1 = poly2_from_xywhr(0, 0, 2, 2, eps)
     b2 = poly2_from_xywhr(0, 0, 2, 2, 1)
     bi = intersect(b1, b2)
     assert 3.14159 < area(bi) < 4
 
-    b1 = poly2_from_xywhr(1, 1, 2, 2, 0)
-    b2 = poly2_from_xywhr(2, 2, 2, 2, np.pi/4)
+    b1 = poly2_from_xywhr(1, 1, 2, 2, eps)
+    b2 = poly2_from_xywhr(2+eps, 2-eps, 2, 2, np.pi/4)
     bi = intersect(b1, b2)
     assert bi.nvertices in [3, 4]
     assert np.isclose(area(bi), 1)
 
 def test_merge():
     # test polygon merge
-    b1 = poly2_from_xywhr(0, 0, 4, 2, 0.01)
-    b2 = poly2_from_xywhr(0, 0, 2, 4, 0.02)
+    b1 = poly2_from_xywhr(0, 0, 4, 2, eps)
+    b2 = poly2_from_xywhr(0, 0, 2, 4, -eps)
     bi = merge(b1, b2)
     assert bi.nvertices == 8
     assert area(bi) > 16 - area(intersect(b1, b2))
 
-    b1 = poly2_from_xywhr(-2, 0, 4, 2, 0.01)
-    b2 = poly2_from_xywhr(0, 0, 2, 4, 0.02)
+    b1 = poly2_from_xywhr(-2, 0, 4, 2, eps)
+    b2 = poly2_from_xywhr(0, 0, 2, 4, -eps)
     bi = merge(b1, b2)
     assert bi.nvertices == 6
     assert area(bi) > 16 - area(intersect(b1, b2))
 
     b1 = poly2_from_xywhr(-2, 0, 4, 4, np.pi/4)
-    b2 = poly2_from_xywhr(0, 0, 2, 4, 0.02)
+    b2 = poly2_from_xywhr(0, 0, 2, 4, eps)
     bi = merge(b1, b2)
     assert bi.nvertices == 5
     assert area(bi) > 24 - area(intersect(b1, b2))
@@ -90,3 +92,19 @@ def test_intersect_with_shapely():
 
 if __name__ == "__main__":
     test_intersect_with_shapely()
+
+    # b1 = poly2_from_xywhr(0, 0, 2, 2, 0)
+    # b2 = poly2_from_xywhr(2, 2, 2*np.sqrt(2), 2*np.sqrt(2), np.pi/4)
+    # bi = intersect(b1, b2)
+    # print(area(bi), bi.nvertices)
+
+    # b1s = asPolygon([(p.x, p.y) for p in b1.vertices])
+    # b2s = asPolygon([(p.x, p.y) for p in b2.vertices])
+    # print(b1s.intersection(b2s).area)
+
+    # from matplotlib import pyplot as plt
+    # plt.plot(b1s.exterior.xy[0], b1s.exterior.xy[1])
+    # plt.plot(b2s.exterior.xy[0], b2s.exterior.xy[1])
+    # for i, p in enumerate(b1.vertices): plt.text(p.x, p.y, "1-" + str(i))
+    # for i, p in enumerate(b2.vertices): plt.text(p.x, p.y, "2-" + str(i))
+    # plt.show()
