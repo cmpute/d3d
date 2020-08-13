@@ -2,6 +2,8 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CYTHON_DEFINITIONS CYTHON_WITHOUT_ASSERTIONS)
 endif()
 
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
+
 add_subdirectory(box)
 add_subdirectory(math)
 add_subdirectory(point)

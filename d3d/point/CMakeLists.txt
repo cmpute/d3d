@@ -1,5 +1,3 @@
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
-
 add_library(point_impl MODULE
     impl.cpp
     scatter.cpp scatter_cuda.cu

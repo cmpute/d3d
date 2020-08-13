@@ -1,4 +1,5 @@
 from d3d.geometry import *
+from shapely.geometry import asPolygon
 import numpy as np
 
 def test_create_line():
@@ -68,16 +69,24 @@ def test_merge():
     assert bi.min_x == 1 and bi.min_y == 1
     assert bi.max_x == 4 and bi.max_y == 4
 
-def test_intersect_rc():
-    b1 = poly2_from_xywhr(0, 0, 2, 2, 0.01)
-    b2 = poly2_from_xywhr(0, 0, 2, 2, 1)
-    bi = intersect_rc(b1, b2)
-    assert 3.14159 < area(bi) < 4
+def test_intersect_with_shapely():
+    # randomly generate boxes in [-5, 5] range
+    n = 1000
+    xs = (np.random.rand(n) - 0.5) * 10
+    ys = (np.random.rand(n) - 0.5) * 10
+    ws = np.random.rand(n) * 5
+    hs = np.random.rand(n) * 5
+    rs = (np.random.rand(n) - 0.5) * 10
+    boxes = [poly2_from_xywhr(x, y, w, h, r) for x,y,w,h,r in zip(xs, ys, ws, hs, rs)]
 
-    b1 = poly2_from_xywhr(1, 1, 2, 2, 0.01)
-    b2 = poly2_from_xywhr(2.01, 2.01, 2, 2, np.pi/4)
-    bi = intersect_rc(b1, b2)
-    assert bi.nvertices in [3, 4]
+    # compare intersection of boxes
+    ipoly = [intersect(boxes[i], boxes[i+1]) for i in range(n-1)]
+    iarea = np.array([area(p) for p in ipoly])
+
+    shapely_boxes = [asPolygon([(p.x, p.y) for p in box.vertices]) for box in boxes]
+    shapely_ipoly = [shapely_boxes[i].intersection(shapely_boxes[i+1]) for i in range(n-1)]
+    shapely_iarea = np.array([p.area for p in shapely_ipoly])
+    assert np.allclose(iarea, shapely_iarea)
 
 if __name__ == "__main__":
-    test_intersect_rc()
+    test_intersect_with_shapely()

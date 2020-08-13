@@ -44,17 +44,22 @@ T _mod_dec(T i, T n) { return i > 0 ? (i - 1) : (n - 1); }
 namespace d3d {
 
 //////////////////// forward declarations //////////////////////
-template <typename scalar_t = float> struct Point2;
-template <typename scalar_t = float> struct Line2;
-template <typename scalar_t = float> struct AABox2;
+template <typename scalar_t> struct Point2;
+template <typename scalar_t> struct Line2;
+template <typename scalar_t> struct AABox2;
 template <typename scalar_t, uint8_t MaxPoints> struct Poly2;
-template <typename scalar_t = float> using Box2 = Poly2<float, 4>;
+template <typename scalar_t> using Box2 = Poly2<scalar_t, 4>;
 
 using Point2f = Point2<float>;
+using Point2d = Point2<double>;
 using Line2f = Line2<float>;
+using Line2d = Line2<double>;
 using AABox2f = AABox2<float>;
+using AABox2d = AABox2<double>;
 template <uint8_t MaxPoints> using Poly2f = Poly2<float, MaxPoints>;
+template <uint8_t MaxPoints> using Poly2d = Poly2<double, MaxPoints>;
 using Box2f = Box2<float>;
+using Box2d = Box2<double>;
 
 ///////////////////// implementations /////////////////////
 template <typename scalar_t> struct Point2 // Point in 2D surface
@@ -92,8 +97,8 @@ template <typename scalar_t, uint8_t MaxPoints> struct Poly2 // Convex polygon w
     Point2<scalar_t> vertices[MaxPoints]; // vertices in counter-clockwise order
     uint8_t nvertices = 0; // actual number of vertices
 
-    template <uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER
-    Poly2<scalar_t, MaxPoints>& operator=(Poly2<scalar_t, MaxPointsOther> const &other)
+    template <uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER
+    Poly2<scalar_t, MaxPoints>& operator=(Poly2<scalar_t, MaxPoints2> const &other)
     {
         assert(other.nvertices <= MaxPoints);
         nvertices = other.nvertices;
@@ -215,58 +220,13 @@ AABox2<scalar_t> intersect(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a
     }
 }
 
-// Sutherland-Hodgman https://stackoverflow.com/a/45268241/5960776
-// This algorithm is the simplest one, but it's actually O(N*M) complexity
-// For more efficient algorithms refer to Rotating Calipers, Sweep Line, etc
-template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline
-Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect(
-    const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2
-) {
-    using PolyT = Poly2<scalar_t, MaxPoints + MaxPointsOther>;
-    PolyT temp1, temp2; // declare variables to store temporary results
-    PolyT *pcut = &(temp1 = p1), *pcur = &temp2; // start with original polygon
-
-    // these flags are saved for backward computation
-    // left 16bits for points from p1, right 16bits for points from p2
-    // left 15bits from the 16bits are index number, right 1 bit indicate whether point from this polygon is used
-    int16_t flag1[MaxPoints + MaxPointsOther], flag2[MaxPoints + MaxPointsOther];
-    int16_t *fcut = flag1, *fcur = flag2;
-
-    for (uint8_t j = 0; j < p2.nvertices; j++) // loop over edges of polygon doing cut
-    {
-        uint8_t jnext = _mod_inc(j, p2.nvertices);
-        auto edge = line2_from_pp(p2.vertices[j], p2.vertices[jnext]);
-
-        scalar_t signs[MaxPoints + MaxPointsOther];
-        for (uint8_t i = 0; i < pcut->nvertices; i++)
-            signs[i] = distance(edge, pcut->vertices[i]);
-
-        for (uint8_t i = 0; i < pcut->nvertices; i++) // loop over edges of polygon to be cut
-        {
-            if (signs[i] < GEOMETRY_EPS) // eps is used for numerical stable when the boxes are very close
-                pcur->vertices[pcur->nvertices++] = pcut->vertices[i];
-
-            uint8_t inext = _mod_inc(i, pcut->nvertices);
-            if (signs[i] * signs[inext] < -GEOMETRY_EPS)
-            {
-                auto cut = line2_from_pp(pcut->vertices[i], pcut->vertices[inext]);
-                pcur->vertices[pcur->nvertices++] = intersect(edge, cut);
-            }
-        }
-
-        PolyT* p = pcut; pcut = pcur; pcur = p; // swap
-        pcur->nvertices = 0; // clear current polygon for next iteration
-    }
-    return *pcut;
-}
-
 // Find the intersection point under a bridge over two convex polygons
 // p1 is searched from idx1 in clockwise order and p2 is searched from idx2 in counter-clockwise order
 // the indices of edges of the intersection are reported by xidx1 and xidx2
 // note: index of an edge is the index of its (counter-clockwise) starting point
 // If intersection is not found, then false will be returned
-template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline // TODO: rename MaxPointsOther to MaxPoints2
-bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2,
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline // TODO: rename MaxPoints2 to MaxPoints2
+bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
     const uint8_t &idx1, const uint8_t &idx2, uint8_t &xidx1, uint8_t &xidx2)
 {
     uint8_t i1 = idx1, i2 = idx2;
@@ -329,8 +289,8 @@ void _find_ymax_vertex(const Poly2<scalar_t, MaxPoints> &p, uint8_t &idx, scalar
 
 // check if the bridge defined between two polygon (from p1 to p2) is valid.
 // reverse is set to true if the polygons lay in the right of the bridge
-template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline
-bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2,
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
     const uint8_t &idx1, const uint8_t &idx2, bool &reverse)
 {
     Line2<scalar_t> bridge = line2_from_pp(p1.vertices[idx1], p2.vertices[idx2]);
@@ -344,20 +304,20 @@ bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scala
 }
 
 // Rotating Caliper implementation of intersecting
-template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline
-Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect_rc(
-    const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
+    const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2
 ) {
     // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
-    uint8_t pidx1, pidx2; float _;
+    uint8_t pidx1, pidx2; scalar_t _;
     _find_ymax_vertex(p1, pidx1, _);
     _find_ymax_vertex(p2, pidx2, _);
 
     // start rotating to find all intersection points
-    float edge_angle = -_pi; // scan from -pi to pi
+    scalar_t edge_angle = -_pi; // scan from -pi to pi
     bool edge_flag; // true: intersection connection will start with p1, false: start with p2
     uint8_t nx = 0; // number of intersection points
-    uint8_t x1indices[MaxPoints + MaxPointsOther + 1], x2indices[MaxPoints + MaxPointsOther + 1];
+    uint8_t x1indices[MaxPoints1 + MaxPoints2 + 1], x2indices[MaxPoints1 + MaxPoints2 + 1];
 
     while (true)
     {
@@ -390,6 +350,7 @@ Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect_rc(
                 x1indices[nx] = xidx1;
                 x2indices[nx] = xidx2;
                 nx++;
+                // std::cout << "find intersection idx1=" << (int)xidx1 << ", idx2=" << (int)xidx2 << std::endl;
             }
 
             // update pointer
@@ -425,14 +386,25 @@ Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect_rc(
         else break; // when both angles are not increasing, the loop is finished
     }
 
-    // add sentinels
-    x1indices[nx] = x1indices[0];
-    x2indices[nx] = x2indices[0];
+    // these flags are saved for backward computation
+    // left 16bits for points from p1, right 16bits for points from p2
+    // left 15bits from the 16bits are index number, right 1 bit indicate whether point from this polygon is used
+    // int16_t flag1[MaxPoints1 + MaxPoints2], flag2[MaxPoints1 + MaxPoints2];
+
+    // if no intersection found but didn't return early, then one polygon contains another
+    Poly2<scalar_t, MaxPoints1 + MaxPoints2> result;
+    if (nx == 0)
+    {
+        result = area(p1) > area(p2) ? p2 : p1;
+        return result;
+    }
+
     // for (uint8_t i = 0; i < nx; i++)
     //     std::cout << "xidx 1: " << int(x1indices[i]) << ", 2:" << int(x2indices[i]) << std::endl;
 
     // loop over the intersections to construct the result polygon
-    Poly2<scalar_t, MaxPoints + MaxPointsOther> result;
+    x1indices[nx] = x1indices[0]; // add sentinels
+    x2indices[nx] = x2indices[0];
     for (uint8_t i = 0; i < nx; i++)
     {
         // add intersection point
@@ -488,8 +460,8 @@ scalar_t iou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
     return area_i / area_u;
 }
 
-template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline
-scalar_t iou(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2)
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+scalar_t iou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2)
 {
     scalar_t area_i = area(intersect(p1, p2));
     scalar_t area_u = area(p1) + area(p2) - area_i;
@@ -497,18 +469,18 @@ scalar_t iou(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPoin
 }
 
 // use Rotating Caliper to find the convex hull of two polygons
-template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline
-Poly2<scalar_t, MaxPoints + MaxPointsOther> merge(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2)
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2)
 {
     // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
     uint8_t pidx1, pidx2;
-    float y_max1, y_max2;
+    scalar_t y_max1, y_max2;
     _find_ymax_vertex(p1, pidx1, y_max1);
     _find_ymax_vertex(p2, pidx2, y_max2);
 
     // start rotating
-    Poly2<scalar_t, MaxPoints + MaxPointsOther> result;
-    float edge_angle = -_pi; // scan from -pi to pi
+    Poly2<scalar_t, MaxPoints1 + MaxPoints2> result;
+    scalar_t edge_angle = -_pi; // scan from -pi to pi
     bool edge_flag = y_max1 > y_max2; // true: current edge on p1 will be present in merged polygon, false: current edge on p2 will be present in merged polygon
 
     while (true)
