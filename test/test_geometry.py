@@ -3,14 +3,14 @@ from shapely.geometry import asPolygon
 import numpy as np
 
 def test_create_line():
-    p1, p2 = Point2f(1, 2), Point2f(3, 4)
+    p1, p2 = Point2d(1, 2), Point2d(3, 4)
     l = line2_from_pp(p1, p2)
 
-    p1, p2 = Point2f(1, 2), Point2f(1, 1)
+    p1, p2 = Point2d(1, 2), Point2d(1, 1)
     l = line2_from_pp(p1, p2)
     assert l.c == 1
 
-    p1, p2 = Point2f(1, 2), Point2f(2, 2)
+    p1, p2 = Point2d(1, 2), Point2d(2, 2)
     l = line2_from_pp(p1, p2)
     assert l.c == 2
 
@@ -26,7 +26,7 @@ def test_intersect():
     assert np.isclose(pi.x, 0.5) and np.isclose(pi.y, 0.5)
 
     # bounding box intersection
-    b1, b2 = AABox2f(1, 3, 1, 3), AABox2f(2, 4, 2, 4)
+    b1, b2 = AABox2d(1, 3, 1, 3), AABox2d(2, 4, 2, 4)
     bi = intersect(b1, b2)
     assert bi.min_x == 2 and bi.min_y == 2
     assert bi.max_x == 3 and bi.max_y == 3
@@ -64,7 +64,7 @@ def test_merge():
     assert area(bi) > 24 - area(intersect(b1, b2))
 
     # test aabox merge
-    b1, b2 = AABox2f(1, 3, 1, 3), AABox2f(2, 4, 2, 4)
+    b1, b2 = AABox2d(1, 3, 1, 3), AABox2d(2, 4, 2, 4)
     bi = merge(b1, b2)
     assert bi.min_x == 1 and bi.min_y == 1
     assert bi.max_x == 4 and bi.max_y == 4

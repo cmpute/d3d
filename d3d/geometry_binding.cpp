@@ -47,7 +47,7 @@ PYBIND11_MODULE(geometry, m) {
         "Get the distance from a point to a line");
     m.def("intersect", py::overload_cast<const Line2d&, const Line2d&>(&d3d::intersect<double>),
         "Get the intersection point of two lines");
-    m.def("intersect", py::overload_cast<const Box2d&, const Box2d&>(&d3d::intersect<double, 4, 4>),
+    m.def("intersect", [](const Box2d& b1, const Box2d& b2){ return d3d::intersect(b1, b2); },
         "Get the intersection polygon of two boxes");
     m.def("intersect", py::overload_cast<const AABox2d&, const AABox2d&>(&d3d::intersect<double>),
         "Get the intersection box of two axis aligned boxes");
@@ -55,7 +55,7 @@ PYBIND11_MODULE(geometry, m) {
         "Get the intersection over union of two axis aligned boxes");
     m.def("iou", py::overload_cast<const Box2d&, const Box2d&>(&d3d::iou<double, 4, 4>),
         "Get the intersection over union of two boxes");
-    m.def("merge", py::overload_cast<const Box2d&, const Box2d&>(&d3d::merge<double, 4, 4>),
+    m.def("merge", [](const Box2d& b1, const Box2d& b2){ return d3d::merge(b1, b2); },
         "Get merged convex hull of two polygons");
     m.def("merge", py::overload_cast<const AABox2d&, const AABox2d&>(&d3d::merge<double>),
         "Get bounding box of two axis aligned boxes");

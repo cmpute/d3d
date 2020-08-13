@@ -15,9 +15,6 @@
  *      .merge: calculate the shape with minimum area that contains the two shapes
  */
 
-// TODO: to implement gradients, we need to reconstruct these class member functions to standalone function
-// For example, previously we have poly1.intersect(poly2), we should have intersect(poly1, poly2, out poly) and 
-// intersect(poly1, poly2, poly_grad, out poly1_grad, out poly2_grad)
 
 #ifndef D3D_GEOMETRY_HPP
 #define D3D_GEOMETRY_HPP
@@ -225,7 +222,7 @@ AABox2<scalar_t> intersect(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a
 // the indices of edges of the intersection are reported by xidx1 and xidx2
 // note: index of an edge is the index of its (counter-clockwise) starting point
 // If intersection is not found, then false will be returned
-template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline // TODO: rename MaxPoints2 to MaxPoints2
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
     const uint8_t &idx1, const uint8_t &idx2, uint8_t &xidx1, uint8_t &xidx2)
 {
@@ -274,6 +271,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
     return true;
 }
 
+// Find the vertex in a polygon with the biggest y value
 template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
 void _find_ymax_vertex(const Poly2<scalar_t, MaxPoints> &p, uint8_t &idx, scalar_t &y_max)
 {
@@ -304,9 +302,13 @@ bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scal
 }
 
 // Rotating Caliper implementation of intersecting
+// xflags stores vertices flags for gradient computation:
+// left 16bits for points from p1, right 16bits for points from p2
+// left 15bits from the 16bits are index number, right 1 bit indicate whether point from this polygon is used
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
-    const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2
+    const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    uint16_t xflags[MaxPoints1 + MaxPoints2] = nullptr
 ) {
     // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
     uint8_t pidx1, pidx2; scalar_t _;
@@ -386,21 +388,26 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         else break; // when both angles are not increasing, the loop is finished
     }
 
-    // these flags are saved for backward computation
-    // left 16bits for points from p1, right 16bits for points from p2
-    // left 15bits from the 16bits are index number, right 1 bit indicate whether point from this polygon is used
-    // int16_t flag1[MaxPoints1 + MaxPoints2], flag2[MaxPoints1 + MaxPoints2];
-
     // if no intersection found but didn't return early, then one polygon contains another
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> result;
     if (nx == 0)
     {
-        result = area(p1) > area(p2) ? p2 : p1;
+        if (area(p1) > area(p2))
+        {
+            result = p2;
+            if (xflags != nullptr)
+                for (uint8_t i = 0; i < p2.nvertices; i++)
+                    xflags[i] = ((uint16_t)i << 9) | (1 << 8);
+        }
+        else
+        {
+            result = p1;
+            if (xflags != nullptr)
+                for (uint8_t i = 0; i < p1.nvertices; i++)
+                    xflags[i] = ((uint16_t)i << 1) | 1;
+        }
         return result;
     }
-
-    // for (uint8_t i = 0; i < nx; i++)
-    //     std::cout << "xidx 1: " << int(x1indices[i]) << ", 2:" << int(x2indices[i]) << std::endl;
 
     // loop over the intersections to construct the result polygon
     x1indices[nx] = x1indices[0]; // add sentinels
@@ -410,6 +417,9 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         // add intersection point
         Line2<scalar_t> l1 = line2_from_pp(p1.vertices[x1indices[i]], p1.vertices[_mod_inc(x1indices[i], p1.nvertices)]);
         Line2<scalar_t> l2 = line2_from_pp(p2.vertices[x2indices[i]], p2.vertices[_mod_inc(x2indices[i], p2.nvertices)]);
+        if (xflags != nullptr)
+            xflags[result.nvertices] = (uint16_t(x1indices[i]) << 9) | (1 << 8)
+                                     | (uint16_t(x2indices[i]) << 1) | 1;
         result.vertices[result.nvertices++] = intersect(l1, l2);
 
         // add points between intersections
@@ -417,13 +427,23 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         {
             uint16_t idx_next = x1indices[i+1] >= x1indices[i] ? x1indices[i+1] : (x1indices[i+1] + p1.nvertices);
             for (uint16_t j = x1indices[i] + 1; j <= idx_next; j++)
-                result.vertices[result.nvertices++] = p1.vertices[j < p1.nvertices ? j : (j - p1.nvertices)];
+            {
+                uint16_t jmod = j < p1.nvertices ? j : (j - p1.nvertices);
+                if (xflags != nullptr)
+                    xflags[result.nvertices] = (jmod << 9) | (1 << 8);
+                result.vertices[result.nvertices++] = p1.vertices[jmod];
+            }
         }
         else
         {
             uint16_t idx_next = x2indices[i+1] >= x2indices[i] ? x2indices[i+1] : (x2indices[i+1] + p2.nvertices);
             for (uint16_t j = x2indices[i] + 1; j <= idx_next; j++)
-                result.vertices[result.nvertices++] = p2.vertices[j < p2.nvertices ? j : (j - p2.nvertices)];
+            {
+                uint16_t jmod = j < p2.nvertices ? j : (j - p2.nvertices);
+                if (xflags != nullptr)
+                    xflags[result.nvertices] = (jmod << 1) | 1;
+                result.vertices[result.nvertices++] = p2.vertices[jmod];
+            }
         }
         // std::cout << (int)result.nvertices << std::endl;
         edge_flag = !edge_flag;
@@ -469,9 +489,12 @@ scalar_t iou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoi
 }
 
 // use Rotating Caliper to find the convex hull of two polygons
+// xflags is same as the intersection operation
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
-Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2)
-{
+Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
+    const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    uint16_t xflags[MaxPoints1 + MaxPoints2] = nullptr
+) {
     // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
     uint8_t pidx1, pidx2;
     scalar_t y_max1, y_max2;
@@ -496,16 +519,28 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(const Poly2<scalar_t, MaxPoints1>
         if (edge_angle < angle1 && (angle1 < angle2 || angle2 < edge_angle))
         { // choose p1 edge as part of co-podal pair
             if (edge_flag) // Add vertex on current edge
+            {
+                if (xflags != nullptr)
+                    xflags[result.nvertices] = ((uint16_t)pidx1 << 9) | (1 << 8);
                 result.vertices[result.nvertices++] = p1.vertices[pidx1];
+            }
 
             bool _;
             if (_check_valid_bridge(p1, p2, pidx1_next, pidx2, _))
             {
                 // valid bridge, add bridge point
                 if (edge_flag)
+                {
+                    if (xflags != nullptr)
+                        xflags[result.nvertices] = ((uint16_t)pidx1_next << 9) | (1 << 8);
                     result.vertices[result.nvertices++] = p1.vertices[pidx1_next];
+                }
                 else
+                {
+                    if (xflags != nullptr)
+                        xflags[result.nvertices] = ((uint16_t)pidx2 << 1) | 1;
                     result.vertices[result.nvertices++] = p2.vertices[pidx2];
+                }
                 edge_flag = !edge_flag;
             }
 
@@ -516,16 +551,28 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(const Poly2<scalar_t, MaxPoints1>
         else if (edge_angle < angle2 && (angle2 < angle1 || angle1 < edge_angle))
         { // choose p2 edge as part of co-podal pair
             if (!edge_flag) // Add vertex on current edge
+            {
+                if (xflags != nullptr)
+                    xflags[result.nvertices] = ((uint16_t)pidx2 << 1) | 1;
                 result.vertices[result.nvertices++] = p2.vertices[pidx2];
+            }
 
             bool _;
             if (_check_valid_bridge(p1, p2, pidx1, pidx2_next, _))
             {
                 // valid bridge, add bridge point
                 if (edge_flag)
+                {
+                    if (xflags != nullptr)
+                        xflags[result.nvertices] = ((uint16_t)pidx1 << 9) | (1 << 8);
                     result.vertices[result.nvertices++] = p1.vertices[pidx1];
+                }
                 else
+                {
+                    if (xflags != nullptr)
+                        xflags[result.nvertices] = ((uint16_t)pidx2 << 1) | 1;
                     result.vertices[result.nvertices++] = p2.vertices[pidx2_next];
+                }
                 edge_flag = !edge_flag;
             }
 
