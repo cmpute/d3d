@@ -31,7 +31,7 @@ def test_intersect():
     assert bi.max_x == 3 and bi.max_y == 3
 
     # polygon intersection
-    b1 = poly2_from_xywhr(0, 0, 2, 2, 0)
+    b1 = poly2_from_xywhr(0, 0, 2, 2, 0.01)
     b2 = poly2_from_xywhr(0, 0, 2, 2, 1)
     bi = intersect(b1, b2)
     assert 3.14159 < area(bi) < 4
@@ -68,5 +68,16 @@ def test_merge():
     assert bi.min_x == 1 and bi.min_y == 1
     assert bi.max_x == 4 and bi.max_y == 4
 
+def test_intersect_rc():
+    b1 = poly2_from_xywhr(0, 0, 2, 2, 0.01)
+    b2 = poly2_from_xywhr(0, 0, 2, 2, 1)
+    bi = intersect_rc(b1, b2)
+    assert 3.14159 < area(bi) < 4
+
+    b1 = poly2_from_xywhr(1, 1, 2, 2, 0.01)
+    b2 = poly2_from_xywhr(2.01, 2.01, 2, 2, np.pi/4)
+    bi = intersect_rc(b1, b2)
+    assert bi.nvertices in [3, 4]
+
 if __name__ == "__main__":
-    test_merge()
+    test_intersect_rc()

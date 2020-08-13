@@ -260,13 +260,205 @@ Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect(
     return *pcut;
 }
 
-// Rotating Caliper implementation of intersecting
-// template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline
-// Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect(
-//     const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2
-// ) {
+// Find the intersection point under a bridge over two convex polygons
+// p1 is searched from idx1 in clockwise order and p2 is searched from idx2 in counter-clockwise order
+// the indices of edges of the intersection are reported by xidx1 and xidx2
+// note: index of an edge is the index of its (counter-clockwise) starting point
+// If intersection is not found, then false will be returned
+template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline // TODO: rename MaxPointsOther to MaxPoints2
+bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2,
+    const uint8_t &idx1, const uint8_t &idx2, uint8_t &xidx1, uint8_t &xidx2)
+{
+    uint8_t i1 = idx1, i2 = idx2;
+    bool finished = false;
+    scalar_t dist, last_dist1, last_dist2;
+    last_dist1 = last_dist2 = std::numeric_limits<scalar_t>::infinity();
+    Line2<scalar_t> edge;
 
-// }
+    while (!finished)
+    { 
+        finished = true;
+
+        // traverse down along p2
+        // std::cout << "down along p2 idx1=" << (int)i1 << ", idx2=" << (int)i2 << std::endl;
+        edge = line2_from_pp(p1.vertices[_mod_dec(i1, p1.nvertices)], p1.vertices[i1]);
+        while (true)
+        {
+            dist = distance(edge, p2.vertices[_mod_inc(i2, p2.nvertices)]);
+            if (dist > last_dist1) return false;
+            if (dist < 0) break;
+
+            i2 = _mod_inc(i2, p2.nvertices);
+            last_dist1 = dist;
+            finished = false;
+        }
+
+        // traverse down along p1
+        // std::cout << "down along p1 idx1=" << (int)i1 << ", idx2=" << (int)i2 << std::endl;
+        edge = line2_from_pp(p2.vertices[i2], p2.vertices[_mod_inc(i2, p2.nvertices)]);
+        while (true)
+        {
+            dist = distance(edge, p1.vertices[_mod_dec(i1, p1.nvertices)]);
+            if (dist > last_dist2) return false;
+            if (dist < 0) break;
+
+            i1 = _mod_dec(i1, p2.nvertices);
+            last_dist2 = dist;
+            finished = false;
+        }
+    }
+
+    // TODO: maybe need to test wether the last two segments actually intersect
+    xidx1 = _mod_dec(i1, p1.nvertices);
+    xidx2 = i2;
+    return true;
+}
+
+template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
+void _find_ymax_vertex(const Poly2<scalar_t, MaxPoints> &p, uint8_t &idx, scalar_t &y_max)
+{
+    idx = 0;
+    y_max = p.vertices[0].y;
+    for (uint8_t i = 1; i < p.nvertices; i++)
+        if (p.vertices[i].y > y_max)
+        {
+            y_max = p.vertices[i].y;
+            idx = i;
+        }
+}
+
+// check if the bridge defined between two polygon (from p1 to p2) is valid.
+// reverse is set to true if the polygons lay in the right of the bridge
+template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline
+bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2,
+    const uint8_t &idx1, const uint8_t &idx2, bool &reverse)
+{
+    Line2<scalar_t> bridge = line2_from_pp(p1.vertices[idx1], p2.vertices[idx2]);
+    scalar_t d1 = distance(bridge, p1.vertices[_mod_dec(idx1, p1.nvertices)]);
+    scalar_t d2 = distance(bridge, p1.vertices[_mod_inc(idx1, p1.nvertices)]);
+    scalar_t d3 = distance(bridge, p2.vertices[_mod_dec(idx2, p2.nvertices)]);
+    scalar_t d4 = distance(bridge, p2.vertices[_mod_inc(idx2, p2.nvertices)]);
+
+    reverse = d1 > 0;
+    return d1*d2 > 0 && d2*d3 > 0 && d3*d4 > 0;
+}
+
+// Rotating Caliper implementation of intersecting
+template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline
+Poly2<scalar_t, MaxPoints + MaxPointsOther> intersect_rc(
+    const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2
+) {
+    // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
+    uint8_t pidx1, pidx2; float _;
+    _find_ymax_vertex(p1, pidx1, _);
+    _find_ymax_vertex(p2, pidx2, _);
+
+    // start rotating to find all intersection points
+    float edge_angle = -_pi; // scan from -pi to pi
+    bool edge_flag; // true: intersection connection will start with p1, false: start with p2
+    uint8_t nx = 0; // number of intersection points
+    uint8_t x1indices[MaxPoints + MaxPointsOther + 1], x2indices[MaxPoints + MaxPointsOther + 1];
+
+    while (true)
+    {
+        // std::cout << "loop " << (int)pidx1 << " " << (int)pidx2 << std::endl;
+        uint8_t pidx1_next = _mod_inc(pidx1, p1.nvertices);
+        uint8_t pidx2_next = _mod_inc(pidx2, p2.nvertices);
+        // TODO: we may face precision problem near horizontal edge
+        scalar_t angle1 = atan2(p1.vertices[pidx1_next].y - p1.vertices[pidx1].y,
+                                p1.vertices[pidx1_next].x - p1.vertices[pidx1].x);
+        scalar_t angle2 = atan2(p2.vertices[pidx2_next].y - p2.vertices[pidx2].y,
+                                p2.vertices[pidx2_next].x - p2.vertices[pidx2].x);
+
+        // compare angles and proceed
+        if (edge_angle < angle1 && (angle1 < angle2 || angle2 < edge_angle))
+        { // choose p1 edge as part of co-podal pair
+
+            bool reverse;
+            if (_check_valid_bridge(p1, p2, pidx1_next, pidx2, reverse)) // valid bridge
+            {
+                // std::cout << "valid bridge pidx1=" << (int)pidx1_next << ", pidx2=" << (int)pidx2 << std::endl;
+                uint8_t xidx1, xidx2;
+                bool has_intersection = reverse ?
+                    _find_intersection_under_bridge(p1, p2, pidx1_next, pidx2, xidx1, xidx2):
+                    _find_intersection_under_bridge(p2, p1, pidx2, pidx1_next, xidx2, xidx1);
+                if (!has_intersection)
+                    return {}; // return empty polygon
+                
+                // save intersection
+                if (nx == 0) edge_flag = !reverse;
+                x1indices[nx] = xidx1;
+                x2indices[nx] = xidx2;
+                nx++;
+            }
+
+            // update pointer
+            pidx1 = _mod_inc(pidx1, p1.nvertices);
+            edge_angle = angle1;
+        }
+        else if (edge_angle < angle2 && (angle2 < angle1 || angle1 < edge_angle))
+        { // choose p2 edge as part of co-podal pair
+
+            bool reverse;
+            if (_check_valid_bridge(p1, p2, pidx1, pidx2_next, reverse)) // valid bridge
+            {
+                // std::cout << "valid bridge pidx1=" << (int)pidx1 << ", pidx2=" << (int)pidx2_next << std::endl;
+                uint8_t xidx1, xidx2;
+                bool has_intersection = reverse ?
+                    _find_intersection_under_bridge(p1, p2, pidx1, pidx2_next, xidx1, xidx2):
+                    _find_intersection_under_bridge(p2, p1, pidx2_next, pidx1, xidx2, xidx1);
+                if (!has_intersection)
+                    return {}; // return empty polygon
+                
+                // save intersection
+                if (nx == 0) edge_flag = !reverse;
+                x1indices[nx] = xidx1;
+                x2indices[nx] = xidx2;
+                nx++;
+                // std::cout << "find intersection idx1=" << (int)xidx1 << ", idx2=" << (int)xidx2 << std::endl;
+            }
+
+            // update pointer
+            pidx2 = _mod_inc(pidx2, p2.nvertices);
+            edge_angle = angle2;
+        }
+        else break; // when both angles are not increasing, the loop is finished
+    }
+
+    // add sentinels
+    x1indices[nx] = x1indices[0];
+    x2indices[nx] = x2indices[0];
+    // for (uint8_t i = 0; i < nx; i++)
+    //     std::cout << "xidx 1: " << int(x1indices[i]) << ", 2:" << int(x2indices[i]) << std::endl;
+
+    // loop over the intersections to construct the result polygon
+    Poly2<scalar_t, MaxPoints + MaxPointsOther> result;
+    for (uint8_t i = 0; i < nx; i++)
+    {
+        // add intersection point
+        Line2<scalar_t> l1 = line2_from_pp(p1.vertices[x1indices[i]], p1.vertices[_mod_inc(x1indices[i], p1.nvertices)]);
+        Line2<scalar_t> l2 = line2_from_pp(p2.vertices[x2indices[i]], p2.vertices[_mod_inc(x2indices[i], p2.nvertices)]);
+        result.vertices[result.nvertices++] = intersect(l1, l2);
+
+        // add points between intersections
+        if (edge_flag)
+        {
+            uint16_t idx_next = x1indices[i+1] >= x1indices[i] ? x1indices[i+1] : (x1indices[i+1] + p1.nvertices);
+            for (uint16_t j = x1indices[i] + 1; j <= idx_next; j++)
+                result.vertices[result.nvertices++] = p1.vertices[j < p1.nvertices ? j : (j - p1.nvertices)];
+        }
+        else
+        {
+            uint16_t idx_next = x2indices[i+1] >= x2indices[i] ? x2indices[i+1] : (x2indices[i+1] + p2.nvertices);
+            for (uint16_t j = x2indices[i] + 1; j <= idx_next; j++)
+                result.vertices[result.nvertices++] = p2.vertices[j < p2.nvertices ? j : (j - p2.nvertices)];
+        }
+        // std::cout << (int)result.nvertices << std::endl;
+        edge_flag = !edge_flag;
+    }
+
+    return result;
+}
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t area(const AABox2<scalar_t> &a)
@@ -308,27 +500,11 @@ scalar_t iou(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPoin
 template <typename scalar_t, uint8_t MaxPoints, uint8_t MaxPointsOther> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints + MaxPointsOther> merge(const Poly2<scalar_t, MaxPoints> &p1, const Poly2<scalar_t, MaxPointsOther> &p2)
 {
-    uint8_t pidx1 = 0, pidx2 = 0;
-    float y_max1, y_max2;
-
     // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
-    y_max1 = p1.vertices[0].y;
-    for (uint8_t i = 1; i < p1.nvertices; i++)
-        if (p1.vertices[i].y > y_max1)
-        {
-            y_max1 = p1.vertices[i].y;
-            pidx1 = i;
-        }
-        else if(p1.vertices[i].y == y_max1)
-            std::cout << "equal" << std::endl;
-
-    y_max2 = p2.vertices[0].y;
-    for (uint8_t i = 1; i < p2.nvertices; i++)
-        if (p2.vertices[i].y > y_max2)
-        {
-            y_max2 = p2.vertices[i].y;
-            pidx2 = i;
-        }
+    uint8_t pidx1, pidx2;
+    float y_max1, y_max2;
+    _find_ymax_vertex(p1, pidx1, y_max1);
+    _find_ymax_vertex(p2, pidx2, y_max2);
 
     // start rotating
     Poly2<scalar_t, MaxPoints + MaxPointsOther> result;
@@ -346,21 +522,14 @@ Poly2<scalar_t, MaxPoints + MaxPointsOther> merge(const Poly2<scalar_t, MaxPoint
 
         // compare angles and proceed
         if (edge_angle < angle1 && (angle1 < angle2 || angle2 < edge_angle))
-        {
+        { // choose p1 edge as part of co-podal pair
             if (edge_flag) // Add vertex on current edge
                 result.vertices[result.nvertices++] = p1.vertices[pidx1];
 
-            // choose p1 edge as part of co-podal pair
-            Line2<scalar_t> bridge_candidate = line2_from_pp(p1.vertices[pidx1_next], p2.vertices[pidx2]);
-
-            float d1 = distance(bridge_candidate, p1.vertices[pidx1]);
-            float d2 = distance(bridge_candidate, p1.vertices[_mod_inc(pidx1_next, p1.nvertices)]);
-            float d3 = distance(bridge_candidate, p2.vertices[_mod_dec(pidx2, p2.nvertices)]);
-            float d4 = distance(bridge_candidate, p2.vertices[pidx2_next]);
-
-            if (d1*d2 > 0 && d2*d3 > 0 && d3*d4 > 0)
+            bool _;
+            if (_check_valid_bridge(p1, p2, pidx1_next, pidx2, _))
             {
-                // valid bridge
+                // valid bridge, add bridge point
                 if (edge_flag)
                     result.vertices[result.nvertices++] = p1.vertices[pidx1_next];
                 else
@@ -373,21 +542,14 @@ Poly2<scalar_t, MaxPoints + MaxPointsOther> merge(const Poly2<scalar_t, MaxPoint
             edge_angle = angle1;
         }
         else if (edge_angle < angle2 && (angle2 < angle1 || angle1 < edge_angle))
-        {
+        { // choose p2 edge as part of co-podal pair
             if (!edge_flag) // Add vertex on current edge
                 result.vertices[result.nvertices++] = p2.vertices[pidx2];
 
-            // choose p2 edge as part of co-podal pair
-            Line2<scalar_t> bridge_candidate = line2_from_pp(p1.vertices[pidx1], p2.vertices[pidx2_next]);
-
-            float d1 = distance(bridge_candidate, p1.vertices[_mod_dec(pidx1, p1.nvertices)]);
-            float d2 = distance(bridge_candidate, p1.vertices[pidx1_next]);
-            float d3 = distance(bridge_candidate, p2.vertices[pidx2]);
-            float d4 = distance(bridge_candidate, p2.vertices[_mod_inc(pidx2_next, p2.nvertices)]);
-
-            if (d1*d2 > 0 && d2*d3 > 0 && d3*d4 > 0)
+            bool _;
+            if (_check_valid_bridge(p1, p2, pidx1, pidx2_next, _))
             {
-                // valid bridge
+                // valid bridge, add bridge point
                 if (edge_flag)
                     result.vertices[result.nvertices++] = p1.vertices[pidx1];
                 else
@@ -399,10 +561,7 @@ Poly2<scalar_t, MaxPoints + MaxPointsOther> merge(const Poly2<scalar_t, MaxPoint
             pidx2 = _mod_inc(pidx2, p2.nvertices);
             edge_angle = angle2;
         }
-        else{
-            std::cout << (int)pidx1 << " " << (int)pidx2 << " " << angle1 << " " << angle2 << " " << edge_angle << std::endl;
-            break; // when both angles are not increasing, the loop is finished
-        }
+        else break; // when both angles are not increasing, the loop is finished
     }
 
     return result;

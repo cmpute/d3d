@@ -51,6 +51,8 @@ PYBIND11_MODULE(geometry, m) {
         "Get the intersection polygon of two boxes");
     m.def("intersect", py::overload_cast<const AABox2f&, const AABox2f&>(&d3d::intersect<float>),
         "Get the intersection box of two axis aligned boxes");
+    m.def("intersect_rc", py::overload_cast<const Box2f&, const Box2f&>(&d3d::intersect_rc<float, 4, 4>),
+        "Get the intersection polygon of two boxes");
     m.def("iou", py::overload_cast<const AABox2f&, const AABox2f&>(&d3d::iou<float>),
         "Get the intersection over union of two axis aligned boxes");
     m.def("iou", py::overload_cast<const Box2f&, const Box2f&>(&d3d::iou<float, 4, 4>),
