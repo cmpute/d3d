@@ -25,7 +25,11 @@
 #define _CudaSubAccessor(n) torch::TensorAccessor<scalar_t,n,torch::RestrictPtrTraits,int32_t>
 #define _CudaSubAccessorT(t,n) torch::TensorAccessor<t,n,torch::RestrictPtrTraits,int32_t>
 
+#ifdef NDEBUG
 #define THREADS_COUNT 1024
+#else
+#define THREADS_COUNT 16 // the code is less optimized, so the kernel could take larger memory
+#endif
 
 #define CUDA_CHECK_ERROR_SYNC(errorMessage) {                                \
     cudaError_t err = cudaGetLastError();                                    \

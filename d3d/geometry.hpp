@@ -492,11 +492,58 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
     _find_ymax_vertex(p1, pidx1, y_max1);
     _find_ymax_vertex(p2, pidx2, y_max2);
 
-    // start rotating
+    // declare variables and functions
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> result;
     scalar_t edge_angle = -_pi; // scan from -pi to pi
-    bool edge_flag = y_max1 > y_max2; // true: current edge on p1 will be present in merged polygon, false: current edge on p2 will be present in merged polygon
+    bool _; // temp var
+    bool edge_flag = y_max1 > y_max2; // true: current edge on p1 will be present in merged polygon,
+                                      //false: current edge on p2 will be present in merged polygon
 
+    const auto register_p1point = [&](uint8_t i1)
+    {
+        if (xflags != nullptr)
+            xflags[result.nvertices] = ((uint16_t)i1 << 9) | (1 << 8);
+        result.vertices[result.nvertices++] = p1.vertices[i1];
+    };
+    const auto register_p2point = [&](uint8_t i2)
+    {
+        if (xflags != nullptr)
+            xflags[result.nvertices] = ((uint16_t)i2 << 1) | 1;
+        result.vertices[result.nvertices++] = p2.vertices[i2];
+    };
+    const auto register_point = [&](uint8_t i1, uint8_t i2)
+    {
+        if (edge_flag) register_p1point(i1);
+        else register_p2point(i2);
+    };
+
+    // check if starting point already build a bridge and if so, find correct edge to start
+    if (_check_valid_bridge(p1, p2, pidx1, pidx2, _))
+    {
+        if (edge_flag)
+        {
+            uint8_t pidx1_next = _mod_inc(pidx1, p1.nvertices);
+            scalar_t angle_br = atan2(p2.vertices[pidx2].y - p1.vertices[pidx1].y - _eps,
+                                      p2.vertices[pidx2].x - p1.vertices[pidx1].x);
+            scalar_t angle1 = atan2(p1.vertices[pidx1_next].y - p1.vertices[pidx1].y - _eps,
+                                    p1.vertices[pidx1_next].x - p1.vertices[pidx1].x);
+            if (angle_br < angle1) // TODO: use cross product comparison instead of angle?
+                edge_flag = false;
+        }
+        else
+        {
+            scalar_t angle_br = atan2(p1.vertices[pidx1].y - p2.vertices[pidx2].y - _eps,
+                                      p1.vertices[pidx1].x - p2.vertices[pidx2].x);
+            uint8_t pidx2_next = _mod_inc(pidx2, p2.nvertices);
+            scalar_t angle2 = atan2(p2.vertices[pidx2_next].y - p2.vertices[pidx2].y - _eps,
+                                    p2.vertices[pidx2_next].x - p2.vertices[pidx2].x);
+            if (angle_br < angle2)
+                edge_flag = true;
+        }
+    }
+    else  edge_flag = y_max1 > y_max2;
+
+    // start rotating
     while (true)
     {
         uint8_t pidx1_next = _mod_inc(pidx1, p1.nvertices);
@@ -509,29 +556,13 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
         // compare angles and proceed
         if (edge_angle < angle1 && (angle1 < angle2 || angle2 < edge_angle))
         { // choose p1 edge as part of co-podal pair
-            if (edge_flag) // Add vertex on current edge
-            {
-                if (xflags != nullptr)
-                    xflags[result.nvertices] = ((uint16_t)pidx1 << 9) | (1 << 8);
-                result.vertices[result.nvertices++] = p1.vertices[pidx1];
-            }
 
-            bool _;
+            if (edge_flag) register_p1point(pidx1); // Add vertex on current edge
+
             if (_check_valid_bridge(p1, p2, pidx1_next, pidx2, _))
             {
                 // valid bridge, add bridge point
-                if (edge_flag)
-                {
-                    if (xflags != nullptr)
-                        xflags[result.nvertices] = ((uint16_t)pidx1_next << 9) | (1 << 8);
-                    result.vertices[result.nvertices++] = p1.vertices[pidx1_next];
-                }
-                else
-                {
-                    if (xflags != nullptr)
-                        xflags[result.nvertices] = ((uint16_t)pidx2 << 1) | 1;
-                    result.vertices[result.nvertices++] = p2.vertices[pidx2];
-                }
+                register_point(pidx1_next, pidx2);
                 edge_flag = !edge_flag;
             }
 
@@ -541,29 +572,13 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
         }
         else if (edge_angle < angle2 && (angle2 < angle1 || angle1 < edge_angle))
         { // choose p2 edge as part of co-podal pair
-            if (!edge_flag) // Add vertex on current edge
-            {
-                if (xflags != nullptr)
-                    xflags[result.nvertices] = ((uint16_t)pidx2 << 1) | 1;
-                result.vertices[result.nvertices++] = p2.vertices[pidx2];
-            }
 
-            bool _;
+            if (!edge_flag) register_p2point(pidx2); // Add vertex on current edge
+
             if (_check_valid_bridge(p1, p2, pidx1, pidx2_next, _))
             {
                 // valid bridge, add bridge point
-                if (edge_flag)
-                {
-                    if (xflags != nullptr)
-                        xflags[result.nvertices] = ((uint16_t)pidx1 << 9) | (1 << 8);
-                    result.vertices[result.nvertices++] = p1.vertices[pidx1];
-                }
-                else
-                {
-                    if (xflags != nullptr)
-                        xflags[result.nvertices] = ((uint16_t)pidx2 << 1) | 1;
-                    result.vertices[result.nvertices++] = p2.vertices[pidx2_next];
-                }
+                register_point(pidx1, pidx2_next);
                 edge_flag = !edge_flag;
             }
 

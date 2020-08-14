@@ -1,5 +1,6 @@
 from d3d.geometry import *
 from shapely.geometry import asPolygon
+import shapely.ops as so
 import numpy as np
 
 eps = 1e-3 # used to avoid unstability
@@ -71,7 +72,7 @@ def test_merge():
     assert bi.min_x == 1 and bi.min_y == 1
     assert bi.max_x == 4 and bi.max_y == 4
 
-def test_intersect_with_shapely():
+def test_with_shapely():
     # randomly generate boxes in [-5, 5] range
     n = 1000
     xs = (np.random.rand(n) - 0.5) * 10
@@ -80,31 +81,53 @@ def test_intersect_with_shapely():
     hs = np.random.rand(n) * 5
     rs = (np.random.rand(n) - 0.5) * 10
     boxes = [poly2_from_xywhr(x, y, w, h, r) for x,y,w,h,r in zip(xs, ys, ws, hs, rs)]
+    shapely_boxes = [asPolygon([(p.x, p.y) for p in box.vertices]) for box in boxes]
 
     # compare intersection of boxes
     ipoly = [intersect(boxes[i], boxes[i+1]) for i in range(n-1)]
     iarea = np.array([area(p) for p in ipoly])
 
-    shapely_boxes = [asPolygon([(p.x, p.y) for p in box.vertices]) for box in boxes]
     shapely_ipoly = [shapely_boxes[i].intersection(shapely_boxes[i+1]) for i in range(n-1)]
     shapely_iarea = np.array([p.area for p in shapely_ipoly])
     assert np.allclose(iarea, shapely_iarea)
 
+    # compare merge of boxes
+    mpoly = [merge(boxes[i], boxes[i+1]) for i in range(n-1)]
+    marea = np.array([area(p) for p in mpoly])
+
+    shapely_mpoly = [so.cascaded_union([shapely_boxes[i], shapely_boxes[i+1]]).convex_hull for i in range(n-1)]
+    shapely_marea = np.array([p.area for p in shapely_mpoly])
+    assert np.allclose(marea, shapely_marea)
+
+    # for i in range(n-1):
+    #     if not np.isclose(marea[i], shapely_marea[i]):
+    #         np.save("b1p.npy", np.array([xs[i], ys[i], ws[i], hs[i], rs[i]]))
+    #         np.save("b2p.npy", np.array([xs[i+1], ys[i+1], ws[i+1], hs[i+1], rs[i+1]]))
+
 if __name__ == "__main__":
-    test_intersect_with_shapely()
+    test_with_shapely()
+
+    # b1p, b2p = np.load("b1p.npy"), np.load("b2p.npy")
+    # b1 = poly2_from_xywhr(b1p[0], b1p[1], b1p[2], b1p[3], b1p[4])
+    # b2 = poly2_from_xywhr(b2p[0], b2p[1], b2p[2], b2p[3], b2p[4])
 
     # b1 = poly2_from_xywhr(0, 0, 2, 2, 0)
     # b2 = poly2_from_xywhr(2, 2, 2*np.sqrt(2), 2*np.sqrt(2), np.pi/4)
     # bi = intersect(b1, b2)
-    # print(area(bi), bi.nvertices)
+    # bm = merge(b1, b2)
+    # print([(p.x, p.y) for p in bm.vertices])
+    # print(area(bm), bm.nvertices)
 
     # b1s = asPolygon([(p.x, p.y) for p in b1.vertices])
     # b2s = asPolygon([(p.x, p.y) for p in b2.vertices])
-    # print(b1s.intersection(b2s).area)
+    # bis = b1s.intersection(b2s)
+    # bms = so.cascaded_union([b1s, b2s]).convex_hull
+    # print(bms.exterior)
 
     # from matplotlib import pyplot as plt
     # plt.plot(b1s.exterior.xy[0], b1s.exterior.xy[1])
     # plt.plot(b2s.exterior.xy[0], b2s.exterior.xy[1])
+    # plt.plot(bms.exterior.xy[0], bms.exterior.xy[1])
     # for i, p in enumerate(b1.vertices): plt.text(p.x, p.y, "1-" + str(i))
     # for i, p in enumerate(b2.vertices): plt.text(p.x, p.y, "2-" + str(i))
     # plt.show()
