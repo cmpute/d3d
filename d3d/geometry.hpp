@@ -290,6 +290,13 @@ void _find_ymax_vertex(const Poly2<scalar_t, MaxPoints> &p, uint8_t &idx, scalar
         }
 }
 
+// Calculate slope angle from p1 to p2
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+scalar_t _slope_pp(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2)
+{
+    return atan2(p2.y - p1.y - _eps, p2.x - p1.x); // eps is used to let atan2(0, -1)=-pi
+}
+
 // check if the bridge defined between two polygon (from p1 to p2) is valid.
 // reverse is set to true if the polygons lay in the right of the bridge
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
@@ -310,6 +317,7 @@ bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scal
 // xflags stores vertices flags for gradient computation:
 // left 16bits for points from p1, right 16bits for points from p2
 // left 15bits from the 16bits are index number, right 1 bit indicate whether point from this polygon is used
+// TODO: save edge index instead of vertices index?
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
     const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
@@ -331,10 +339,8 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
     {
         uint8_t pidx1_next = _mod_inc(pidx1, p1.nvertices);
         uint8_t pidx2_next = _mod_inc(pidx2, p2.nvertices);
-        scalar_t angle1 = atan2(p1.vertices[pidx1_next].y - p1.vertices[pidx1].y - _eps, // eps is used to let atan2(0, -1)=-pi
-                                p1.vertices[pidx1_next].x - p1.vertices[pidx1].x);
-        scalar_t angle2 = atan2(p2.vertices[pidx2_next].y - p2.vertices[pidx2].y - _eps,
-                                p2.vertices[pidx2_next].x - p2.vertices[pidx2].x);
+        scalar_t angle1 = _slope_pp(p1.vertices[pidx1], p1.vertices[pidx1_next]);
+        scalar_t angle2 = _slope_pp(p2.vertices[pidx2], p2.vertices[pidx2_next]);
 
         // compare angles and proceed
         if (edge_angle < angle1 && (angle1 < angle2 || angle2 < edge_angle))
@@ -523,20 +529,16 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
         if (edge_flag)
         {
             uint8_t pidx1_next = _mod_inc(pidx1, p1.nvertices);
-            scalar_t angle_br = atan2(p2.vertices[pidx2].y - p1.vertices[pidx1].y - _eps,
-                                      p2.vertices[pidx2].x - p1.vertices[pidx1].x);
-            scalar_t angle1 = atan2(p1.vertices[pidx1_next].y - p1.vertices[pidx1].y - _eps,
-                                    p1.vertices[pidx1_next].x - p1.vertices[pidx1].x);
-            if (angle_br < angle1) // TODO: use cross product comparison instead of angle?
+            scalar_t angle_br = _slope_pp(p1.vertices[pidx1], p2.vertices[pidx2]);
+            scalar_t angle1 = _slope_pp(p1.vertices[pidx1], p1.vertices[pidx1_next]);
+            if (angle_br < angle1)
                 edge_flag = false;
         }
         else
         {
-            scalar_t angle_br = atan2(p1.vertices[pidx1].y - p2.vertices[pidx2].y - _eps,
-                                      p1.vertices[pidx1].x - p2.vertices[pidx2].x);
             uint8_t pidx2_next = _mod_inc(pidx2, p2.nvertices);
-            scalar_t angle2 = atan2(p2.vertices[pidx2_next].y - p2.vertices[pidx2].y - _eps,
-                                    p2.vertices[pidx2_next].x - p2.vertices[pidx2].x);
+            scalar_t angle_br = _slope_pp(p2.vertices[pidx2], p1.vertices[pidx1]);
+            scalar_t angle2 =  _slope_pp(p2.vertices[pidx2], p2.vertices[pidx2_next]);
             if (angle_br < angle2)
                 edge_flag = true;
         }
@@ -548,10 +550,8 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
     {
         uint8_t pidx1_next = _mod_inc(pidx1, p1.nvertices);
         uint8_t pidx2_next = _mod_inc(pidx2, p2.nvertices);
-        scalar_t angle1 = atan2(p1.vertices[pidx1_next].y - p1.vertices[pidx1].y - _eps,
-                                p1.vertices[pidx1_next].x - p1.vertices[pidx1].x);
-        scalar_t angle2 = atan2(p2.vertices[pidx2_next].y - p2.vertices[pidx2].y - _eps,
-                                p2.vertices[pidx2_next].x - p2.vertices[pidx2].x);
+        scalar_t angle1 = _slope_pp(p1.vertices[pidx1], p1.vertices[pidx1_next]);
+        scalar_t angle2 = _slope_pp(p2.vertices[pidx2], p2.vertices[pidx2_next]);
 
         // compare angles and proceed
         if (edge_angle < angle1 && (angle1 < angle2 || angle2 < edge_angle))
