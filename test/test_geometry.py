@@ -1,6 +1,7 @@
 from d3d.geometry import *
 from shapely.geometry import asPolygon
 import shapely.ops as so
+from scipy.spatial.distance import cdist
 import numpy as np
 
 eps = 1e-3 # used to avoid unstability
@@ -98,6 +99,13 @@ def test_with_shapely():
     shapely_mpoly = [so.cascaded_union([shapely_boxes[i], shapely_boxes[i+1]]).convex_hull for i in range(n-1)]
     shapely_marea = np.array([p.area for p in shapely_mpoly])
     assert np.allclose(marea, shapely_marea)
+
+    # compare max distance calculation
+    md = [max_distance(boxes[i], boxes[i+1]) for i in range(n-1)]
+
+    varr = [np.array([(p.x, p.y) for p in box.vertices]) for box in boxes]
+    scipy_md = [np.max(cdist(v1, v2)) for v1, v2 in zip(varr[:-1], varr[1:])]
+    assert np.allclose(md, scipy_md)
 
     # for i in range(n-1):
     #     if not np.isclose(marea[i], shapely_marea[i]):

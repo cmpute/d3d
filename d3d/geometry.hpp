@@ -11,7 +11,8 @@
  * 
  * Binary Operations:
  *      .distance: calculate the (minimum) distance between two shapes
- *      .max_distance: calculate the (maximum) distance between two shapes
+ *      .max_distance: calculate the (maximum) distance between two shapes.
+ *          (should be the same as dimension of merged shape)
  *      .intersect: calculate the intersection of the two shapes [unstable]
  *      .iou: calcuate the intersection over union (about area) [unstable]
  *      .merge: calculate the shape with minimum area that contains the two shapes
@@ -27,23 +28,6 @@
 #include <cmath>
 #include <limits>
 #include "d3d/common.h"
-
-////////////////////////// Helpers //////////////////////////
-#ifndef GEOMETRY_EPS
-    constexpr double _eps = 1e-6;
-#else
-    constexpr double _eps = GEOMETRY_EPS;
-#endif
-constexpr double _pi = 3.14159265358979323846;
-
-template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _max(T a, T b) { return a > b ? a : b; }
-template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _min(T a, T b) { return a < b ? a : b; }
-template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _mod_inc(T i, T n) { return i < n - 1 ? (i + 1) : 0; }
-template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _mod_dec(T i, T n) { return i > 0 ? (i - 1) : (n - 1); }
 
 namespace d3d {
 
@@ -65,11 +49,35 @@ template <uint8_t MaxPoints> using Poly2d = Poly2<double, MaxPoints>;
 using Box2f = Box2<float>;
 using Box2d = Box2<double>;
 
+////////////////////////// Helpers //////////////////////////
+#ifndef GEOMETRY_EPS
+    constexpr double _eps = 1e-6;
+#else
+    constexpr double _eps = GEOMETRY_EPS;
+#endif
+constexpr double _pi = 3.14159265358979323846;
+
+template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
+T _max(T a, T b) { return a > b ? a : b; }
+template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
+T _min(T a, T b) { return a < b ? a : b; }
+template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
+T _mod_inc(T i, T n) { return i < n - 1 ? (i + 1) : 0; }
+template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
+T _mod_dec(T i, T n) { return i > 0 ? (i - 1) : (n - 1); }
+
 ///////////////////// implementations /////////////////////
 template <typename scalar_t> struct Point2 // Point in 2D surface
 {
     scalar_t x, y;
 };
+
+// Calculate cross product (or area) of vector p1->p2 and p2->t
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+scalar_t _cross(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2, const Point2<scalar_t> &t)
+{
+    return (p2.x - p1.x) * (t.y - p2.y) - (p2.y - p1.y) * (t.x - p2.x);
+}
 
 template <typename scalar_t> struct Line2 // Infinite but directional line
 {
@@ -99,7 +107,7 @@ template <typename scalar_t> struct AABox2 // Axis-aligned 2D box for quick calc
 template <typename scalar_t, uint8_t MaxPoints> struct Poly2 // Convex polygon with no holes
 {
     Point2<scalar_t> vertices[MaxPoints]; // vertices in counter-clockwise order
-    uint8_t nvertices = 0; // actual number of vertices
+    uint8_t nvertices = 0; // actual number of vertices, max support 128 vertices right now
 
     template <uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER
     Poly2<scalar_t, MaxPoints>& operator=(Poly2<scalar_t, MaxPoints2> const &other)
@@ -114,15 +122,13 @@ template <typename scalar_t, uint8_t MaxPoints> struct Poly2 // Convex polygon w
     CUDA_CALLABLE_MEMBER inline bool contains(const Point2<scalar_t>& p) const
     { 
         // deal with head and tail first
-        auto seg = line2_from_pp(vertices[nvertices-1], vertices[0]);
-        if (distance(seg, p) > 0) return false;
+        if (_cross(vertices[nvertices-1], vertices[0], p) < 0) return false;
 
         // then loop remaining edges
         for (uint8_t i = 1; i < nvertices; i++)
-        {
-            seg = line2_from_pp(vertices[i-1], vertices[i]);
-            if (distance(seg, p) > 0) return false;
-        }
+            if (_cross(vertices[i-1], vertices[i], p) < 0)
+                return false;
+
         return true;
     }
 };
@@ -189,6 +195,12 @@ Poly2<scalar_t, 4> poly2_from_xywhr(const scalar_t& x, const scalar_t& y,
 }
 
 //////////////////// functions ///////////////////
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+scalar_t distance(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2)
+{
+    return sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+}
 
 // Calculate signed distance from point p to the line
 // The distance is negative if the point is at left hand side wrt the direction of line (x1y1 -> x2y2)
@@ -276,16 +288,18 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
     return true;
 }
 
-// Find the vertex in a polygon with the biggest y value
-template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
-void _find_ymax_vertex(const Poly2<scalar_t, MaxPoints> &p, uint8_t &idx, scalar_t &y_max)
+// Find the extreme vertex in a polygon
+// TopRight=true is finding point with biggest y
+// TopRight=false if finding point with smallest y
+template <typename scalar_t, uint8_t MaxPoints, bool TopRight=true> CUDA_CALLABLE_MEMBER inline
+void _find_extreme(const Poly2<scalar_t, MaxPoints> &p, uint8_t &idx, scalar_t &ey)
 {
     idx = 0;
-    y_max = p.vertices[0].y;
+    ey = p.vertices[0].y;
     for (uint8_t i = 1; i < p.nvertices; i++)
-        if (p.vertices[i].y > y_max)
+        if ((TopRight && p.vertices[i].y > ey) || (!TopRight && p.vertices[i].y < ey))
         {
-            y_max = p.vertices[i].y;
+            ey = p.vertices[i].y;
             idx = i;
         }
 }
@@ -303,30 +317,31 @@ template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLAB
 bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
     const uint8_t &idx1, const uint8_t &idx2, bool &reverse)
 {
-    Line2<scalar_t> bridge = line2_from_pp(p1.vertices[idx1], p2.vertices[idx2]);
-    scalar_t d1 = distance(bridge, p1.vertices[_mod_dec(idx1, p1.nvertices)]);
-    scalar_t d2 = distance(bridge, p1.vertices[_mod_inc(idx1, p1.nvertices)]);
-    scalar_t d3 = distance(bridge, p2.vertices[_mod_dec(idx2, p2.nvertices)]);
-    scalar_t d4 = distance(bridge, p2.vertices[_mod_inc(idx2, p2.nvertices)]);
+    scalar_t d1 = _cross(p1.vertices[idx1], p2.vertices[idx2], p1.vertices[_mod_dec(idx1, p1.nvertices)]);
+    scalar_t d2 = _cross(p1.vertices[idx1], p2.vertices[idx2], p1.vertices[_mod_inc(idx1, p1.nvertices)]);
+    scalar_t d3 = _cross(p1.vertices[idx1], p2.vertices[idx2], p2.vertices[_mod_dec(idx2, p2.nvertices)]);
+    scalar_t d4 = _cross(p1.vertices[idx1], p2.vertices[idx2], p2.vertices[_mod_inc(idx2, p2.nvertices)]);
 
-    reverse = d1 > 0;
+    reverse = d1 < 0;
     return d1*d2 > 0 && d2*d3 > 0 && d3*d4 > 0;
 }
 
 // Rotating Caliper implementation of intersecting
-// xflags stores vertices flags for gradient computation:
-// left 16bits for points from p1, right 16bits for points from p2
-// left 15bits from the 16bits are index number, right 1 bit indicate whether point from this polygon is used
-// TODO: save edge index instead of vertices index?
+// Reference: https://web.archive.org/web/20150415231115/http://cgm.cs.mcgill.ca/~orm/rotcal.frame.htm
+//    and http://cgm.cs.mcgill.ca/~godfried/teaching/cg-projects/97/Plante/CompGeomProject-EPlante/algorithm.html
+// xflags stores edges flags for gradient computation:
+// left 7bits from the 8bits are index number of the edge (index of the first vertex of edge)
+// right 1 bit indicate whether edge is from p1 (=1) or p2 (=0)
+// the vertices of the output polygon are ordered so that vertex i is the intersection of edge i-1 and edge i in the flags
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
     const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    uint16_t xflags[MaxPoints1 + MaxPoints2] = nullptr
+    uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr
 ) {
     // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
     uint8_t pidx1, pidx2; scalar_t _;
-    _find_ymax_vertex(p1, pidx1, _);
-    _find_ymax_vertex(p2, pidx2, _);
+    _find_extreme(p1, pidx1, _);
+    _find_extreme(p2, pidx2, _);
 
     // start rotating to find all intersection points
     scalar_t edge_angle = -_pi; // scan from -pi to pi
@@ -395,14 +410,14 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
             result = p2;
             if (xflags != nullptr)
                 for (uint8_t i = 0; i < p2.nvertices; i++)
-                    xflags[i] = ((uint16_t)i << 9) | (1 << 8);
+                    xflags[i] = i << 1;
         }
         else
         {
             result = p1;
             if (xflags != nullptr)
                 for (uint8_t i = 0; i < p1.nvertices; i++)
-                    xflags[i] = ((uint16_t)i << 1) | 1;
+                    xflags[i] = (i << 1) | 1;
         }
         return result;
     }
@@ -416,30 +431,29 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         Line2<scalar_t> l1 = line2_from_pp(p1.vertices[x1indices[i]], p1.vertices[_mod_inc(x1indices[i], p1.nvertices)]);
         Line2<scalar_t> l2 = line2_from_pp(p2.vertices[x2indices[i]], p2.vertices[_mod_inc(x2indices[i], p2.nvertices)]);
         if (xflags != nullptr)
-            xflags[result.nvertices] = (uint16_t(x1indices[i]) << 9) | (1 << 8)
-                                     | (uint16_t(x2indices[i]) << 1) | 1;
+            xflags[result.nvertices] = edge_flag ? (x1indices[i] << 1 | 1) : (x2indices[i] << 1);
         result.vertices[result.nvertices++] = intersect(l1, l2);
 
         // add points between intersections
         if (edge_flag)
         {
-            uint16_t idx_next = x1indices[i+1] >= x1indices[i] ? x1indices[i+1] : (x1indices[i+1] + p1.nvertices);
-            for (uint16_t j = x1indices[i] + 1; j <= idx_next; j++)
+            uint8_t idx_next = x1indices[i+1] >= x1indices[i] ? x1indices[i+1] : (x1indices[i+1] + p1.nvertices);
+            for (uint8_t j = x1indices[i] + 1; j <= idx_next; j++)
             {
-                uint16_t jmod = j < p1.nvertices ? j : (j - p1.nvertices);
+                uint8_t jmod = j < p1.nvertices ? j : (j - p1.nvertices);
                 if (xflags != nullptr)
-                    xflags[result.nvertices] = (jmod << 9) | (1 << 8);
+                    xflags[result.nvertices] = (jmod << 1) | 1;
                 result.vertices[result.nvertices++] = p1.vertices[jmod];
             }
         }
         else
         {
-            uint16_t idx_next = x2indices[i+1] >= x2indices[i] ? x2indices[i+1] : (x2indices[i+1] + p2.nvertices);
-            for (uint16_t j = x2indices[i] + 1; j <= idx_next; j++)
+            uint8_t idx_next = x2indices[i+1] >= x2indices[i] ? x2indices[i+1] : (x2indices[i+1] + p2.nvertices);
+            for (uint8_t j = x2indices[i] + 1; j <= idx_next; j++)
             {
-                uint16_t jmod = j < p2.nvertices ? j : (j - p2.nvertices);
+                uint8_t jmod = j < p2.nvertices ? j : (j - p2.nvertices);
                 if (xflags != nullptr)
-                    xflags[result.nvertices] = (jmod << 1) | 1;
+                    xflags[result.nvertices] = jmod << 1;
                 result.vertices[result.nvertices++] = p2.vertices[jmod];
             }
         }
@@ -486,17 +500,19 @@ scalar_t iou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoi
 }
 
 // use Rotating Caliper to find the convex hull of two polygons
-// xflags is same as the intersection operation
+// xflags here store the vertices flag
+// left 7 bits represent the index of vertex in original polygon and
+// right 1 bit indicate whether the vertex is from p1(=1) or p2(=0)
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
     const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    uint16_t xflags[MaxPoints1 + MaxPoints2] = nullptr
+    uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr
 ) {
     // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
     uint8_t pidx1, pidx2;
     scalar_t y_max1, y_max2;
-    _find_ymax_vertex(p1, pidx1, y_max1);
-    _find_ymax_vertex(p2, pidx2, y_max2);
+    _find_extreme(p1, pidx1, y_max1);
+    _find_extreme(p2, pidx2, y_max2);
 
     // declare variables and functions
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> result;
@@ -508,13 +524,13 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
     const auto register_p1point = [&](uint8_t i1)
     {
         if (xflags != nullptr)
-            xflags[result.nvertices] = ((uint16_t)i1 << 9) | (1 << 8);
+            xflags[result.nvertices] = (i1 << 1) | 1;
         result.vertices[result.nvertices++] = p1.vertices[i1];
     };
     const auto register_p2point = [&](uint8_t i2)
     {
         if (xflags != nullptr)
-            xflags[result.nvertices] = ((uint16_t)i2 << 1) | 1;
+            xflags[result.nvertices] = i2 << 1;
         result.vertices[result.nvertices++] = p2.vertices[i2];
     };
     const auto register_point = [&](uint8_t i1, uint8_t i2)
@@ -543,7 +559,7 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
                 edge_flag = true;
         }
     }
-    else  edge_flag = y_max1 > y_max2;
+    else edge_flag = y_max1 > y_max2;
 
     // start rotating
     while (true)
@@ -601,6 +617,72 @@ AABox2<scalar_t> merge(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
         .min_y = _min(a1.min_y, a2.min_y),
         .max_y = _max(a1.max_y, a2.max_y)
     };
+}
+
+// use rotating caliper to find max distance between polygons
+// this function use cross products to compare distances which could be faster
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+scalar_t max_distance(
+    const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    uint8_t &flag1, uint8_t &flag2
+) {
+
+    uint8_t pidx1, pidx2;
+    scalar_t y_max1, y_max2;
+    _find_extreme<scalar_t, MaxPoints1, true>(p1, pidx1, y_max1);
+    _find_extreme<scalar_t, MaxPoints2, false>(p2, pidx2, y_max2);
+
+    // start rotating to find all intersection points
+    scalar_t edge_angle = -_pi; // scan p1 from -pi to pi
+    scalar_t dmax = distance(p1.vertices[pidx1], p2.vertices[pidx2]);
+    flag1 = pidx1; flag2 = pidx2;
+    while (true)
+    {
+        uint8_t pidx1_next = _mod_inc(pidx1, p1.nvertices);
+        uint8_t pidx2_next = _mod_inc(pidx2, p2.nvertices);
+        scalar_t angle1 = _slope_pp(p1.vertices[pidx1], p1.vertices[pidx1_next]);
+        scalar_t angle2 = _slope_pp(p2.vertices[pidx2_next], p2.vertices[pidx2]);
+
+         // compare angles and proceed
+        if (edge_angle < angle1 && (angle1 < angle2 || angle2 < edge_angle))
+        { // choose p1 edge as part of anti-podal pair
+
+            scalar_t d = distance(p1.vertices[pidx1_next], p2.vertices[pidx2]);
+            if (d > dmax)
+            {
+                flag1 = pidx1_next;
+                dmax = d;
+            }
+
+            // update pointer
+            pidx1 = _mod_inc(pidx1, p1.nvertices);
+            edge_angle = angle1;
+        }
+        else if (edge_angle < angle2 && (angle2 < angle1 || angle1 < edge_angle))
+        { // choose p2 edge as part of anti-podal pair
+
+            scalar_t d = distance(p1.vertices[pidx1], p2.vertices[pidx2_next]);
+            if (d > dmax)
+            {
+                flag2 = pidx2_next;
+                dmax = d;
+            }
+
+            // update pointer
+            pidx2 = _mod_inc(pidx2, p2.nvertices);
+            edge_angle = angle2;
+        }
+        else break; // when both angles are not increasing, the loop is finished
+    }
+
+    return dmax;
+}
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+scalar_t max_distance(const AABox2<scalar_t> &b1, const AABox2<scalar_t> &b2)
+{
+    AABox2<scalar_t> m = merge(b1, b2);
+    return distance(Point2<scalar_t>{.x=m.min_x, .y=m.min_y}, Point2<scalar_t>{.x=m.max_x, .y=m.max_y});
 }
 
 } // namespace d3d

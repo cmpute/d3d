@@ -43,6 +43,8 @@ PYBIND11_MODULE(geometry, m) {
     m.def("area", py::overload_cast<const AABox2d&>(&d3d::area<double>), "Get the area of axis aligned box");
     m.def("area", py::overload_cast<const Box2d&>(&d3d::area<double, 4>), "Get the area of box");
     m.def("area", py::overload_cast<const Poly2d<8>&>(&d3d::area<double, 8>), "Get the area of polygon");
+    m.def("distance", py::overload_cast<const Point2d&, const Point2d&>(&d3d::distance<double>),
+        "Get the distance between two points");
     m.def("distance", py::overload_cast<const Line2d&, const Point2d&>(&d3d::distance<double>),
         "Get the distance from a point to a line");
     m.def("intersect", py::overload_cast<const Line2d&, const Line2d&>(&d3d::intersect<double>),
@@ -59,6 +61,10 @@ PYBIND11_MODULE(geometry, m) {
         "Get merged convex hull of two polygons");
     m.def("merge", py::overload_cast<const AABox2d&, const AABox2d&>(&d3d::merge<double>),
         "Get bounding box of two axis aligned boxes");
+    m.def("max_distance", [](const Box2d& b1, const Box2d& b2){ uint8_t _; return d3d::max_distance(b1, b2, _, _);},
+        "Get the max distance between two polygons");
+    m.def("max_distance", py::overload_cast<const AABox2d&, const AABox2d&>(&d3d::max_distance<double>),
+        "Get the max distance between two polygons");
 
     m.def("line2_from_pp", &d3d::line2_from_pp<double>, "Create a line with two points");
     m.def("line2_from_xyxy", &d3d::line2_from_xyxy<double>, "Create a line with coordinate of two points");
