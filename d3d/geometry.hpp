@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2019- Yuanxin Zhong. All rights reserved.
  * This file contains implementations of algorithms of simple geometries suitable for using in GPU.
  * One can turn to shapely, boost.geometry or CGAL for a complete functionality of geometry operations.
  * 
@@ -58,13 +59,13 @@ using Box2d = Box2<double>;
 constexpr double _pi = 3.14159265358979323846;
 
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _max(T a, T b) { return a > b ? a : b; }
+T _max(const T &a, const T &b) { return a > b ? a : b; }
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _min(T a, T b) { return a < b ? a : b; }
+T _min(const T &a, const T &b) { return a < b ? a : b; }
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _mod_inc(T i, T n) { return i < n - 1 ? (i + 1) : 0; }
+T _mod_inc(const T &i, const T &n) { return i < n - 1 ? (i + 1) : 0; }
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _mod_dec(T i, T n) { return i > 0 ? (i - 1) : (n - 1); }
+T _mod_dec(const T &i, const T &n) { return i > 0 ? (i - 1) : (n - 1); }
 
 ///////////////////// implementations /////////////////////
 template <typename scalar_t> struct Point2 // Point in 2D surface
@@ -137,7 +138,8 @@ template <typename scalar_t, uint8_t MaxPoints> struct Poly2 // Convex polygon w
 
 // Note that the order of points matters
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
-Line2<scalar_t> line2_from_xyxy(scalar_t x1, scalar_t y1, scalar_t x2, scalar_t y2)
+Line2<scalar_t> line2_from_xyxy(const scalar_t &x1, const scalar_t &y1,
+    const scalar_t &x2, const scalar_t &y2)
 {
     return {.a=y2-y1, .b=x1-x2, .c=x2*y1-x1*y2};
 }
@@ -491,10 +493,12 @@ scalar_t iou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
     return area_i / area_u;
 }
 
+// calculating iou of two polygons. xflags is used in intersection caculation
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
-scalar_t iou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2)
+scalar_t iou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr)
 {
-    scalar_t area_i = area(intersect(p1, p2));
+    scalar_t area_i = area(intersect(p1, p2, xflags));
     scalar_t area_u = area(p1) + area(p2) - area_i;
     return area_i / area_u;
 }
