@@ -107,10 +107,38 @@ def test_with_shapely():
     scipy_md = [np.max(cdist(v1, v2)) for v1, v2 in zip(varr[:-1], varr[1:])]
     assert np.allclose(md, scipy_md)
 
+    # compare dimension of the boxes
+    dim = np.array([dimension(p) for p in mpoly])
+
+    varr = [np.array([(p.x, p.y) for p in poly.vertices]) for poly in mpoly]
+    scipy_dim = [np.max(cdist(v, v)) for v in varr]
+    assert np.allclose(dim, scipy_dim)
+
     # for i in range(n-1):
-    #     if not np.isclose(marea[i], shapely_marea[i]):
+    #     if not np.isclose(dim[i], scipy_dim[i]):
     #         np.save("b1p.npy", np.array([xs[i], ys[i], ws[i], hs[i], rs[i]]))
     #         np.save("b2p.npy", np.array([xs[i+1], ys[i+1], ws[i+1], hs[i+1], rs[i+1]]))
+
+def test_grads():
+    # polygon intersection
+    b1 = poly2_from_xywhr(0, 0, 2, 2, eps)
+    b2 = poly2_from_xywhr(0, 0, 2, 2, 1)
+    bi, flags = intersect_(b1, b2)
+
+    ai = area(bi)
+    grad = 4 - ai
+
+    gi = Poly2d8()
+    area_grad(bi, grad, gi)
+    assert gi.nvertices == 8
+
+    g1, g2 = Box2d(), Box2d()
+    intersect_grad(b1, b2, gi, flags, g1, g2)
+    assert g1.nvertices == 4
+    assert g2.nvertices == 4
+
+    gx, gy, gw, gh, gr = poly2_from_xywhr_grad(0, 0, 2, 2, eps, g1)
+    assert gr > 0
 
 if __name__ == "__main__":
     test_with_shapely()

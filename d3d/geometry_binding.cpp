@@ -51,6 +51,17 @@ PYBIND11_MODULE(geometry, m) {
     m.def("area", py::overload_cast<const AABox2d&>(&d3d::area<double>), "Get the area of axis aligned box");
     m.def("area", py::overload_cast<const Box2d&>(&d3d::area<double, 4>), "Get the area of box");
     m.def("area", py::overload_cast<const Poly2d<8>&>(&d3d::area<double, 8>), "Get the area of polygon");
+    m.def("dimension", py::overload_cast<const AABox2d&>(&d3d::dimension<double>), "Get the dimension of axis aligned box");
+    m.def("dimension", py::overload_cast<const Box2d&>(&d3d::dimension<double, 4>), "Get the dimension of box");
+    m.def("dimension_", [](const Box2d& b){
+        uint8_t i1, i2; double v = d3d::dimension(b, i1, i2);
+        return make_tuple(v, i1, i2);
+    }, "Get the dimension of box");
+    m.def("dimension", py::overload_cast<const Poly2d<8>&>(&d3d::dimension<double, 8>), "Get the dimension of polygon");
+    m.def("dimension_", [](const Poly2d<8>& b){
+        uint8_t i1, i2; double v = d3d::dimension(b, i1, i2);
+        return make_tuple(v, i1, i2);
+    }, "Get the dimension of polygon");
     m.def("distance", py::overload_cast<const Point2d&, const Point2d&>(&d3d::distance<double>),
         "Get the distance between two points");
     m.def("distance", py::overload_cast<const Line2d&, const Point2d&>(&d3d::distance<double>),
@@ -59,29 +70,29 @@ PYBIND11_MODULE(geometry, m) {
         "Get the intersection point of two lines");
     m.def("intersect", [](const Box2d& b1, const Box2d& b2){ return d3d::intersect(b1, b2); },
         "Get the intersection polygon of two boxes");
-    m.def("intersect", [](const Box2d& b1, const Box2d& b2, vector<uint8_t> &xflags){
-            uint8_t xflags_arr[8];
-            auto result = d3d::intersect(b1, b2, xflags_arr);
-            xflags.assign(xflags_arr, xflags_arr + result.nvertices);
-            return result;
-        }, "Get the intersection polygon of two boxes");
+    m.def("intersect_", [](const Box2d& b1, const Box2d& b2){
+            uint8_t xflags[8];
+            auto result = d3d::intersect(b1, b2, xflags);
+            vector<uint8_t> flags(xflags, xflags + result.nvertices);
+            return make_pair(result, flags);
+        }, "Get the intersection polygon of two boxes and return flags");
     m.def("intersect", py::overload_cast<const AABox2d&, const AABox2d&>(&d3d::intersect<double>),
         "Get the intersection box of two axis aligned boxes");
     m.def("iou", py::overload_cast<const AABox2d&, const AABox2d&>(&d3d::iou<double>),
         "Get the intersection over union of two axis aligned boxes");
-    m.def("iou", [](const Box2d& b1, const Box2d& b2){ return d3d::iou(b1, b2); },
+    m.def("iou", py::overload_cast<const Box2d&, const Box2d&>(&d3d::iou<double, 4, 4>),
         "Get the intersection over union of two boxes");
-    m.def("iou", [](const Box2d& b1, const Box2d& b2, vector<uint8_t> &xflags){
-            uint8_t xflags_arr[8];
-            auto result = d3d::iou(b1, b2, xflags_arr);
-            xflags.assign(xflags_arr, xflags_arr + 8); // store all flags
-            return result;
-        }, "Get the intersection over union of two boxes");
+    m.def("iou_", [](const Box2d& b1, const Box2d& b2){
+            uint8_t xflags[8]; uint8_t nx;
+            auto result = d3d::iou(b1, b2, nx, xflags);
+            vector<uint8_t> flags(xflags, xflags + nx);
+            return make_pair(result, flags);
+        }, "Get the intersection over union of two boxes and return flags");
     m.def("merge", [](const Box2d& b1, const Box2d& b2){ return d3d::merge(b1, b2); },
         "Get merged convex hull of two polygons");
     m.def("merge", py::overload_cast<const AABox2d&, const AABox2d&>(&d3d::merge<double>),
         "Get bounding box of two axis aligned boxes");
-    m.def("max_distance", [](const Box2d& b1, const Box2d& b2){ uint8_t _; return d3d::max_distance(b1, b2, _, _);},
+    m.def("max_distance", py::overload_cast<const Box2d&, const Box2d&>(&d3d::max_distance<double, 4, 4>),
         "Get the max distance between two polygons");
     m.def("max_distance", py::overload_cast<const AABox2d&, const AABox2d&>(&d3d::max_distance<double>),
         "Get the max distance between two polygons");
@@ -89,9 +100,26 @@ PYBIND11_MODULE(geometry, m) {
     m.def("line2_from_pp_grad", &d3d::line2_from_pp_grad<double>, "Calculate gradient of line2_from_pp");
     m.def("line2_from_xyxy_grad", &d3d::line2_from_pp_grad<double>, "Calculate gradient of line2_from_xyxy");
     m.def("poly2_from_aabox2_grad", &d3d::poly2_from_aabox2_grad<double>, "Calculate gradient of poly2_from_aabox2");
-    m.def("poly2_from_xywhr_grad", &d3d::poly2_from_xywhr_grad<double>, "Calculate gradient of poly2_from_xywhr");
+    m.def("poly2_from_xywhr_grad", [](const double& x, const double& y,
+        const double& w, const double& h, const double& r, const Box2d& grad){
+            double gx, gy, gw, gh, gr;
+            poly2_from_xywhr_grad(x, y, w, h, r, grad, gx, gy, gw, gh, gr);
+            return make_tuple(gx, gy, gw, gh, gr);
+        }, "Calculate gradient of poly2_from_xywhr");
     m.def("aabox2_from_poly2_grad", &d3d::aabox2_from_poly2_grad<double, 4>, "Calculate gradient of aabox2_from_poly2_grad");
     m.def("aabox2_from_poly2_grad", &d3d::aabox2_from_poly2_grad<double, 8>, "Calculate gradient of aabox2_from_poly2_grad");
     m.def("intersect_grad", py::overload_cast<const Line2d&, const Line2d&, const Point2d&, Line2d&, Line2d&>(&d3d::intersect_grad<double>),
         "Calculate gradient of intersect");
+
+    m.def("area_grad", py::overload_cast<const AABox2d&, const double&, AABox2d&>(&d3d::area_grad<double>), "Calculate gradient of area");
+    m.def("area_grad", py::overload_cast<const Box2d&, const double&, Box2d&>(&d3d::area_grad<double, 4>), "Calculate gradient of area");
+    m.def("area_grad", py::overload_cast<const Poly2d<8>&, const double&, Poly2d<8>&>(&d3d::area_grad<double, 8>), "Calculate gradient of area");
+    m.def("intersect_grad", py::overload_cast<const Line2d&, const Line2d&, const Point2d&, Line2d&, Line2d&>(&d3d::intersect_grad<double>),
+        "Calculate gradient of intersect()");
+    m.def("intersect_grad", [](const Box2d& b1, const Box2d& b2,
+        const Poly2d<8>& grad, array<uint8_t, 8> xflags, Box2d& grad_p1, Box2d& grad_p2){
+            intersect_grad(b1, b2, grad, xflags.data(), grad_p1, grad_p2);
+        }, "Calculate gradient of intersect()");
+    m.def("intersect_grad", py::overload_cast<const AABox2d&, const AABox2d&, const AABox2d&, AABox2d&, AABox2d&>(&d3d::intersect_grad<double>),
+        "Calculate gradient of intersect()");
 }

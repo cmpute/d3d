@@ -9,17 +9,23 @@
  * 
  * Unary Functions:
  *      .area: calculate the area of the shape
+ *      .dimension: calculate the largest distance between any two vertices
  * 
  * Binary Operations:
  *      .distance: calculate the (minimum) distance between two shapes
  *      .max_distance: calculate the (maximum) distance between two shapes.
- *          (should be the same as dimension of merged shape)
- *      .intersect: calculate the intersection of the two shapes [unstable]
- *      .iou: calcuate the intersection over union (about area) [unstable]
+ *      .intersect: calculate the intersection of the two shapes
  *      .merge: calculate the shape with minimum area that contains the two shapes
+ *
+ * Extension Operations:
+ *      .iou: calculate the intersection over union (about area)
+ *      .giou: calculate the generalized intersection over union
+ *          (ref "Generalized Intersection over Union")
+ *      .diou: calculate the distance intersection over union
+ *          (ref "Distance-IoU Loss: Faster and Better Learning for Bounding Box Regression")
  * 
- * Note that for unstable operations, parallel edge and vertex on edge should be avoided! This is both due to
- * the complex implementation and incompatible gradient calculation.
+ * Note that the library haven't been tested for stability, parallel edge and vertex on edge
+ * should be avoided! This is due to both the complex implementation and incompatible gradient calculation.
  */
 
 
@@ -37,7 +43,7 @@ template <typename scalar_t> struct Point2;
 template <typename scalar_t> struct Line2;
 template <typename scalar_t> struct AABox2;
 template <typename scalar_t, uint8_t MaxPoints> struct Poly2;
-template <typename scalar_t> using Box2 = Poly2<scalar_t, 4>;
+template <typename scalar_t> using Box2 = Poly2<scalar_t, 4>; // TODO: rename as Quad4
 
 using Point2f = Point2<float>;
 using Point2d = Point2<double>;
@@ -99,9 +105,14 @@ template <typename scalar_t> struct AABox2 // Axis-aligned 2D box for quick calc
         return p.x > min_x && p.x < max_x && p.y > min_y && p.y < max_y;
     }
 
+    CUDA_CALLABLE_MEMBER inline bool contains(const AABox2<scalar_t>& a) const
+    {
+        return max_x > a.max_x && min_x < a.min_x && max_y > a.max_y && min_y < a.min_y;
+    }
+
     CUDA_CALLABLE_MEMBER inline bool intersects(const AABox2<scalar_t>& a) const
     {
-        return (max_x > a.min_x && min_x > a.max_x && max_y < a.min_y && min_y > a.max_y);
+        return max_x > a.min_x && min_x < a.max_x && max_y > a.min_y && min_y < a.max_y;
     }
 };
 
@@ -486,22 +497,55 @@ scalar_t area(const Poly2<scalar_t, MaxPoints> &p)
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
-scalar_t iou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
+scalar_t dimension(const AABox2<scalar_t> &a)
 {
-    scalar_t area_i = area(intersect(a1, a2));
-    scalar_t area_u = area(a1) + area(a2) - area_i;
-    return area_i / area_u;
+    scalar_t dx = a.max_x - a.min_x, dy = a.max_y - a.min_y;
+    return sqrt(dx * dx + dy * dy);
 }
 
-// calculating iou of two polygons. xflags is used in intersection caculation
-template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
-scalar_t iou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr)
+// use Rotating Caliper to find the dimension
+template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
+scalar_t dimension(const Poly2<scalar_t, MaxPoints> &p, uint8_t &flag1, uint8_t &flag2)
 {
-    scalar_t area_i = area(intersect(p1, p2, xflags));
-    scalar_t area_u = area(p1) + area(p2) - area_i;
-    return area_i / area_u;
+    if (p.nvertices <= 1) return 0;
+    if (p.nvertices == 2) return distance (p.vertices[0], p.vertices[1]);
+
+    uint8_t u = 0, unext = 1, v = 1, vnext = 2;
+    scalar_t dmax = 0, d;
+    for (u = 0; u < p.nvertices; u++)
+    {
+        // find farthest point from current edge
+        unext = _mod_inc(u, p.nvertices);
+        while (_cross(p.vertices[u], p.vertices[unext], p.vertices[v]) <=
+               _cross(p.vertices[u], p.vertices[unext], p.vertices[vnext])
+        ) {
+            v = vnext;
+            vnext = _mod_inc(v, p.nvertices);
+        }
+
+        // update max value
+        d = distance(p.vertices[u], p.vertices[v]);
+        if (d > dmax)
+        {
+            dmax = d;
+            flag1 = u;
+            flag2 = v;
+        }
+        
+        d = distance(p.vertices[unext], p.vertices[v]);
+        if (d > dmax)
+        {
+            dmax = d;
+            flag1 = unext;
+            flag2 = v;
+        }
+    }
+    return dmax;
 }
+
+template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
+scalar_t dimension(const Poly2<scalar_t, MaxPoints> &p)
+{ uint8_t _; return dimension(p, _, _); }
 
 // use Rotating Caliper to find the convex hull of two polygons
 // xflags here store the vertices flag
@@ -682,11 +726,102 @@ scalar_t max_distance(
     return dmax;
 }
 
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+scalar_t max_distance(
+    const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2
+) { uint8_t _; return max_distance(p1, p2, _, _); }
+
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t max_distance(const AABox2<scalar_t> &b1, const AABox2<scalar_t> &b2)
 {
-    AABox2<scalar_t> m = merge(b1, b2);
-    return distance(Point2<scalar_t>{.x=m.min_x, .y=m.min_y}, Point2<scalar_t>{.x=m.max_x, .y=m.max_y});
+    if (b1.contains(b2) || b2.contains(b1))
+    {
+        scalar_t dminmin = distance(
+            Point2<scalar_t>{.x = b1.min_x, .y = b1.min_y},
+            Point2<scalar_t>{.x = b2.min_x, .y = b2.min_y}
+        ), dminmax = distance(
+            Point2<scalar_t>{.x = b1.min_x, .y = b1.max_y},
+            Point2<scalar_t>{.x = b2.min_x, .y = b2.max_y}
+        ), dmaxmin = distance(
+            Point2<scalar_t>{.x = b1.max_x, .y = b1.min_y},
+            Point2<scalar_t>{.x = b2.max_x, .y = b2.min_y}
+        ), dmaxmax = distance(
+            Point2<scalar_t>{.x = b1.max_x, .y = b1.max_y},
+            Point2<scalar_t>{.x = b2.max_x, .y = b2.max_y}
+        );
+        return _max(_max(dminmin, dmaxmax), _max(dminmax, dmaxmin));
+    }
+    else
+    {
+        AABox2<scalar_t> m = merge(b1, b2);
+        return dimension(m);
+    }
+}
+
+///////////// Custom functions /////////////
+
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+scalar_t iou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
+{
+    scalar_t area_i = area(intersect(a1, a2));
+    scalar_t area_u = area(a1) + area(a2) - area_i;
+    return area_i / area_u;
+}
+
+// calculating iou of two polygons. xflags is used in intersection caculation
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+scalar_t iou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    uint8_t &nx, uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr)
+{
+    auto pi = intersect(p1, p2, xflags);
+    nx = pi.nvertices;
+    scalar_t area_i = area(pi);
+    scalar_t area_u = area(p1) + area(p2) - area_i;
+    return area_i / area_u;
+}
+
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+scalar_t iou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2)
+{
+    uint8_t _; return iou(p1, p2, _, nullptr);
+}
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+scalar_t giou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
+{
+    scalar_t area_i = area(intersect(a1, a2));
+    scalar_t area_m = area(merge(a1, a2));
+    scalar_t area_u = area(a1) + area(a2) - area_i;
+    return area_i / area_u - (area_m - area_u) / area_m;
+}
+
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+scalar_t giou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    uint8_t &nx, uint8_t &nm, uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr, uint8_t mflags[MaxPoints1 + MaxPoints2] = nullptr)
+{
+    auto pi = intersect(p1, p2, xflags);
+    nx = pi.nvertices;
+    auto pm = merge(p1, p2, mflags);
+    nm = pm.nvertices;
+
+    scalar_t area_i = area(pi);
+    scalar_t area_m = area(pm);
+    scalar_t area_u = area(p1) + area(p2) - area_i;
+    return area_i / area_u - (area_m - area_u) / area_m;
+}
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+scalar_t diou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
+{
+    scalar_t iou = iou(a1, a2);
+    scalar_t maxd = distance(merge(a1, a2));
+
+    Point2<scalar_t> c1 {.x = (a1.max_x + a1.min_x)/2, .y = (a1.max_y + a1.min_y)/2};
+    Point2<scalar_t> c2 {.x = (a2.max_x + a2.min_x)/2, .y = (a2.max_y + a2.min_y)/2};
+    scalar_t cd = distance(c1, c2);
+    
+    return 1 - iou - (cd*cd) / (maxd*maxd);
 }
 
 } // namespace d3d

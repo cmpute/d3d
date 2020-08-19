@@ -148,8 +148,8 @@ void intersect_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t,
         uint8_t iprev = _mod_dec(i, grad.nvertices);
         if ((xflags[i] & 1) == (xflags[iprev] & 1)) // the intersection vertex is from one of the polygons
         {
-            if (xflags[i] & 1) grad_p1[xflags[i] >> 1] = grad[i];
-            else grad_p2[xflags[i] >> 1] = grad[i];
+            if (xflags[i] & 1) grad_p1.vertices[xflags[i] >> 1] = grad.vertices[i];
+            else grad_p2.vertices[xflags[i] >> 1] = grad.vertices[i];
         }
         else // the intersection vertex is defined by both polygons
         {
@@ -189,7 +189,7 @@ void intersect_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, cons
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
-void area_grad(const AABox2<scalar_t> &a, const scalar_t grad, AABox2<scalar_t> &grad_a)
+void area_grad(const AABox2<scalar_t> &a, const scalar_t &grad, AABox2<scalar_t> &grad_a)
 {
     scalar_t lx = a.max_x - a.min_x;
     scalar_t ly = a.max_y - a.min_y;
@@ -200,7 +200,7 @@ void area_grad(const AABox2<scalar_t> &a, const scalar_t grad, AABox2<scalar_t> 
 }
 
 template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
-void area_grad(const Poly2<scalar_t, MaxPoints> &p, const scalar_t grad, Poly2<scalar_t, MaxPoints> &grad_p)
+void area_grad(const Poly2<scalar_t, MaxPoints> &p, const scalar_t &grad, Poly2<scalar_t, MaxPoints> &grad_p)
 {
     grad_p.nvertices = p.nvertices;
 
@@ -217,6 +217,36 @@ void area_grad(const Poly2<scalar_t, MaxPoints> &p, const scalar_t grad, Poly2<s
         grad_p.vertices[i].x = grad * (p.vertices[i-1].y - p.vertices[i+1].y);
         grad_p.vertices[i].y = grad * (p.vertices[i+1].x - p.vertices[i-1].x);
     }
+}
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+void iou_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const scalar_t &grad,
+    AABox2<scalar_t> &grad_a1, AABox2<scalar_t> &grad_a2)
+{
+    // TODO
+}
+
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+void iou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    const scalar_t &grad, const uint8_t xflags[MaxPoints1 + MaxPoints2], const uint8_t &nx,
+    Poly2<scalar_t, MaxPoints1> &grad_p1, const Poly2<scalar_t, MaxPoints2> &grad_p2
+) {
+    // TODO
+}
+
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+void merge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    const Poly2<scalar_t, MaxPoints1 + MaxPoints2> &grad, const uint8_t xflags[MaxPoints1 + MaxPoints2],
+    Poly2<scalar_t, MaxPoints1> &grad_p1, Poly2<scalar_t, MaxPoints2> &grad_p2
+) {
+    // TODO
+}
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+void merge(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const AABox2<scalar_t> &grad,
+    AABox2<scalar_t> &grad_a1, AABox2<scalar_t> &grad_a2)
+{
+    // TODO
 }
 
 } // namespace d3d
