@@ -80,7 +80,7 @@ template <typename scalar_t> struct Point2 // Point in 2D surface
 
     // this operator is intended for gradient accumulation, rather than point offset,
     // which should be represented by a vector instead of a point
-    Point2<scalar_t>& operator+= (const Point2<scalar_t>& rhs)
+    CUDA_CALLABLE_MEMBER Point2<scalar_t>& operator+= (const Point2<scalar_t>& rhs)
     {
         x += rhs.x; y += rhs.y;
         return *this;
@@ -566,7 +566,7 @@ scalar_t dimension(const Poly2<scalar_t, MaxPoints> &p)
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
     const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr
+    CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr
 ) {
     // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
     uint8_t pidx1, pidx2;
@@ -784,7 +784,7 @@ scalar_t iou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
 // calculating iou of two polygons. xflags is used in intersection caculation
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 scalar_t iou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    uint8_t &nx, uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr)
+    uint8_t &nx, CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr)
 {
     auto pi = intersect(p1, p2, xflags);
     nx = pi.nvertices;
@@ -810,7 +810,8 @@ scalar_t giou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
 
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 scalar_t giou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    uint8_t &nx, uint8_t &nm, uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr, uint8_t mflags[MaxPoints1 + MaxPoints2] = nullptr)
+    uint8_t &nx, uint8_t &nm, CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr,
+    CUDA_RESTRICT uint8_t mflags[MaxPoints1 + MaxPoints2] = nullptr)
 {
     auto pi = intersect(p1, p2, xflags);
     nx = pi.nvertices;

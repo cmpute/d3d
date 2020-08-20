@@ -2,11 +2,55 @@ import numpy as np
 import torch
 from .box_impl import (
     iou2d_forward, iou2d_forward_cuda,
+    iou2d_backward, iou2d_backward_cuda,
+    iou2dr_forward, iou2dr_forward_cuda,
+    iou2dr_backward, iou2dr_backward_cuda,
     nms2d as nms2d_cc, nms2d_cuda,
     rbox_2d_crop as rbox_2d_crop_cc,
     IouType, SupressionType)
 
 # TODO: add box2dz_iou, which also considering z value input
+
+class Iou2D(torch.autograd.Function):
+    '''
+    Differentiable axis aligned IoU function for 2D boxes
+    '''
+    @staticmethod
+    def forward(ctx, boxes1, boxes2):
+        ctx.save_for_backward(boxes1, boxes2)
+        if boxes1.is_cuda and boxes2.is_cuda:
+            return iou2d_forward_cuda(boxes1, boxes2)
+        else:
+            return iou2d_forward(boxes1, boxes2)
+
+    @staticmethod
+    def backward(ctx, grad):
+        boxes1, boxes2 = ctx.saved_tensors
+        if grad.is_cuda:
+            return iou2d_backward_cuda(boxes1, boxes2, grad)
+        else:
+            return iou2d_backward(boxes1, boxes2, grad)
+
+class Iou2DR(torch.autograd.Function):
+    '''
+    Differentiable rotated IoU function for 2D boxes
+    '''
+    @staticmethod
+    def forward(ctx, boxes1, boxes2):
+        if boxes1.is_cuda and boxes2.is_cuda:
+            ious, nx, xflags = iou2dr_forward_cuda(boxes1, boxes2)
+        else:
+            ious, nx, xflags = iou2dr_forward(boxes1, boxes2)
+        ctx.save_for_backward(boxes1, boxes2, nx, xflags)
+        return ious
+
+    @staticmethod
+    def backward(ctx, grad):
+        boxes1, boxes2, nx, xflags = ctx.saved_tensors
+        if grad.is_cuda:
+            return iou2dr_backward_cuda(boxes1, boxes2, grad, nx, xflags)
+        else:
+            return iou2dr_backward(boxes1, boxes2, grad, nx, xflags)
 
 def box2d_iou(boxes1, boxes2, method="box"):
     '''
@@ -25,11 +69,13 @@ def box2d_iou(boxes1, boxes2, method="box"):
         raise ValueError("Input boxes should have 5 fields: x, y, w, h, r")
 
     iou_type = getattr(IouType, method.upper())
-    if boxes1.is_cuda and boxes2.is_cuda:
-        impl = iou2d_forward_cuda
+    if iou_type == IouType.BOX:
+        impl = Iou2D
+    elif iou_type == IouType.RBOX:
+        impl = Iou2DR
     else:
-        impl = iou2d_forward
-    result = impl(boxes1, boxes2, iou_type)
+        raise ValueError("Unrecognized iou type!")
+    result = impl.apply(boxes1, boxes2)
 
     if convert_numpy:
         return result.numpy()

@@ -136,7 +136,7 @@ void intersect_grad(const Line2<scalar_t> &l1, const Line2<scalar_t> &l2, const 
 
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 void intersect_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    const Poly2<scalar_t, MaxPoints1 + MaxPoints2> grad, const uint8_t xflags[MaxPoints1 + MaxPoints2],
+    const Poly2<scalar_t, MaxPoints1 + MaxPoints2> grad, const CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2],
     Poly2<scalar_t, MaxPoints1> &grad_p1, Poly2<scalar_t, MaxPoints2> &grad_p2
 ) {
     // initialize output // TODO: then make all grad calculation additive, not assignment
@@ -262,7 +262,7 @@ void iou_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const scal
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints1 + MaxPoints2> _construct_intersection(
     const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    const uint8_t xflags[MaxPoints1 + MaxPoints2], const uint8_t &nx
+    const CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2], const uint8_t &nx
 ) {
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> pi; pi.nvertices = nx;
     Line2<scalar_t> edge_next, edge_prev;
@@ -301,8 +301,8 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> _construct_intersection(
 
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 void iou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    const scalar_t &grad, const uint8_t xflags[MaxPoints1 + MaxPoints2], const uint8_t &nx,
-    Poly2<scalar_t, MaxPoints1> &grad_p1, const Poly2<scalar_t, MaxPoints2> &grad_p2
+    const scalar_t &grad, const CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2], const uint8_t &nx,
+    Poly2<scalar_t, MaxPoints1> &grad_p1, Poly2<scalar_t, MaxPoints2> &grad_p2
 ) {
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> pi = _construct_intersection(p1, p2, xflags, nx);
     scalar_t area_i = area(pi);
@@ -316,12 +316,13 @@ void iou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPo
     area_grad(p2, gu, grad_p2);
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> grad_pi;
     area_grad(pi, gi, grad_pi);
-    intersect_grad(p1, p2, grad_pi, grad_p1, grad_p2);
+    intersect_grad(p1, p2, grad_pi, xflags, grad_p1, grad_p2);
 }
 
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 void merge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    const Poly2<scalar_t, MaxPoints1 + MaxPoints2> &grad, const uint8_t xflags[MaxPoints1 + MaxPoints2],
+    const Poly2<scalar_t, MaxPoints1 + MaxPoints2> &grad,
+    const CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2],
     Poly2<scalar_t, MaxPoints1> &grad_p1, Poly2<scalar_t, MaxPoints2> &grad_p2
 ) {
     grad_p1.nvertices = p1.nvertices;
