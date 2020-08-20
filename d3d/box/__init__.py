@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from .box_impl import (
-    iou2d as iou2d_cc, iou2d_cuda,
+    iou2d_forward, iou2d_forward_cuda,
     nms2d as nms2d_cc, nms2d_cuda,
     rbox_2d_crop as rbox_2d_crop_cc,
     IouType, SupressionType)
@@ -26,9 +26,9 @@ def box2d_iou(boxes1, boxes2, method="box"):
 
     iou_type = getattr(IouType, method.upper())
     if boxes1.is_cuda and boxes2.is_cuda:
-        impl = iou2d_cuda
+        impl = iou2d_forward_cuda
     else:
-        impl = iou2d_cc
+        impl = iou2d_forward
     result = impl(boxes1, boxes2, iou_type)
 
     if convert_numpy:

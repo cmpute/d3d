@@ -76,7 +76,15 @@ T _mod_dec(const T &i, const T &n) { return i > 0 ? (i - 1) : (n - 1); }
 ///////////////////// implementations /////////////////////
 template <typename scalar_t> struct Point2 // Point in 2D surface
 {
-    scalar_t x, y;
+    scalar_t x = 0, y = 0;
+
+    // this operator is intended for gradient accumulation, rather than point offset,
+    // which should be represented by a vector instead of a point
+    Point2<scalar_t>& operator+= (const Point2<scalar_t>& rhs)
+    {
+        x += rhs.x; y += rhs.y;
+        return *this;
+    }
 };
 
 // Calculate cross product (or area) of vector p1->p2 and p2->t
@@ -88,7 +96,7 @@ scalar_t _cross(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2, const Po
 
 template <typename scalar_t> struct Line2 // Infinite but directional line
 {
-    scalar_t a, b, c; // a*x + b*y + c = 0
+    scalar_t a = 0, b = 0, c = 0; // a*x + b*y + c = 0
 
     CUDA_CALLABLE_MEMBER inline bool intersects(const Line2<scalar_t> &l) const
     {
@@ -98,7 +106,7 @@ template <typename scalar_t> struct Line2 // Infinite but directional line
 
 template <typename scalar_t> struct AABox2 // Axis-aligned 2D box for quick calculation
 {
-    scalar_t min_x, max_x, min_y, max_y;
+    scalar_t min_x = 0, max_x = 0, min_y = 0, max_y = 0;
 
     CUDA_CALLABLE_MEMBER inline bool contains(const Point2<scalar_t>& p) const
     {
@@ -122,7 +130,7 @@ template <typename scalar_t, uint8_t MaxPoints> struct Poly2 // Convex polygon w
     uint8_t nvertices = 0; // actual number of vertices, max support 128 vertices right now
 
     template <uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER
-    Poly2<scalar_t, MaxPoints>& operator=(Poly2<scalar_t, MaxPoints2> const &other)
+    Poly2<scalar_t, MaxPoints>& operator=(const Poly2<scalar_t, MaxPoints2> &other)
     {
         assert(other.nvertices <= MaxPoints);
         nvertices = other.nvertices;
@@ -508,7 +516,11 @@ template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
 scalar_t dimension(const Poly2<scalar_t, MaxPoints> &p, uint8_t &flag1, uint8_t &flag2)
 {
     if (p.nvertices <= 1) return 0;
-    if (p.nvertices == 2) return distance (p.vertices[0], p.vertices[1]);
+    if (p.nvertices == 2)
+    {
+        flag1 = 0; flag2 = 1;
+        return distance (p.vertices[0], p.vertices[1]);
+    }
 
     uint8_t u = 0, unext = 1, v = 1, vnext = 2;
     scalar_t dmax = 0, d;
