@@ -10,6 +10,8 @@
  * Unary Functions:
  *      .area: calculate the area of the shape
  *      .dimension: calculate the largest distance between any two vertices
+ *      .center: calculate the bounding box center of the shape
+ *      .centroid: calculate the geometry center of the shape
  * 
  * Binary Operations:
  *      .distance: calculate the (minimum) distance between two shapes
@@ -559,6 +561,35 @@ template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
 scalar_t dimension(const Poly2<scalar_t, MaxPoints> &p)
 { uint8_t _; return dimension(p, _, _); }
 
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+Point2<scalar_t> center(const AABox2<scalar_t> &a)
+{
+    return {.x = (a.max_x + a.min_x)/2, .y = (a.max_y + a.min_y)/2};
+}
+
+template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
+Point2<scalar_t> center(const Poly2<scalar_t, MaxPoints> &p)
+{
+    return center(aabox2_from_poly2(p));
+}
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+Point2<scalar_t> centroid(const AABox2<scalar_t> &a)
+{
+    return center(a);
+}
+
+template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
+Point2<scalar_t> centroid(const Poly2<scalar_t, MaxPoints> &p)
+{
+    Point2<scalar_t> result;
+    for (uint8_t i = 0; i < p.nvertices; i++)
+        result += p.vertices[i];
+    result.x /= p.nvertices;
+    result.y /= p.nvertices;
+    return result;
+}
+
 // use Rotating Caliper to find the convex hull of two polygons
 // xflags here store the vertices flag
 // left 7 bits represent the index of vertex in original polygon and
@@ -805,7 +836,7 @@ scalar_t giou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
     scalar_t area_i = area(intersect(a1, a2));
     scalar_t area_m = area(merge(a1, a2));
     scalar_t area_u = area(a1) + area(a2) - area_i;
-    return area_i / area_u - (area_m - area_u) / area_m;
+    return area_i / area_u + area_u / area_m - 1;
 }
 
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
@@ -821,19 +852,30 @@ scalar_t giou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPo
     scalar_t area_i = area(pi);
     scalar_t area_m = area(pm);
     scalar_t area_u = area(p1) + area(p2) - area_i;
-    return area_i / area_u - (area_m - area_u) / area_m;
+    return area_i / area_u + area_u / area_m - 1;
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t diou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
 {
     scalar_t iou = iou(a1, a2);
-    scalar_t maxd = distance(merge(a1, a2));
+    scalar_t maxd = dimension(merge(a1, a2));
+    scalar_t cd = distance(centroid(a1), centroid(a2));
+    return 1 - iou - (cd*cd) / (maxd*maxd);
+}
 
-    Point2<scalar_t> c1 {.x = (a1.max_x + a1.min_x)/2, .y = (a1.max_y + a1.min_y)/2};
-    Point2<scalar_t> c2 {.x = (a2.max_x + a2.min_x)/2, .y = (a2.max_y + a2.min_y)/2};
-    scalar_t cd = distance(c1, c2);
-    
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+scalar_t diou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    uint8_t &nx, uint8_t &dflag1, uint8_t &dflag2,
+    CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr)
+{
+    scalar_t iou = iou(p1, p2, nx, xflags);
+    scalar_t cd = distance(centroid(p1), centroid(p2));
+
+    uint8_t mflags[8], idx1, idx2;
+    scalar_t maxd = dimension(merge(p1, p2, mflags), idx1, idx2);
+    dflag1 = mflags[idx1]; dflag2 = mflags[idx2];
+
     return 1 - iou - (cd*cd) / (maxd*maxd);
 }
 

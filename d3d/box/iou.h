@@ -31,3 +31,18 @@ std::tuple<torch::Tensor /*grad_boxes1*/, torch::Tensor /*grad_boxes2*/> iou2dr_
     const torch::Tensor boxes1, const torch::Tensor boxes2, const torch::Tensor grad,
     const torch::Tensor nx, const torch::Tensor xflags
 );
+
+std::tuple<torch::Tensor /*iou*/, torch::Tensor /*nx & nm*/, torch::Tensor /*xflags & mflags*/> giou2dr_forward(
+    const torch::Tensor boxes1, const torch::Tensor boxes2
+);
+std::tuple<torch::Tensor /*grad_boxes1*/, torch::Tensor /*grad_boxes2*/> giou2dr_backward(
+    const torch::Tensor boxes1, const torch::Tensor boxes2, const torch::Tensor grad,
+    const torch::Tensor nxm, const torch::Tensor xmflags
+);
+std::tuple<torch::Tensor /*iou*/, torch::Tensor /*nx & nm*/, torch::Tensor /*xflags & mflags*/> giou2dr_forward_cuda(
+    const torch::Tensor boxes1, const torch::Tensor boxes2
+);
+std::tuple<torch::Tensor /*grad_boxes1*/, torch::Tensor /*grad_boxes2*/> giou2dr_backward_cuda(
+    const torch::Tensor boxes1, const torch::Tensor boxes2, const torch::Tensor grad,
+    const torch::Tensor nxm, const torch::Tensor xmflags
+);

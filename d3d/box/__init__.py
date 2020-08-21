@@ -5,6 +5,8 @@ from .box_impl import (
     iou2d_backward, iou2d_backward_cuda,
     iou2dr_forward, iou2dr_forward_cuda,
     iou2dr_backward, iou2dr_backward_cuda,
+    giou2dr_forward, giou2dr_forward_cuda,
+    giou2dr_backward, giou2dr_backward_cuda,
     nms2d as nms2d_cc, nms2d_cuda,
     rbox_2d_crop as rbox_2d_crop_cc,
     IouType, SupressionType)
@@ -51,6 +53,27 @@ class Iou2DR(torch.autograd.Function):
             return iou2dr_backward_cuda(boxes1, boxes2, grad, nx, xflags)
         else:
             return iou2dr_backward(boxes1, boxes2, grad, nx, xflags)
+
+class GIou2DR(torch.autograd.Function):
+    '''
+    Differentiable rotated GIoU function for 2D boxes
+    '''
+    @staticmethod
+    def forward(ctx, boxes1, boxes2):
+        if boxes1.is_cuda and boxes2.is_cuda:
+            ious, nxm, flags = iou2dr_forward_cuda(boxes1, boxes2)
+        else:
+            ious, nxm, flags = iou2dr_forward(boxes1, boxes2)
+        ctx.save_for_backward(boxes1, boxes2, nxm, flags)
+        return ious
+        
+    @staticmethod
+    def backward(ctx, grad):
+        boxes1, boxes2, nxm, flags = ctx.saved_tensors
+        if grad.is_cuda:
+            return iou2dr_backward_cuda(boxes1, boxes2, grad, nxm, flags)
+        else:
+            return iou2dr_backward(boxes1, boxes2, grad, nxm, flags)
 
 def box2d_iou(boxes1, boxes2, method="box"):
     '''
