@@ -858,10 +858,10 @@ scalar_t giou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPo
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t diou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
 {
-    scalar_t iou = iou(a1, a2);
+    scalar_t piou = iou(a1, a2);
     scalar_t maxd = dimension(merge(a1, a2));
     scalar_t cd = distance(centroid(a1), centroid(a2));
-    return 1 - iou - (cd*cd) / (maxd*maxd);
+    return 1 - piou - (cd*cd) / (maxd*maxd);
 }
 
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
@@ -869,14 +869,14 @@ scalar_t diou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPo
     uint8_t &nx, uint8_t &dflag1, uint8_t &dflag2,
     CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr)
 {
-    scalar_t iou = iou(p1, p2, nx, xflags);
+    scalar_t piou = iou(p1, p2, nx, xflags);
     scalar_t cd = distance(centroid(p1), centroid(p2));
 
     uint8_t mflags[8], idx1, idx2;
     scalar_t maxd = dimension(merge(p1, p2, mflags), idx1, idx2);
     dflag1 = mflags[idx1]; dflag2 = mflags[idx2];
 
-    return 1 - iou - (cd*cd) / (maxd*maxd);
+    return 1 - piou - (cd*cd) / (maxd*maxd);
 }
 
 } // namespace d3d

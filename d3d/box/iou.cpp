@@ -314,3 +314,115 @@ tuple<Tensor, Tensor> giou2dr_backward(
 
     return make_tuple(grad_boxes1, grad_boxes2);
 }
+
+template <typename scalar_t>
+void diou2dr_forward_templated(
+    const _CpuAccessor(2) boxes1_,
+    const _CpuAccessor(2) boxes2_,
+    _CpuAccessor(2) ious_,
+    _CpuAccessorT(uint8_t, 3) nxd_,
+    _CpuAccessorT(uint8_t, 3) xflags_
+) {
+    using BoxType = Box2<scalar_t>;
+    const auto N = boxes1_.size(0);
+    const auto M = boxes2_.size(0);
+
+    parallel_for(0, N*M, 0, [&](int64_t begin, int64_t end)
+    {
+        for (int64_t nm = begin; nm < end; nm++)
+        {
+            const int i = nm % N;
+            const int j = nm / N;
+
+            BoxType bi = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes1_[i]);
+            BoxType bj = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes2_[j]);
+            uint8_t flags[8];
+            ious_[i][j] = diou(bi, bj, nxd_[i][j][0], nxd_[i][j][1], nxd_[i][j][2], flags);
+
+            #pragma unroll
+            for (int k = 0; k < 8; k++)
+                xflags_[i][j][k] = flags[k];
+        }
+    });
+}
+
+tuple<Tensor, Tensor, Tensor> diou2dr_forward(
+    const Tensor boxes1, const Tensor boxes2
+) {
+    Tensor ious = torch::empty({boxes1.size(0), boxes2.size(0)}, boxes1.options());
+    Tensor nxd = torch::empty({boxes1.size(0), boxes2.size(0), 3}, torch::dtype(torch::kByte));
+    Tensor xflags = torch::empty({boxes1.size(0), boxes2.size(0), 8}, torch::dtype(torch::kByte));
+
+    AT_DISPATCH_FLOATING_TYPES(boxes1.scalar_type(), "diou2dr_forward", [&] {
+        diou2dr_forward_templated<scalar_t>(
+            boxes1._cpu_accessor(2),
+            boxes2._cpu_accessor(2),
+            ious._cpu_accessor(2),
+            nxd._cpu_accessor_t(uint8_t, 3),
+            xflags._cpu_accessor_t(uint8_t, 3));
+    });
+    return make_tuple(ious, nxd, xflags);
+}
+
+template <typename scalar_t>
+void diou2dr_backward_templated(
+    const _CpuAccessor(2) boxes1_,
+    const _CpuAccessor(2) boxes2_,
+    const _CpuAccessor(2) grad_,
+    const _CpuAccessorT(uint8_t, 3) nxd_,
+    const _CpuAccessorT(uint8_t, 3) xflags_,
+    _CpuAccessor(2) grad_boxes1_,
+    _CpuAccessor(2) grad_boxes2_
+) {
+    using BoxType = Box2<scalar_t>;
+    const auto N = boxes1_.size(0);
+    const auto M = boxes2_.size(0);
+
+    parallel_for(0, N*M, 0, [&](int64_t begin, int64_t end)
+    {
+        for (int64_t nm = begin; nm < end; nm++)
+        {
+            const int i = nm % N;
+            const int j = nm / N;
+
+            BoxType bi = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes1_[i]);
+            BoxType bj = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes2_[j]);
+
+            BoxType grad_i, grad_j;
+            uint8_t flags[8];
+            #pragma unroll
+            for(int k = 0; k < 8; k++)
+                flags[k] = xflags_[i][j][k];
+
+            diou_grad(bi, bj, grad_[i][j], nxd_[i][j][0], nxd_[i][j][1], nxd_[i][j][2], flags, grad_i, grad_j);
+            _BoxUtilCpu<scalar_t, BoxType>::make_box_grad(boxes1_[i], grad_i, grad_boxes1_[i]);
+            _BoxUtilCpu<scalar_t, BoxType>::make_box_grad(boxes2_[j], grad_j, grad_boxes2_[j]);
+        }
+    });
+}
+
+
+tuple<Tensor, Tensor> diou2dr_backward(
+    const Tensor boxes1, const Tensor boxes2, const Tensor grad,
+    const Tensor nxd, const Tensor xflags
+) {
+    Tensor grad_boxes1 = torch::zeros_like(boxes1);
+    Tensor grad_boxes2 = torch::zeros_like(boxes2);
+    
+    const int total_ops = boxes1.size(0) * boxes2.size(0);
+    const int threads = THREADS_COUNT;
+    const int blocks = divup(total_ops, threads);
+  
+    AT_DISPATCH_FLOATING_TYPES(grad.scalar_type(), "diou2dr_backward", [&] {
+        diou2dr_backward_templated<scalar_t>(
+            boxes1._cpu_accessor(2),
+            boxes2._cpu_accessor(2),
+            grad._cpu_accessor(2),
+            nxd._cpu_accessor_t(uint8_t, 3),
+            xflags._cpu_accessor_t(uint8_t, 3),
+            grad_boxes1._cpu_accessor(2),
+            grad_boxes2._cpu_accessor(2));
+    });
+
+    return make_tuple(grad_boxes1, grad_boxes2);
+}

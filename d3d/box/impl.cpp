@@ -13,10 +13,14 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("iou2dr_forward_cuda", &iou2dr_forward_cuda, "Rotated IoU of 2D boxes (using CUDA)");
     m.def("iou2dr_backward", &iou2dr_backward);
     m.def("iou2dr_backward_cuda", &iou2dr_backward_cuda);
-    m.def("giou2dr_forward", &iou2dr_forward, "Rotated GIoU of 2D boxes");
-    m.def("giou2dr_forward_cuda", &iou2dr_forward_cuda, "Rotated GIoU of 2D boxes (using CUDA)");
-    m.def("giou2dr_backward", &iou2dr_backward);
-    m.def("giou2dr_backward_cuda", &iou2dr_backward_cuda);
+    m.def("giou2dr_forward", &giou2dr_forward, "Rotated GIoU of 2D boxes");
+    m.def("giou2dr_forward_cuda", &giou2dr_forward_cuda, "Rotated GIoU of 2D boxes (using CUDA)");
+    m.def("giou2dr_backward", &giou2dr_backward);
+    m.def("giou2dr_backward_cuda", &giou2dr_backward_cuda);
+    m.def("diou2dr_forward", &diou2dr_forward, "Rotated GIoU of 2D boxes");
+    m.def("diou2dr_forward_cuda", &diou2dr_forward_cuda, "Rotated GIoU of 2D boxes (using CUDA)");
+    m.def("diou2dr_backward", &diou2dr_backward);
+    m.def("diou2dr_backward_cuda", &diou2dr_backward_cuda);
     m.def("nms2d", &nms2d, "NMS on 2D boxes");
     m.def("nms2d_cuda", &nms2d_cuda, "NMS on 2D boxes (using CUDA)");
     m.def("rbox_2d_crop", &rbox_2d_crop, "Crop points from a point cloud within boxes");
@@ -24,7 +28,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     py::enum_<IouType>(m, "IouType")
         .value("NA", IouType::NA)
         .value("BOX", IouType::BOX)
-        .value("RBOX", IouType::RBOX);
+        .value("RBOX", IouType::RBOX)
+        .value("GBOX", IouType::GBOX)
+        .value("GRBOX", IouType::GRBOX)
+        .value("DBOX", IouType::DBOX)
+        .value("DRBOX", IouType::DRBOX);
     py::enum_<SupressionType>(m, "SupressionType")
         .value("HARD", SupressionType::HARD)
         .value("LINEAR", SupressionType::LINEAR)

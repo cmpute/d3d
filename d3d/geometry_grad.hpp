@@ -265,7 +265,7 @@ void centroid_grad(const AABox2<scalar_t> &a, const Point2<scalar_t> &grad, Poin
 template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
 void centroid_grad(const Poly2<scalar_t, MaxPoints> &p, const Point2<scalar_t> &grad, Poly2<scalar_t, MaxPoints> &grad_p)
 {
-    grad_p.nvertices = grad.nvertices;
+    grad_p.nvertices = p.nvertices;
     for (uint8_t i = 0; i < p.nvertices; i++)
     {
         grad_p.vertices[i].x += grad.x / p.nvertices;
@@ -340,7 +340,7 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> _construct_merged_hull(
 ) {
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> result;
     result.nvertices = nm;
-    for (uint8_t i; i < nm; i++)
+    for (uint8_t i = 0; i < nm; i++)
         if (mflags[i] & 1)
             result.vertices[i] = p1.vertices[mflags[i] >> 1];
         else
@@ -446,6 +446,53 @@ void giou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxP
     merge_grad(p1, p2, grad_pm, mflags, grad_p1, grad_p2);
 }
 
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+void diou_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const scalar_t &grad,
+    AABox2<scalar_t> &grad_a1, AABox2<scalar_t> &grad_a2)
+{
+    Point2<scalar_t> c1 = centroid(a1), c2 = centroid(a2);
+    scalar_t cd = distance(c1, c2);
+    AABox2<scalar_t> am = merge(a1, a2);
+    scalar_t maxd = dimension(am);
+
+    scalar_t grad_iou = -grad;
+    scalar_t grad_cd = -grad*2*cd/(maxd*maxd);
+    scalar_t grad_maxd = grad*2*(cd*cd)/(maxd*maxd*maxd);
+
+    iou_grad(a1, a2, grad_iou, grad_a1, grad_a2);
+    Point2<scalar_t> grad_c1, grad_c2;
+    AABox2<scalar_t> grad_am;
+    distance_grad(c1, c2, grad_cd, grad_c1, grad_c2);
+    centroid_grad(a1, grad_c1, grad_a1);
+    centroid_grad(a2, grad_c2, grad_a2);
+    dimension_grad(am, grad_maxd, grad_am);
+    merge_grad(a1, a2, grad_am, grad_a1, grad_a2);
+}
+
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+void diou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2, const scalar_t &grad,
+    const uint8_t &nx, const uint8_t &dflag1, const uint8_t &dflag2, const CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2],
+    Poly2<scalar_t, MaxPoints1> &grad_p1, Poly2<scalar_t, MaxPoints2> &grad_p2)
+{
+    Point2<scalar_t> c1 = centroid(p1), c2 = centroid(p2);
+    scalar_t cd = distance(c1, c2);
+    const Point2<scalar_t> &v1 = (dflag1 & 1) ? p1.vertices[dflag1 >> 1] : p2.vertices[dflag1 >> 1];
+    const Point2<scalar_t> &v2 = (dflag2 & 1) ? p1.vertices[dflag2 >> 1] : p2.vertices[dflag2 >> 1];
+    scalar_t maxd = distance(v1, v2);
+
+    scalar_t grad_iou = -grad;
+    scalar_t grad_cd = -grad*2*cd/(maxd*maxd);
+    scalar_t grad_maxd = grad*2*(cd*cd)/(maxd*maxd*maxd);
+
+    iou_grad(p1, p2, grad_iou, nx, xflags, grad_p1, grad_p2);
+    Point2<scalar_t> grad_c1, grad_c2;
+    distance_grad(c1, c2, grad_cd, grad_c1, grad_c2);
+    centroid_grad(p1, grad_c1, grad_p1);
+    centroid_grad(p2, grad_c2, grad_p2);
+    Point2<scalar_t> &grad_v1 = (dflag1 & 1) ? grad_p1.vertices[dflag1 >> 1] : grad_p2.vertices[dflag1 >> 1];
+    Point2<scalar_t> &grad_v2 = (dflag2 & 1) ? grad_p1.vertices[dflag2 >> 1] : grad_p2.vertices[dflag2 >> 1];
+    distance_grad(v1, v2, grad_maxd, grad_v1, grad_v2);
+}
 
 } // namespace d3d
 

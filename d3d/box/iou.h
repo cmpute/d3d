@@ -7,7 +7,7 @@
 torch::Tensor iou2d_forward(
     const torch::Tensor boxes1, const torch::Tensor boxes2
 );
-std::tuple<torch::Tensor, torch::Tensor> iou2d_backward(
+std::tuple<torch::Tensor /*grad_boxes1*/, torch::Tensor /*grad_boxes2*/> iou2d_backward(
     const torch::Tensor boxes1, const torch::Tensor boxes2, const torch::Tensor grad
 );
 torch::Tensor iou2d_forward_cuda(
@@ -45,4 +45,19 @@ std::tuple<torch::Tensor /*iou*/, torch::Tensor /*nx & nm*/, torch::Tensor /*xfl
 std::tuple<torch::Tensor /*grad_boxes1*/, torch::Tensor /*grad_boxes2*/> giou2dr_backward_cuda(
     const torch::Tensor boxes1, const torch::Tensor boxes2, const torch::Tensor grad,
     const torch::Tensor nxm, const torch::Tensor xmflags
+);
+
+std::tuple<torch::Tensor /*iou*/, torch::Tensor /*nx & dflags*/, torch::Tensor /*xflags*/> diou2dr_forward(
+    const torch::Tensor boxes1, const torch::Tensor boxes2
+);
+std::tuple<torch::Tensor /*grad_boxes1*/, torch::Tensor /*grad_boxes2*/> diou2dr_backward(
+    const torch::Tensor boxes1, const torch::Tensor boxes2, const torch::Tensor grad,
+    const torch::Tensor nxd, const torch::Tensor xflags
+);
+std::tuple<torch::Tensor /*iou*/, torch::Tensor /*nx & dflags*/, torch::Tensor /*xflags*/> diou2dr_forward_cuda(
+    const torch::Tensor boxes1, const torch::Tensor boxes2
+);
+std::tuple<torch::Tensor /*grad_boxes1*/, torch::Tensor /*grad_boxes2*/> diou2dr_backward_cuda(
+    const torch::Tensor boxes1, const torch::Tensor boxes2, const torch::Tensor grad,
+    const torch::Tensor nxd, const torch::Tensor xflags
 );

@@ -7,6 +7,8 @@ from .box_impl import (
     iou2dr_backward, iou2dr_backward_cuda,
     giou2dr_forward, giou2dr_forward_cuda,
     giou2dr_backward, giou2dr_backward_cuda,
+    diou2dr_forward, diou2dr_forward_cuda,
+    diou2dr_backward, diou2dr_backward_cuda,
     nms2d as nms2d_cc, nms2d_cuda,
     rbox_2d_crop as rbox_2d_crop_cc,
     IouType, SupressionType)
@@ -61,9 +63,9 @@ class GIou2DR(torch.autograd.Function):
     @staticmethod
     def forward(ctx, boxes1, boxes2):
         if boxes1.is_cuda and boxes2.is_cuda:
-            ious, nxm, flags = iou2dr_forward_cuda(boxes1, boxes2)
+            ious, nxm, flags = giou2dr_forward_cuda(boxes1, boxes2)
         else:
-            ious, nxm, flags = iou2dr_forward(boxes1, boxes2)
+            ious, nxm, flags = giou2dr_forward(boxes1, boxes2)
         ctx.save_for_backward(boxes1, boxes2, nxm, flags)
         return ious
         
@@ -71,9 +73,30 @@ class GIou2DR(torch.autograd.Function):
     def backward(ctx, grad):
         boxes1, boxes2, nxm, flags = ctx.saved_tensors
         if grad.is_cuda:
-            return iou2dr_backward_cuda(boxes1, boxes2, grad, nxm, flags)
+            return giou2dr_backward_cuda(boxes1, boxes2, grad, nxm, flags)
         else:
-            return iou2dr_backward(boxes1, boxes2, grad, nxm, flags)
+            return giou2dr_backward(boxes1, boxes2, grad, nxm, flags)
+
+class DIou2DR(torch.autograd.Function):
+    '''
+    Differentiable rotated DIoU function for 2D boxes
+    '''
+    @staticmethod
+    def forward(ctx, boxes1, boxes2):
+        if boxes1.is_cuda and boxes2.is_cuda:
+            ious, nxd, flags = diou2dr_forward_cuda(boxes1, boxes2)
+        else:
+            ious, nxd, flags = diou2dr_forward(boxes1, boxes2)
+        ctx.save_for_backward(boxes1, boxes2, nxd, flags)
+        return ious
+        
+    @staticmethod
+    def backward(ctx, grad):
+        boxes1, boxes2, nxd, flags = ctx.saved_tensors
+        if grad.is_cuda:
+            return diou2dr_backward_cuda(boxes1, boxes2, grad, nxd, flags)
+        else:
+            return diou2dr_backward(boxes1, boxes2, grad, nxd, flags)
 
 def box2d_iou(boxes1, boxes2, method="box"):
     '''
@@ -96,6 +119,10 @@ def box2d_iou(boxes1, boxes2, method="box"):
         impl = Iou2D
     elif iou_type == IouType.RBOX:
         impl = Iou2DR
+    elif iou_type == IouType.GRBOX:
+        impl = GIou2DR
+    elif iou_type == IouType.DRBOX:
+        impl = DIou2DR
     else:
         raise ValueError("Unrecognized iou type!")
     result = impl.apply(boxes1, boxes2)
@@ -103,8 +130,6 @@ def box2d_iou(boxes1, boxes2, method="box"):
     if convert_numpy:
         return result.numpy()
     return result
-
-# TODO: implement IoU loss, GIoU, DIoU, CIoU: https://zhuanlan.zhihu.com/p/104236411
 
 def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
     iou_threshold=0, score_threshold=0, supression_param=0):

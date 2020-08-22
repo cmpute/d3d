@@ -1,6 +1,10 @@
 #pragma once
 
-enum class IouType : int { NA=0, BOX=1, RBOX=2 };
+enum class IouType : int { NA=0,
+    BOX=1, RBOX=2, // traditional iou for axis aligned box and rotated box
+    GBOX=3, GRBOX=4, // Generalized iou
+    DBOX=5, DRBOX=6 // Distance iou
+};
 enum class SupressionType : int { HARD=0, LINEAR=1, GAUSSIAN=2 };
 
 // define dispatch macros
