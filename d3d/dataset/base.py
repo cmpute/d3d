@@ -136,7 +136,7 @@ class DetectionDatasetBase:
         pass
 
 
-class TrackingDatasetBase:
+class TrackingDatasetBase(DetectionDatasetBase):
     VALID_CAM_NAMES: list
     VALID_LIDAR_NAMES: list
 
@@ -156,7 +156,7 @@ class TrackingDatasetBase:
         :param nframes: number of consecutive frames returned from the accessors
             If it's a positive number, then it returns past frames
             If it's a negative number, then it returns future frames
-            If it's zero, then it act like object detection dataset
+            If it's zero, then it act like object detection dataset, which means the methods will return unpacked data
         """
         raise NotImplementedError(
             "This is a base class, should not be initialized!")
@@ -165,10 +165,10 @@ class TrackingDatasetBase:
                    idx: Union[int, Tuple[int, int]],
                    names: Optional[Union[str, List[str]]] = None,
                    concat: bool = False
-                   ) -> Union[List[NdArray], List[List[NdArray]]]:
+                   ) -> Union[NdArray, List[NdArray], List[List[NdArray]]]:
         '''
         If multiple frames are requested, the results will be a list of list. Outer list corresponds to frame names and inner
-            list corresponds to time sequence.
+            list corresponds to time sequence. So names * frames data objects will be returned
 
         :param names: name of requested lidar frames
         :param idx: index of requested lidar frames
@@ -183,7 +183,7 @@ class TrackingDatasetBase:
     def camera_data(self,
                     idx: Union[int, Tuple[int, int]],
                     names: Optional[Union[str, List[str]]] = None
-                    ) -> Union[List[Image], List[List[Image]]]:
+                    ) -> Union[Image, List[Image], List[List[Image]]]:
         '''
         Return the camera image data
 
@@ -194,14 +194,15 @@ class TrackingDatasetBase:
 
     def calibration_data(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> TransformSet:
         '''
-        Return the calibration data
+        Return the calibration data. Notices that we assume the calibration is fixed among one squence, so it always
+            return a single object.
 
         :param idx: index of requested lidar frames
         :param raw: if false, converted TransformSet will be returned, otherwise raw data will be returned in original format
         '''
         pass
 
-    def lidar_objects(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> List[Target3DArray]:
+    def lidar_objects(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> Union[Target3DArray, List[Target3DArray]]:
         '''
         Return list of converted ground truth targets in lidar frame.
 

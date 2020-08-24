@@ -227,9 +227,9 @@ class TestKittiTrackingDataset(unittest.TestCase):
         ax2.set_ylim([375, 0])
         
         fig.canvas.draw_idle()
-        try TclError:
+        try:
             plt.pause(5)
-        except: # skip error if manually closed
+        except TclError: # skip error if manually closed
             pass
 
     def test_ground_truth_visualizer_pcl(self):
