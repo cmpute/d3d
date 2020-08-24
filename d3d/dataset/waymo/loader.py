@@ -21,7 +21,7 @@ from PIL import Image
 from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
-                             TransformSet)
+                             TransformSet, EgoPose)
 from d3d.dataset.base import TrackingDatasetBase, check_frames
 
 _logger = logging.getLogger("d3d")
@@ -229,7 +229,15 @@ class WaymoObjectLoader(TrackingDatasetBase):
         return self.phase, fname, fidx
 
     def timestamp(self, idx):
-        return [int(d.decode()) for d in self._load_files(idx, "timestamp", "txt")]
+        result = [int(d[0].decode()) / 1e6 for d in self._load_files(idx, ["timestamp"], "txt")]
+        return result[0] if self.nframes == 0 else result
+
+    def pose(self, idx, raw=False):
+        data = [np.load(BytesIO(d[0])) for d in self._load_files(idx, ["pose"], "npy")]
+        if raw: return data[0] if self.nframes == 0 else data
+
+        data = [EgoPose(rt[:3, 3], Rotation.from_matrix(rt[:3, :3])) for rt in data]
+        return data[0] if self.nframes == 0 else data
 
 def dump_detection_output(detections: Target3DArray, context: str, timestamp: int):
     '''
@@ -342,3 +350,5 @@ def create_submission(exec_path, result_path, output_path, meta_path, model_name
 
     # clean
     shutil.rmtree(temp_path)
+
+WaymoTrackingLoader = WaymoObjectLoader # Alias for tracking dataset
