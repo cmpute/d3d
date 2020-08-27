@@ -6,12 +6,14 @@ _pcl_available = False
 try:
     import pcl
     import pcl.visualization as pv
+    from pcl import Visualizer
     _pcl_available = True
 except:
-    pass
+    import typing
+    Visualizer = typing.Any
 
 # TODO: support set box_color by id hash
-def visualize_detections(visualizer: pcl.Visualizer, visualizer_frame: str, targets: Target3DArray, calib: TransformSet,
+def visualize_detections(visualizer: Visualizer, visualizer_frame: str, targets: Target3DArray, calib: TransformSet,
     text_scale=0.8, box_color=(1, 1, 1), text_color=(1, 0.8, 1), id_prefix="", tags=None, position_offset=None):
     '''
     Note: To use this visualizer, targets should be in the same frame as the visualizer frame (lidar frame)

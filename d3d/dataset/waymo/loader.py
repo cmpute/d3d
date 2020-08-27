@@ -198,9 +198,13 @@ class WaymoObjectLoader(TrackingDatasetBase):
         return outputs[0] if self.nframes == 0 else outputs
 
     def calibration_data(self, idx):
-        fname, _ = self._locate_frame(idx)
+        if isinstance(idx, int):
+            seq_id, _ = self._locate_frame(idx)
+        else:
+            seq_id, _ = idx
+
         calib_params = TransformSet("vehicle")
-        ar = zipfile.ZipFile(self.base_path / (fname + ".zip"))
+        ar = zipfile.ZipFile(self.base_path / (seq_id + ".zip"))
 
         # load camera calibration
         with ar.open("context/calib_cams.json") as fin:
@@ -225,8 +229,11 @@ class WaymoObjectLoader(TrackingDatasetBase):
         return calib_params
 
     def identity(self, idx):
-        fname, fidx = self._locate_frame(idx)
-        return self.phase, fname, fidx
+        if isinstance(idx, int):
+            seq_id, frame_id = self._locate_frame(idx)
+        else:
+            seq_id, frame_id = idx
+        return self.phase, seq_id, frame_id
 
     def timestamp(self, idx):
         result = [int(d[0].decode()) / 1e6 for d in self._load_files(idx, ["timestamp"], "txt")]
@@ -238,6 +245,14 @@ class WaymoObjectLoader(TrackingDatasetBase):
 
         data = [EgoPose(rt[:3, 3], Rotation.from_matrix(rt[:3, :3])) for rt in data]
         return data[0] if self.nframes == 0 else data
+
+    @property
+    def sequence_ids(self):
+        return list(self._metadata.keys())
+
+    @property
+    def sequence_sizes(self):
+        return {k: v.frame_count for k, v in self._metadata.items()}
 
 def dump_detection_output(detections: Target3DArray, context: str, timestamp: int):
     '''
