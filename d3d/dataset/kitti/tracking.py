@@ -234,6 +234,8 @@ class KittiTrackingLoader(TrackingDatasetBase):
                 else:
                     image = utils.load_image(self.base_path, file_name, gray=False)
                 data_seq.append(image)
+            if self.nframes == 0: # unpack if only 1 frame
+                data_seq = data_seq[0]
 
             outputs.append(data_seq)
             if self.inzip:
@@ -243,10 +245,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
         if seq_id not in self._image_size_cache:
             self._image_size_cache[seq_id] = image.size
 
-        if unpack_result:
-            return outputs[0]
-        else:
-            return outputs
+        return outputs[0] if unpack_result else outputs
 
     def lidar_data(self, idx, names='velo', concat=True):
         if isinstance(idx, int):
@@ -271,13 +270,12 @@ class KittiTrackingLoader(TrackingDatasetBase):
                 data_seq.append(utils.load_velo_scan(source, fname))
             else:
                 data_seq.append(utils.load_velo_scan(self.base_path, fname))
+        if self.nframes == 0: # unpack if only 1 frame
+            data_seq = data_seq[0]
 
         if self.inzip:
             source.close()
-        if unpack_result:
-            return data_seq
-        else:
-            return [data_seq]
+        return data_seq if unpack_result else [data_seq]
 
     def calibration_data(self, idx, raw=False):
         if isinstance(idx, int):
@@ -302,10 +300,17 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         self._preload_label(seq_id)
         labels = [self._label_cache[seq_id][fid] for fid in range(frame_id - self.nframes, frame_id+1)]
-        if raw: return labels
 
-        self._preload_calib(seq_id)
-        return [parse_label(l, self._calib_cache[seq_id]) for l in labels]
+        if self.nframes == 0:
+            if raw: return labels[0]
+
+            self._preload_calib(seq_id)
+            return parse_label(labels[0], self._calib_cache[seq_id])
+        else:
+            if raw: return labels
+
+            self._preload_calib(seq_id)
+            return [parse_label(l, self._calib_cache[seq_id]) for l in labels]
 
     def identity(self, idx):
         '''
@@ -354,7 +359,14 @@ class KittiTrackingLoader(TrackingDatasetBase):
             seq_id, frame_id = idx
 
         self._preload_pose(seq_id)
-        poses = [self._pose_cache[seq_id][fid] for fid in range(frame_id - self.nframes, frame_id+1)]
 
-        if raw: return poses
-        return [parse_pose(p) for p in poses]
+        if self.nframes == 0:
+            poses = self._pose_cache[seq_id][frame_id]
+
+            if raw: return poses
+            return parse_pose(poses)
+        else:
+            poses = [self._pose_cache[seq_id][fid] for fid in range(frame_id - self.nframes, frame_id+1)]
+
+            if raw: return poses
+            return [parse_pose(p) for p in poses]

@@ -21,8 +21,8 @@ from PIL import Image
 from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
-                             TransformSet)
-from d3d.dataset.base import DetectionDatasetBase, ZipCache, check_frames
+                             TransformSet, EgoPose)
+from d3d.dataset.base import TrackingDatasetBase, check_frames
 
 _logger = logging.getLogger("d3d")
 
@@ -33,7 +33,7 @@ class WaymoObjectClass(Enum):
     Sign = 3
     Cyclist = 4
 
-class WaymoObjectLoader(DetectionDatasetBase):
+class WaymoObjectLoader(TrackingDatasetBase):
     """
     Load waymo dataset into a usable format.
     Please use the d3d_waymo_convert command to convert the dataset first into following formats
@@ -50,7 +50,7 @@ class WaymoObjectLoader(DetectionDatasetBase):
     VALID_CAM_NAMES = ["camera_front", "camera_front_left", "camera_front_right", "camera_side_left", "camera_side_right"]
     VALID_LIDAR_NAMES = ["lidar_top", "lidar_front", "lidar_side_left", "lidar_side_right", "lidar_rear"]
 
-    def __init__(self, base_path, phase="training", inzip=False, trainval_split=None, trainval_random=False):
+    def __init__(self, base_path, phase="training", inzip=False, trainval_split=None, trainval_random=False, nframes=0):
         """
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders
@@ -63,9 +63,8 @@ class WaymoObjectLoader(DetectionDatasetBase):
 
         self.base_path = Path(base_path) / phase
         self.phase = phase
+        self.nframes = nframes
         self._load_metadata()
-
-        self._zip_cache = ZipCache()
 
     def _load_metadata(self):
         meta_path = self.base_path / "metadata.json"
@@ -99,13 +98,19 @@ class WaymoObjectLoader(DetectionDatasetBase):
             idx -= v.frame_count
         raise ValueError("Index larger than dataset size")
 
-    def _locate_file(self, idx, folders, suffix):
-        fname, fidx = self._locate_frame(idx)
-        ar = self._zip_cache.open(self.base_path / (fname + ".zip"))
-        if isinstance(folders, list):
-            return [ar.open("%s/%04d.%s" % (f, fidx, suffix)) for f in folders]
+    def _load_files(self, idx, folders, suffix):
+        '''
+        Load corresponding files given index, folders name and file suffix
+        The output would be a nested list of nframes * nfolders data
+        '''
+        if isinstance(idx, int):
+            seq_id, frame_id = self._locate_frame(idx)
         else:
-            return ar.open("%s/%04d.%s" % (folders, fidx, suffix))
+            seq_id, frame_id = idx
+
+        ar = zipfile.ZipFile(self.base_path / (seq_id + ".zip"))
+        return [[ar.read("%s/%04d.%s" % (f, fidx, suffix)) for f in folders]
+            for fidx in range(frame_id - self.nframes, frame_id+1)]
 
     def lidar_data(self, idx, names=None, concat=False):
         """
@@ -116,23 +121,30 @@ class WaymoObjectLoader(DetectionDatasetBase):
         """
         unpack_result, names = check_frames(names, self.VALID_LIDAR_NAMES)
 
-        handles = self._locate_file(idx, names, "npy")
-        outputs = [np.load(BytesIO(h.read())) for h in handles]
-        map(lambda h: h.close(), handles)
+        outputs = []
 
-        if concat:
-            outputs = np.vstack(outputs)
-        else:
-            calib = self.calibration_data(idx)
-            for i, name in enumerate(names):
-                rt = calib.extrinsics[name]
-                outputs[i][:,:3] = outputs[i][:,:3].dot(rt[:3,:3].T) + rt[:3, 3]
+        for fdata in self._load_files(idx, names, "npy"):
+            clouds = [np.load(BytesIO(buf)) for buf in fdata]
 
-            if unpack_result:
-                return outputs[0]
+            if concat:
+                outputs.append(np.vstack(clouds))
             else:
-                return outputs
-        return outputs
+                calib = self.calibration_data(idx)
+                for i, name in enumerate(names):
+                    rt = calib.extrinsics[name]
+                    clouds[i][:,:3] = clouds[i][:,:3].dot(rt[:3,:3].T) + rt[:3, 3]
+
+                if unpack_result:
+                    outputs.append(clouds[0])
+                else:
+                    outputs.append(clouds)
+
+        if concat or unpack_result:
+            return outputs[0] if self.nframes == 0 else outputs
+        elif self.nframes == 0:
+            return outputs[0]
+        else:
+            return list(zip(*outputs))
 
     def camera_data(self, idx, names=None):
         """
@@ -140,52 +152,59 @@ class WaymoObjectLoader(DetectionDatasetBase):
         """
         unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
 
-        handles = self._locate_file(idx, names, "jpg")
-        outputs = [Image.open(h).convert('RGB') for h in handles]
-        map(lambda h: h.close(), handles)
+        buffers = self._load_files(idx, names, "jpg")
+        outputs = [[Image.open(BytesIO(buf)).convert('RGB') for buf in fdata] for fdata in buffers]
+        outputs = list(zip(*outputs)) # transpose nframes * nnames data to nnames * nframes data
 
-        if unpack_result:
-            return outputs[0]
-        else:
-            return outputs
+        if self.nframes == 0:
+            outputs = [d[0] for d in outputs]
+        return outputs[0] if unpack_result else outputs
 
     def camera_label(self, idx, names=None):
         unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
 
-        handles = self._locate_file(idx, names, "jpg")
-        outputs = [list(map(edict, json.loads(h.read().decode()))) for h in handles]
+        buffers = self._load_files(idx, ["label_" + s for s in names], "json")
+        outputs = [[list(map(edict, json.loads(buf.decode()))) for buf in fdata] for fdata in buffers]
+        outputs = list(zip(*outputs))
 
-        if unpack_result:
-            return outputs[0]
-        else:
-            return outputs
+        if self.nframes == 0:
+            outputs = [d[0] for d in outputs]
+        return outputs[0] if unpack_result else outputs
 
     def lidar_objects(self, idx, raw=False):
-        with self._locate_file(idx, "label_lidars", "json") as fin:
-            labels = list(map(edict, json.loads(fin.read().decode())))
+        buffers = self._load_files(idx, ["label_lidars"], "json")
 
-        if raw:
-            return labels
+        outputs = []
+        for din in buffers:
+            labels = list(map(edict, json.loads(din[0].decode())))
 
-        outputs = Target3DArray(frame="vehicle") # or frame=None
-        for label in labels:
-            tid = base64.urlsafe_b64decode(label.id[:12])
-            tid, = struct.unpack('Q', tid[:8])
-            target = ObjectTarget3D(
-                label.center,
-                Rotation.from_euler("z", label.heading),
-                label.size,
-                ObjectTag(label.label, WaymoObjectClass),
-                tid=tid
-            )
-            outputs.append(target)
+            if raw:
+                return labels
 
-        return outputs
+            arr = Target3DArray(frame="vehicle") # or frame=None
+            for label in labels:
+                tid = base64.urlsafe_b64decode(label.id[:12])
+                tid, = struct.unpack('Q', tid[:8])
+                target = ObjectTarget3D(
+                    label.center,
+                    Rotation.from_euler("z", label.heading),
+                    label.size,
+                    ObjectTag(label.label, WaymoObjectClass),
+                    tid=tid
+                )
+                arr.append(target)
+            outputs.append(arr)
+
+        return outputs[0] if self.nframes == 0 else outputs
 
     def calibration_data(self, idx):
-        fname, _ = self._locate_frame(idx)
+        if isinstance(idx, int):
+            seq_id, _ = self._locate_frame(idx)
+        else:
+            seq_id, _ = idx
+
         calib_params = TransformSet("vehicle")
-        ar = self._zip_cache.open(self.base_path / (fname + ".zip"))
+        ar = zipfile.ZipFile(self.base_path / (seq_id + ".zip"))
 
         # load camera calibration
         with ar.open("context/calib_cams.json") as fin:
@@ -210,12 +229,30 @@ class WaymoObjectLoader(DetectionDatasetBase):
         return calib_params
 
     def identity(self, idx):
-        fname, fidx = self._locate_frame(idx)
-        return self.phase, fname, fidx
+        if isinstance(idx, int):
+            seq_id, frame_id = self._locate_frame(idx)
+        else:
+            seq_id, frame_id = idx
+        return self.phase, seq_id, frame_id
 
     def timestamp(self, idx):
-        with self._locate_file(idx, "timestamp", "txt") as fin:
-            return int(fin.read().decode())
+        result = [int(d[0].decode()) / 1e6 for d in self._load_files(idx, ["timestamp"], "txt")]
+        return result[0] if self.nframes == 0 else result
+
+    def pose(self, idx, raw=False):
+        data = [np.load(BytesIO(d[0])) for d in self._load_files(idx, ["pose"], "npy")]
+        if raw: return data[0] if self.nframes == 0 else data
+
+        data = [EgoPose(rt[:3, 3], Rotation.from_matrix(rt[:3, :3])) for rt in data]
+        return data[0] if self.nframes == 0 else data
+
+    @property
+    def sequence_ids(self):
+        return list(self._metadata.keys())
+
+    @property
+    def sequence_sizes(self):
+        return {k: v.frame_count for k, v in self._metadata.items()}
 
 def dump_detection_output(detections: Target3DArray, context: str, timestamp: int):
     '''
@@ -328,3 +365,5 @@ def create_submission(exec_path, result_path, output_path, meta_path, model_name
 
     # clean
     shutil.rmtree(temp_path)
+
+WaymoTrackingLoader = WaymoObjectLoader # Alias for tracking dataset

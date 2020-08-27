@@ -7,6 +7,7 @@ import pcl
 from matplotlib import pyplot as plt
 from tkinter import TclError
 
+from d3d.abstraction import EgoPose
 from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
                                       dump_detection_output, KittiTrackingLoader)
 from d3d.dataset.waymo.loader import WaymoObjectLoader
@@ -166,6 +167,11 @@ class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin):
         visualizer.spinOnce(time=5000)
         visualizer.close()
 
+    def test_pose_and_timestamp(self):
+        idx = selection or random.randint(0, len(self.loader))
+        assert isinstance(self.loader.pose(idx), EgoPose)
+        assert isinstance(self.loader.timestamp(idx), float) 
+
 @unittest.skipIf(not nuscenes_location, "Path to nuscenes not set")
 class TestNuscenesObjectDataset(unittest.TestCase, CommonObjectDSMixin):
     def setUp(self):
@@ -227,9 +233,9 @@ class TestKittiTrackingDataset(unittest.TestCase):
         ax2.set_ylim([375, 0])
         
         fig.canvas.draw_idle()
-        try TclError:
+        try:
             plt.pause(5)
-        except: # skip error if manually closed
+        except TclError: # skip error if manually closed
             pass
 
     def test_ground_truth_visualizer_pcl(self):
