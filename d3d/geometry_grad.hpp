@@ -204,6 +204,7 @@ void area_grad(const AABox2<scalar_t> &a, const scalar_t &grad, AABox2<scalar_t>
 template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
 void area_grad(const Poly2<scalar_t, MaxPoints> &p, const scalar_t &grad, Poly2<scalar_t, MaxPoints> &grad_p)
 {
+    if (p.nvertices <= 2) return;
     grad_p.nvertices = p.nvertices;
 
     // deal with head and tail vertex
@@ -455,7 +456,7 @@ void diou_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const sca
     AABox2<scalar_t> am = merge(a1, a2);
     scalar_t maxd = dimension(am);
 
-    scalar_t grad_iou = -grad;
+    scalar_t grad_iou = grad;
     scalar_t grad_cd = -grad*2*cd/(maxd*maxd);
     scalar_t grad_maxd = grad*2*(cd*cd)/(maxd*maxd*maxd);
 
@@ -480,7 +481,7 @@ void diou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxP
     const Point2<scalar_t> &v2 = (dflag2 & 1) ? p1.vertices[dflag2 >> 1] : p2.vertices[dflag2 >> 1];
     scalar_t maxd = distance(v1, v2);
 
-    scalar_t grad_iou = -grad;
+    scalar_t grad_iou = grad;
     scalar_t grad_cd = -grad*2*cd/(maxd*maxd);
     scalar_t grad_maxd = grad*2*(cd*cd)/(maxd*maxd*maxd);
 

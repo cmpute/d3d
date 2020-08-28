@@ -13,7 +13,8 @@ from .box_impl import (
     rbox_2d_crop as rbox_2d_crop_cc,
     IouType, SupressionType)
 
-# TODO: add box2dz_iou, which also considering z value input
+# TODO: separate iou and iou loss (the latter one is the diagonal result of previous one)
+#       and it seems that we only need the backward part for the iou loss
 
 class Iou2D(torch.autograd.Function):
     '''
@@ -98,9 +99,32 @@ class DIou2DR(torch.autograd.Function):
         else:
             return diou2dr_backward(boxes1, boxes2, grad, nxd, flags)
 
+def seg1d_iou(seg1, seg2):
+    '''
+    Calculate IoU of 1D segments
+    The input should be n*2, where the last dim is [center, width]
+    '''
+    assert torch.all(seg1[:,1] > 0)
+    assert torch.all(seg2[:,1] > 0)
+
+    s1max = seg1[:,0] + seg1[:,1] / 2
+    s1min = seg1[:,0] - seg1[:,1] / 2
+    s2max = seg2[:,0] + seg2[:,1] / 2
+    s2min = seg2[:,0] - seg2[:,1] / 2
+    
+    imax = torch.where(s1max > s2max, s2max, s1max)
+    imin = torch.where(s1min < s2min, s2min, s1min)
+    umax = torch.where(s1max > s2max, s1max, s2max)
+    umin = torch.where(s1min < s2min, s1min, s2min)
+    
+    i = torch.clamp_min(imax - imin, 0)
+    u = torch.clamp_min(umax - umin, 1e-6)
+    return i / u
+
 def box2d_iou(boxes1, boxes2, method="box"):
     '''
-    :param method: 'box' - normal box, 'rbox' - rotated box
+    :param method: 'box' - normal box, 'rbox' - rotated box,
+        'grbox' - giou for rotated box, 'drbox' - diou for rotated box
     '''
     convert_numpy = False
     if isinstance(boxes1, np.ndarray):

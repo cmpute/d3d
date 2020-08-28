@@ -26,7 +26,7 @@
 #define _CudaSubAccessorT(t,n) torch::TensorAccessor<t,n,torch::RestrictPtrTraits,int32_t>
 
 #ifdef NDEBUG
-#define THREADS_COUNT 1024
+#define THREADS_COUNT 512 // XXX: 1024 is too large in some cases. try to increase this when the code is optimized
 #else
 #define THREADS_COUNT 16 // the code is less optimized, so the kernel could take larger memory
 #endif
