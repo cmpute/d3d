@@ -290,7 +290,7 @@ def dump_detection_output(detections: Target3DArray, context: str, timestamp: in
         waymo_target.score = target.tag.scores[0]
 
         waymo_target.context_name = context
-        waymo_target.frame_timestamp_micros = timestamp
+        waymo_target.frame_timestamp_micros = int(timestamp * 1e6)
         waymo_array.objects.append(waymo_target)
 
     return waymo_array
