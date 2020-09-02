@@ -288,7 +288,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
         {
             dist = distance(edge, p2.vertices[_mod_inc(i2, p2.nvertices)]);
             if (dist > last_dist1) return false;
-            if (dist < 0) break;
+            if (dist < _eps) break;
 
             i2 = _mod_inc(i2, p2.nvertices);
             last_dist1 = dist;
@@ -301,7 +301,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
         {
             dist = distance(edge, p1.vertices[_mod_dec(i1, p1.nvertices)]);
             if (dist > last_dist2) return false;
-            if (dist < 0) break;
+            if (dist < _eps) break;
 
             i1 = _mod_dec(i1, p1.nvertices);
             last_dist2 = dist;
