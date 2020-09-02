@@ -1,15 +1,25 @@
 import torch
 
-from .math_impl import i0e as i0e_cc, i0e_cuda, i1e as i1e_cc, i1e_cuda
+from .math_impl import (cuda_available,
+    i0e as i0e_cc, i1e as i1e_cc)
+
+if cuda_available:
+    from .math_impl import i0e_cuda, i1e_cuda
 
 class I0Exp(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):
-        return i0e_cuda(x) if x.is_cuda else i0e_cc(x)
+        if x.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
+            return i0e_cuda(x)
+        return i0e_cc(x)
 
     @staticmethod
     def backward(ctx, grad):
-        return i1e_cuda(grad) if grad.is_cuda else i1e_cc(grad)
+        if grad.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
+            return i1e_cuda(grad)
+        return i1e_cc(grad)
 
 def i0e(x):
     '''

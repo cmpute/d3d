@@ -1,17 +1,32 @@
 import numpy as np
 import torch
-from .box_impl import (
-    iou2d_forward, iou2d_forward_cuda,
-    iou2d_backward, iou2d_backward_cuda,
-    iou2dr_forward, iou2dr_forward_cuda,
-    iou2dr_backward, iou2dr_backward_cuda,
-    giou2dr_forward, giou2dr_forward_cuda,
-    giou2dr_backward, giou2dr_backward_cuda,
-    diou2dr_forward, diou2dr_forward_cuda,
-    diou2dr_backward, diou2dr_backward_cuda,
-    nms2d as nms2d_cc, nms2d_cuda,
+
+from .box_impl import (cuda_available,
+    iou2d_forward,
+    iou2d_backward,
+    iou2dr_forward,
+    iou2dr_backward,
+    giou2dr_forward,
+    giou2dr_backward,
+    diou2dr_forward,
+    diou2dr_backward,
+    nms2d as nms2d_cc,
     rbox_2d_crop as rbox_2d_crop_cc,
-    IouType, SupressionType)
+    IouType, SupressionType
+)
+
+if cuda_available:
+    from .box_impl import (
+        iou2d_forward_cuda,
+        iou2d_backward_cuda,
+        iou2dr_forward_cuda,
+        iou2dr_backward_cuda,
+        giou2dr_forward_cuda,
+        giou2dr_backward_cuda,
+        diou2dr_forward_cuda,
+        diou2dr_backward_cuda,
+        nms2d_cuda
+    )
 
 # TODO: separate iou and iou loss (the latter one is the diagonal result of previous one)
 #       and it seems that we only need the backward part for the iou loss
@@ -24,6 +39,7 @@ class Iou2D(torch.autograd.Function):
     def forward(ctx, boxes1, boxes2):
         ctx.save_for_backward(boxes1, boxes2)
         if boxes1.is_cuda and boxes2.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             return iou2d_forward_cuda(boxes1, boxes2)
         else:
             return iou2d_forward(boxes1, boxes2)
@@ -32,6 +48,7 @@ class Iou2D(torch.autograd.Function):
     def backward(ctx, grad):
         boxes1, boxes2 = ctx.saved_tensors
         if grad.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             return iou2d_backward_cuda(boxes1, boxes2, grad)
         else:
             return iou2d_backward(boxes1, boxes2, grad)
@@ -43,6 +60,7 @@ class Iou2DR(torch.autograd.Function):
     @staticmethod
     def forward(ctx, boxes1, boxes2):
         if boxes1.is_cuda and boxes2.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             ious, nx, xflags = iou2dr_forward_cuda(boxes1, boxes2)
         else:
             ious, nx, xflags = iou2dr_forward(boxes1, boxes2)
@@ -53,6 +71,7 @@ class Iou2DR(torch.autograd.Function):
     def backward(ctx, grad):
         boxes1, boxes2, nx, xflags = ctx.saved_tensors
         if grad.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             return iou2dr_backward_cuda(boxes1, boxes2, grad, nx, xflags)
         else:
             return iou2dr_backward(boxes1, boxes2, grad, nx, xflags)
@@ -64,6 +83,7 @@ class GIou2DR(torch.autograd.Function):
     @staticmethod
     def forward(ctx, boxes1, boxes2):
         if boxes1.is_cuda and boxes2.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             ious, nxm, flags = giou2dr_forward_cuda(boxes1, boxes2)
         else:
             ious, nxm, flags = giou2dr_forward(boxes1, boxes2)
@@ -74,6 +94,7 @@ class GIou2DR(torch.autograd.Function):
     def backward(ctx, grad):
         boxes1, boxes2, nxm, flags = ctx.saved_tensors
         if grad.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             return giou2dr_backward_cuda(boxes1, boxes2, grad, nxm, flags)
         else:
             return giou2dr_backward(boxes1, boxes2, grad, nxm, flags)
@@ -85,6 +106,7 @@ class DIou2DR(torch.autograd.Function):
     @staticmethod
     def forward(ctx, boxes1, boxes2):
         if boxes1.is_cuda and boxes2.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             ious, nxd, flags = diou2dr_forward_cuda(boxes1, boxes2)
         else:
             ious, nxd, flags = diou2dr_forward(boxes1, boxes2)
@@ -95,6 +117,7 @@ class DIou2DR(torch.autograd.Function):
     def backward(ctx, grad):
         boxes1, boxes2, nxd, flags = ctx.saved_tensors
         if grad.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             return diou2dr_backward_cuda(boxes1, boxes2, grad, nxd, flags)
         else:
             return diou2dr_backward(boxes1, boxes2, grad, nxd, flags)
@@ -181,6 +204,7 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
     supression_type = getattr(SupressionType, supression_method.upper())
 
     if boxes.is_cuda and scores.is_cuda:
+        assert cuda_available, "d3d was not built with CUDA support!"
         impl = nms2d_cuda
     else:
         impl = nms2d_cc

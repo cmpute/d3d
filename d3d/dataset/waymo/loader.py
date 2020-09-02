@@ -259,8 +259,13 @@ def dump_detection_output(detections: Target3DArray, context: str, timestamp: in
     :param detections: detection result
     :param ids: auxiliary information for output, each item contains context name and timestamp
     '''
-    from waymo_open_dataset import label_pb2
-    from waymo_open_dataset.protos import metrics_pb2
+    try:
+        from waymo_open_dataset import label_pb2
+        from waymo_open_dataset.protos import metrics_pb2
+    except:
+        _logger.error("Cannot find waymo_open_dataset, install the package at "
+            "https://github.com/waymo-research/waymo-open-dataset, output will be skipped now.")
+        return
 
     label_map = {
         WaymoObjectClass.Unknown: label_pb2.Label.TYPE_UNKNOWN,

@@ -71,9 +71,9 @@ T _max(const T &a, const T &b) { return a > b ? a : b; }
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
 T _min(const T &a, const T &b) { return a < b ? a : b; }
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _mod_inc(const T &i, const T &n) { return i < n - 1 ? (i + 1) : 0; }
+T _mod_inc(const T &i, const T &n) { return (i < n - 1) ? (i + 1) : 0; }
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
-T _mod_dec(const T &i, const T &n) { return i > 0 ? (i - 1) : (n - 1); }
+T _mod_dec(const T &i, const T &n) { return (i > 0) ? (i - 1) : (n - 1); }
 
 ///////////////////// implementations /////////////////////
 template <typename scalar_t> struct Point2 // Point in 2D surface
@@ -102,12 +102,13 @@ template <typename scalar_t> struct Line2 // Infinite but directional line
 
     CUDA_CALLABLE_MEMBER inline bool intersects(const Line2<scalar_t> &l) const
     {
-        return a*l.b - l.a*b == 0;
+        return a*l.b - l.a*b != 0;
     }
 };
 
 template <typename scalar_t> struct AABox2 // Axis-aligned 2D box for quick calculation
 {
+    // contract: max_x >= min_x, max_y >= min_y
     scalar_t min_x = 0, max_x = 0, min_y = 0, max_y = 0;
 
     CUDA_CALLABLE_MEMBER inline bool contains(const Point2<scalar_t>& p) const
@@ -128,8 +129,10 @@ template <typename scalar_t> struct AABox2 // Axis-aligned 2D box for quick calc
 
 template <typename scalar_t, uint8_t MaxPoints> struct Poly2 // Convex polygon with no holes
 {
-    Point2<scalar_t> vertices[MaxPoints]; // vertices in counter-clockwise order
-    uint8_t nvertices = 0; // actual number of vertices, max support 128 vertices right now
+    // contract: points are already sorted in counter-clockwise order
+    // contract: the points count <= 128
+    Point2<scalar_t> vertices[MaxPoints];
+    uint8_t nvertices = 0; // actual number of vertices
 
     template <uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER
     Poly2<scalar_t, MaxPoints>& operator=(const Poly2<scalar_t, MaxPoints2> &other)
@@ -227,6 +230,7 @@ scalar_t distance(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2)
 
 // Calculate signed distance from point p to the line
 // The distance is negative if the point is at left hand side wrt the direction of line (x1y1 -> x2y2)
+// This behavior is the opposite to the cross product
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t distance(const Line2<scalar_t> &l, const Point2<scalar_t> &p)
 {
@@ -299,7 +303,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
             if (dist > last_dist2) return false;
             if (dist < 0) break;
 
-            i1 = _mod_dec(i1, p2.nvertices);
+            i1 = _mod_dec(i1, p1.nvertices);
             last_dist2 = dist;
             finished = false;
         }
@@ -314,6 +318,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
 // Find the extreme vertex in a polygon
 // TopRight=true is finding point with biggest y
 // TopRight=false if finding point with smallest y
+// Right now the case where there's multiple points with extreme y is ignored since we assume non-singularity
 template <typename scalar_t, uint8_t MaxPoints, bool TopRight=true> CUDA_CALLABLE_MEMBER inline
 void _find_extreme(const Poly2<scalar_t, MaxPoints> &p, uint8_t &idx, scalar_t &ey)
 {
@@ -331,7 +336,7 @@ void _find_extreme(const Poly2<scalar_t, MaxPoints> &p, uint8_t &idx, scalar_t &
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t _slope_pp(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2)
 {
-    return atan2(p2.y - p1.y - _eps, p2.x - p1.x); // eps is used to let atan2(0, -1)=-pi
+    return atan2(p2.y - p1.y - _eps, p2.x - p1.x); // eps is used to let atan2(0, -1)=-pi instead of pi
 }
 
 // check if the bridge defined between two polygon (from p1 to p2) is valid.
@@ -424,11 +429,11 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         else break; // when both angles are not increasing, the loop is finished
     }
 
-    // if no intersection found but didn't return early, then containment is detected
+    // if no intersection found but didn't return early (no bridge), then containment is detected
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> result;
     if (nx == 0)
     {
-        if (area(p1) > area(p2))
+        if (area(p1) > area(p2)) // use area to determine which one is inside
         {
             result = p2;
             if (xflags != nullptr)
@@ -650,7 +655,6 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
                 edge_flag = true;
         }
     }
-    else edge_flag = y_max1 > y_max2;
 
     // start rotating
     while (true)
@@ -717,7 +721,6 @@ scalar_t max_distance(
     const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
     uint8_t &flag1, uint8_t &flag2
 ) {
-
     uint8_t pidx1, pidx2;
     scalar_t y_max1, y_max2;
     _find_extreme<scalar_t, MaxPoints1, true>(p1, pidx1, y_max1);
@@ -776,30 +779,7 @@ scalar_t max_distance(
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t max_distance(const AABox2<scalar_t> &b1, const AABox2<scalar_t> &b2)
-{
-    if (b1.contains(b2) || b2.contains(b1))
-    {
-        scalar_t dminmin = distance(
-            Point2<scalar_t>{.x = b1.min_x, .y = b1.min_y},
-            Point2<scalar_t>{.x = b2.min_x, .y = b2.min_y}
-        ), dminmax = distance(
-            Point2<scalar_t>{.x = b1.min_x, .y = b1.max_y},
-            Point2<scalar_t>{.x = b2.min_x, .y = b2.max_y}
-        ), dmaxmin = distance(
-            Point2<scalar_t>{.x = b1.max_x, .y = b1.min_y},
-            Point2<scalar_t>{.x = b2.max_x, .y = b2.min_y}
-        ), dmaxmax = distance(
-            Point2<scalar_t>{.x = b1.max_x, .y = b1.max_y},
-            Point2<scalar_t>{.x = b2.max_x, .y = b2.max_y}
-        );
-        return _max(_max(dminmin, dmaxmax), _max(dminmax, dmaxmin));
-    }
-    else
-    {
-        AABox2<scalar_t> m = merge(b1, b2);
-        return dimension(m);
-    }
-}
+{ return dimension(merge(b1, b2)); }
 
 ///////////// Custom functions /////////////
 

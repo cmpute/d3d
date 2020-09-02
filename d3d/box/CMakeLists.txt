@@ -1,9 +1,9 @@
-add_library(box_impl MODULE
-    impl.cpp utils.cpp
-    iou.cpp iou_cuda.cu
-    nms.cpp nms_cuda.cu
-)
+set(BOX_SRC impl.cpp utils.cpp iou.cpp nms.cpp)
+if (BUILD_WITH_CUDA)
+    set(BOX_SRC ${BOX_SRC} iou_cuda.cu nms_cuda.cu)
+endif()
 
+add_library(box_impl MODULE ${BOX_SRC})
 python_extension_module(box_impl)
 target_link_libraries(box_impl ${TORCH_LIBRARIES})
 target_include_directories(box_impl PRIVATE ${TORCH_INCLUDE_DIRS})

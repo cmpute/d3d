@@ -43,6 +43,8 @@ void aligned_scatter_backward(
     const torch::Tensor coord, const torch::Tensor grad, const AlignType atype,
     torch::Tensor image_grad
 );
+
+#ifdef BUILD_WITH_CUDA
 torch::Tensor aligned_scatter_forward_cuda(
     const torch::Tensor coord, const torch::Tensor image_feature, const AlignType atype
 );
@@ -50,3 +52,4 @@ void aligned_scatter_backward_cuda(
     const torch::Tensor coord, const torch::Tensor grad, const AlignType atype,
     torch::Tensor image_grad
 );
+#endif

@@ -1,8 +1,11 @@
 import torch
 
-from .point_impl import (AlignType, aligned_scatter_backward,
-                         aligned_scatter_backward_cuda,
-                         aligned_scatter_forward, aligned_scatter_forward_cuda)
+from .point_impl import (cuda_available,
+    AlignType, aligned_scatter_forward, aligned_scatter_backward)
+
+if cuda_available:
+    from .point_impl import (aligned_scatter_backward_cuda,
+        aligned_scatter_forward_cuda)
 
 
 class AlignedScatter(torch.autograd.Function):
@@ -15,6 +18,7 @@ class AlignedScatter(torch.autograd.Function):
         ctx.image_device = image_feature.device
 
         if image_feature.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             return aligned_scatter_forward_cuda(coords, image_feature, atype)
         else:
             return aligned_scatter_forward(coords, image_feature, atype)
@@ -25,6 +29,7 @@ class AlignedScatter(torch.autograd.Function):
 
         image_grad = torch.zeros(ctx.image_shape, dtype=ctx.image_dtype, device=ctx.image_device)
         if grad.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
             aligned_scatter_backward_cuda(coords, grad, ctx.atype, image_grad)
         else:
             aligned_scatter_backward(coords, grad, ctx.atype, image_grad)

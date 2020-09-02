@@ -10,6 +10,14 @@ try:
     import torch
     torch_root = os.path.dirname(torch.__file__)
     torch_ver = torch.__version__.replace('.', '')
+
+    if "USE_CUDA" in os.environ:
+        try:
+            use_cuda = int(os.environ["USE_CUDA"])
+        except ValueError:
+            use_cuda = os.environ["USE_CUDA"].lower() == "true"
+    else:
+        use_cuda = torch.cuda.is_available()
 except ImportError:
     torch_root = torch_ver = ''
     print("Pytorch not found, only building sdist in allowed.")
@@ -71,5 +79,5 @@ setup(
             'd3d_kitti_parse_result = d3d.dataset.kitti.object:parse_detection_output',
         ],
     },
-    cmake_args=[f'-DCMAKE_PREFIX_PATH={torch_root}'] if torch_root else []
+    cmake_args=[f'-DCMAKE_PREFIX_PATH={torch_root}', '-DBUILD_WITH_CUDA=%s' % ("ON" if use_cuda else "OFF")] if torch_root else []
 )

@@ -20,7 +20,7 @@ void _max_grad(const T &a, const T &b, const T &g, T &ga, T &gb)
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
 void _min_grad(const T &a, const T &b, const T &g, T &ga, T &gb)
 {
-    if (a < b) ga = g; else gb = g; 
+    if (a < b) ga += g; else gb += g; 
 }
 
 ///////////// gradient implementation of constructors //////////////
@@ -108,10 +108,10 @@ void distance_grad(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2, const
     Point2<scalar_t> &grad_p1, Point2<scalar_t> &grad_p2)
 {
     scalar_t dx = p1.x - p2.x, dy = p1.y - p2.y, d = sqrt(dx*dx + dy*dy);
-    grad_p1.x +=  grad * dx/d;
-    grad_p2.x += -grad * dx/d;
-    grad_p1.y +=  grad * dy/d;
-    grad_p2.y += -grad * dy/d;
+    grad_p1.x += grad * dx/d;
+    grad_p2.x -= grad * dx/d;
+    grad_p1.y += grad * dy/d;
+    grad_p2.y -= grad * dy/d;
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
@@ -155,16 +155,16 @@ void intersect_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t,
         }
         else // the intersection vertex is defined by both polygons
         {
-            Line2<scalar_t> edge_next, edge_prev, edge_next_grad, edge_grad_prev;
+            Line2<scalar_t> edge_next, edge_prev, grad_edge_next, grad_edge_prev;
             if (xflags[i] & 1) // next edge is from p1 and previous edge is from p2
             {
                 uint8_t epni = xflags[i] >> 1, epnj = _mod_inc(epni, p1.nvertices);
                 uint8_t eppj = xflags[iprev] >> 1, eppi = _mod_dec(eppj, p2.nvertices);
                 edge_next = line2_from_pp(p1.vertices[epni], p1.vertices[epnj]);
                 edge_prev = line2_from_pp(p2.vertices[eppi], p2.vertices[eppj]);
-                intersect_grad(edge_next, edge_prev, grad.vertices[i], edge_next_grad, edge_grad_prev);
-                line2_from_pp_grad(p1.vertices[epni], p1.vertices[epnj], edge_next_grad, grad_p1.vertices[epni], grad_p1.vertices[epnj]);
-                line2_from_pp_grad(p2.vertices[eppi], p2.vertices[eppj], edge_grad_prev, grad_p2.vertices[eppi], grad_p2.vertices[eppj]);
+                intersect_grad(edge_next, edge_prev, grad.vertices[i], grad_edge_next, grad_edge_prev);
+                line2_from_pp_grad(p1.vertices[epni], p1.vertices[epnj], grad_edge_next, grad_p1.vertices[epni], grad_p1.vertices[epnj]);
+                line2_from_pp_grad(p2.vertices[eppi], p2.vertices[eppj], grad_edge_prev, grad_p2.vertices[eppi], grad_p2.vertices[eppj]);
             }
             else // next edge is from p2 and previous edge is from p1
             {
@@ -172,9 +172,9 @@ void intersect_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t,
                 uint8_t eppj = xflags[iprev] >> 1, eppi = _mod_dec(eppj, p1.nvertices);
                 edge_next = line2_from_pp(p2.vertices[epni], p2.vertices[epnj]);
                 edge_prev = line2_from_pp(p1.vertices[eppi], p1.vertices[eppj]);
-                intersect_grad(edge_next, edge_prev, grad.vertices[i], edge_next_grad, edge_grad_prev);
-                line2_from_pp_grad(p2.vertices[epni], p2.vertices[epnj], edge_next_grad, grad_p2.vertices[epni], grad_p2.vertices[epnj]);
-                line2_from_pp_grad(p1.vertices[eppi], p1.vertices[eppj], edge_grad_prev, grad_p1.vertices[eppi], grad_p1.vertices[eppj]);
+                intersect_grad(edge_next, edge_prev, grad.vertices[i], grad_edge_next, grad_edge_prev);
+                line2_from_pp_grad(p2.vertices[epni], p2.vertices[epnj], grad_edge_next, grad_p2.vertices[epni], grad_p2.vertices[epnj]);
+                line2_from_pp_grad(p1.vertices[eppi], p1.vertices[eppj], grad_edge_prev, grad_p1.vertices[eppi], grad_p1.vertices[eppj]);
             }
         }
     }
@@ -195,10 +195,10 @@ void area_grad(const AABox2<scalar_t> &a, const scalar_t &grad, AABox2<scalar_t>
 {
     scalar_t lx = a.max_x - a.min_x;
     scalar_t ly = a.max_y - a.min_y;
-    grad_a.max_x +=  grad * ly;
-    grad_a.min_x += -grad * ly;
-    grad_a.max_y +=  grad * lx;
-    grad_a.min_y += -grad * lx;
+    grad_a.max_x += grad * ly;
+    grad_a.min_x -= grad * ly;
+    grad_a.max_y += grad * lx;
+    grad_a.min_y -= grad * lx;
 }
 
 template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
@@ -227,10 +227,10 @@ void dimension_grad(const AABox2<scalar_t> &a, const scalar_t &grad, AABox2<scal
 {
     // basically equivalent to distance_grad of (max_x, max_y) and (min_x, min_y)
     scalar_t dx = a.max_x - a.min_x, dy = a.max_y - a.min_y, d = sqrt(dx*dx + dy*dy);
-    grad_a.max_x +=  dx / d;
-    grad_a.min_x += -dx / d;
-    grad_a.max_y +=  dy / d;
-    grad_a.min_y += -dy / d;
+    grad_a.max_x += dx / d;
+    grad_a.min_x -= dx / d;
+    grad_a.max_y += dy / d;
+    grad_a.min_y -= dy / d;
 }
 
 template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
@@ -293,7 +293,7 @@ void iou_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const scal
     intersect_grad(a1, a2, grad_ai, grad_a1, grad_a2);
 }
 
-// construction intersection of two polygon from saved flags
+// construct intersection of two polygon from saved flags
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints1 + MaxPoints2> _construct_intersection(
     const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
@@ -334,6 +334,7 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> _construct_intersection(
     return pi;
 }
 
+// construct merged hull of two polygon from saved flags
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints1 + MaxPoints2> _construct_merged_hull(
     const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
@@ -392,9 +393,9 @@ void merge_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const AA
     AABox2<scalar_t> &grad_a1, AABox2<scalar_t> &grad_a2)
 {
     _min_grad(a1.min_x, a2.min_x, grad.min_x, grad_a1.min_x, grad_a2.min_x);
-    _min_grad(a1.max_x, a2.max_x, grad.max_x, grad_a1.max_x, grad_a2.max_x);
+    _max_grad(a1.max_x, a2.max_x, grad.max_x, grad_a1.max_x, grad_a2.max_x);
     _min_grad(a1.min_y, a2.min_y, grad.min_y, grad_a1.min_y, grad_a2.min_y);
-    _min_grad(a1.max_y, a2.max_y, grad.max_y, grad_a1.max_y, grad_a2.max_y);
+    _max_grad(a1.max_y, a2.max_y, grad.max_y, grad_a1.max_y, grad_a2.max_y);
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline

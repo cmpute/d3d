@@ -1,5 +1,4 @@
 # TODOs
-- [ ] Support CPU only build and disable method if some operators are failed to be imported
 - [ ] Fix Nuscenes and Waymo image projection error (add motion compensation?)
 - [ ] Fix Kitti detection output and add output for nuscenes
 - [ ] port in https://github.com/poodarchu/Det3D
