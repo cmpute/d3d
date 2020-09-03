@@ -83,6 +83,16 @@ class VanillaTracker:
             array.append(target)
         return array
 
+    def _assign_default_var(self, target: ObjectTarget3D):
+        # TODO: offer parameter setting for these default values
+        if not np.any(target.position_var):
+            target.position_var = np.eye(3)
+        if not np.any(target.dimension_var):
+            target.dimension_var = np.eye(3)
+        if not np.any(target.orientation_var):
+            target.orientation_var = 1
+        return target
+
     def update(self, detections: Target3DArray):
         '''
         Update the filters when receiving new detections
@@ -90,6 +100,7 @@ class VanillaTracker:
         if self._last_timestamp is None:
             # Initialize all trackers
             for target in detections:
+                self._assign_default_var(target)
                 self._initialize(target)
         else:
             # Match existing trackers
@@ -117,6 +128,7 @@ class VanillaTracker:
             lost_indices = set(self.tracked_ids)
             for idx, target in enumerate(detections):
                 idx_match = self._matcher.query_src_match(idx)
+                self._assign_default_var(target)
                 if idx_match < 0:
                     # Initialize this detector
                     self._initialize(target)

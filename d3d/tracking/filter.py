@@ -334,6 +334,9 @@ class Pose_3DOF_UKF_CTRA:
         d[2] = wrap_angle(d[2])
         return d
 
+    def check_valid(self, note):
+        assert not np.any(np.isnan(self._filter.x)), "nan occurs in states! (note: %s)" % note
+
     def __init__(self, init: ObjectTarget3D, Q=np.eye(6)):
         sigma_points = kf.JulierSigmaPoints(6)
         self._filter = kf.UnscentedKalmanFilter(dim_x=6, dim_z=3, dt=None,
@@ -354,9 +357,11 @@ class Pose_3DOF_UKF_CTRA:
         self._save_z_var = init.position_var[2, 2]
         self._save_pitch = pitch # TODO: use simple bayesian filter for pitch and roll values
         self._save_roll = roll
+        self.check_valid("initialize")
 
     def predict(self, dt):
         self._filter.predict(dt=dt)
+        self.check_valid("prediction")
 
     def update(self, detection: ObjectTarget3D):
         yaw, pitch, roll = detection.orientation.as_euler("ZYX")
@@ -372,6 +377,7 @@ class Pose_3DOF_UKF_CTRA:
         R[2, 2] = detection.orientation_var
         self._filter.update(obsv, R=R)
         self._filter.x[2] = wrap_angle(self._filter.x[2])
+        self.check_valid("update")
 
     @property
     def position(self):
