@@ -274,8 +274,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
 {
     uint8_t i1 = idx1, i2 = idx2;
     bool finished = false;
-    scalar_t dist, last_dist1, last_dist2;
-    last_dist1 = last_dist2 = std::numeric_limits<scalar_t>::infinity();
+    scalar_t dist, last_dist; // here we use cross product to represent distance
     Line2<scalar_t> edge;
 
     while (!finished)
@@ -283,28 +282,35 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
         finished = true;
 
         // traverse down along p2
-        edge = line2_from_pp(p1.vertices[_mod_dec(i1, p1.nvertices)], p1.vertices[i1]);
+        last_dist = -std::numeric_limits<scalar_t>::infinity();
+        const Point2<scalar_t> &p1a = p1.vertices[_mod_dec(i1, p1.nvertices)];
+        const Point2<scalar_t> &p1b = p1.vertices[i1];
         while (true)
         {
-            dist = distance(edge, p2.vertices[_mod_inc(i2, p2.nvertices)]);
-            if (dist > last_dist1) return false;
-            if (dist < _eps) break;
+            dist = _cross(p1a, p1b, p2.vertices[_mod_inc(i2, p2.nvertices)]);
+            //DEBUG printf("bridge down along _p2 (%d), cross: %.7f\n", _mod_inc(i2, p2.nvertices), dist);
+            if (dist < last_dist) return false;
+            if (dist > _eps) break;
 
             i2 = _mod_inc(i2, p2.nvertices);
-            last_dist1 = dist;
+            last_dist = dist;
             finished = false;
         }
 
         // traverse down along p1
+        last_dist = -std::numeric_limits<scalar_t>::infinity();
+        const Point2<scalar_t> &p2a = p2.vertices[i2];
+        const Point2<scalar_t> &p2b = p2.vertices[_mod_inc(i2, p2.nvertices)];
         edge = line2_from_pp(p2.vertices[i2], p2.vertices[_mod_inc(i2, p2.nvertices)]);
         while (true)
         {
-            dist = distance(edge, p1.vertices[_mod_dec(i1, p1.nvertices)]);
-            if (dist > last_dist2) return false;
-            if (dist < _eps) break;
+            dist = _cross(p2a, p2b, p1.vertices[_mod_dec(i1, p1.nvertices)]);
+            //DEBUG printf("bridge down along _p1 (%d), cross: %.7f\n", _mod_dec(i1, p1.nvertices), dist);
+            if (dist < last_dist) return false;
+            if (dist > _eps) break;
 
             i1 = _mod_dec(i1, p1.nvertices);
-            last_dist2 = dist;
+            last_dist = dist;
             finished = false;
         }
     }
@@ -349,6 +355,7 @@ bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scal
     scalar_t d2 = _cross(p1.vertices[idx1], p2.vertices[idx2], p1.vertices[_mod_inc(idx1, p1.nvertices)]);
     scalar_t d3 = _cross(p1.vertices[idx1], p2.vertices[idx2], p2.vertices[_mod_dec(idx2, p2.nvertices)]);
     scalar_t d4 = _cross(p1.vertices[idx1], p2.vertices[idx2], p2.vertices[_mod_inc(idx2, p2.nvertices)]);
+    //DEBUG printf("bridge test: %.7f\t %.7f\t %.7f\t %.7f\n", d1, d2, d3, d4);
 
     reverse = d1 < 0;
     return d1*d2 > 0 && d2*d3 > 0 && d3*d4 > 0;
@@ -389,6 +396,7 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         if (edge_angle < angle1 && (angle1 < angle2 || angle2 < edge_angle))
         { // choose p1 edge as part of co-podal pair
 
+            //DEBUG printf("(p1@%d, p2@%d) ", pidx1_next, pidx2);
             if (_check_valid_bridge(p1, p2, pidx1_next, pidx2, reverse)) // valid bridge
             {
                 bool has_intersection = reverse ?
@@ -399,6 +407,7 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
                 
                 // save intersection
                 if (nx == 0) edge_flag = !reverse;
+                //DEBUG printf("add intersection: pidx1=%d, pidx2=%d\n", x1indices[nx], x2indices[nx]);
                 nx++;
             }
 
@@ -409,6 +418,7 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         else if (edge_angle < angle2 && (angle2 < angle1 || angle1 < edge_angle))
         { // choose p2 edge as part of co-podal pair
 
+            //DEBUG printf("(p1@%d, p2@%d) ", pidx1, pidx2_next);
             if (_check_valid_bridge(p1, p2, pidx1, pidx2_next, reverse)) // valid bridge
             {
                 bool has_intersection = reverse ?
@@ -419,6 +429,7 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
                 
                 // save intersection
                 if (nx == 0) edge_flag = !reverse;
+                //DEBUG printf("add intersection: pidx1=%d, pidx2=%d\n", x1indices[nx], x2indices[nx]);
                 nx++;
             }
 
@@ -451,6 +462,8 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
     }
 
     // loop over the intersections to construct the result polygon
+    //DEBUG printf("%d\n", nx);
+
     x1indices[nx] = x1indices[0]; // add sentinels
     x2indices[nx] = x2indices[0];
     for (uint8_t i = 0; i < nx; i++)
@@ -461,28 +474,50 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         if (xflags != nullptr)
             xflags[result.nvertices] = edge_flag ? (x1indices[i] << 1 | 1) : (x2indices[i] << 1);
         result.vertices[result.nvertices++] = intersect(l1, l2);
+        assert(result.nvertices <= MaxPoints1 + MaxPoints2);
+        //DEBUG printf("%d, add cross points\n", result.nvertices);
 
         // add points between intersections
         if (edge_flag)
         {
+            //DEBUG printf("[Debug] x1: ");
+            //DEBUG for (uint8_t i = 0; i <= nx; i++)
+            //DEBUG     printf("%d ", x1indices[i]);
+            //DEBUG printf("\n[Debug] x2: ");
+            //DEBUG for (uint8_t i = 0; i <= nx; i++)
+            //DEBUG     printf("%d ", x2indices[i]);
+            //DEBUG printf("\n");
             uint8_t idx_next = x1indices[i+1] >= x1indices[i] ? x1indices[i+1] : (x1indices[i+1] + p1.nvertices);
+            //DEBUG printf("add p1 points from %d to %d\n", x1indices[i] + 1, idx_next);
             for (uint8_t j = x1indices[i] + 1; j <= idx_next; j++)
             {
                 uint8_t jmod = j < p1.nvertices ? j : (j - p1.nvertices);
                 if (xflags != nullptr)
                     xflags[result.nvertices] = (jmod << 1) | 1;
                 result.vertices[result.nvertices++] = p1.vertices[jmod];
+                assert(result.nvertices <= MaxPoints1 + MaxPoints2);
+                //DEBUG printf("%d, add p1 points\n", result.nvertices);
             }
         }
         else
         {
+            //DEBUG printf("[Debug] x1: ");
+            //DEBUG for (uint8_t i = 0; i <= nx; i++)
+            //DEBUG     printf("%d ", x1indices[i]);
+            //DEBUG printf("\n[Debug] x2: ");
+            //DEBUG for (uint8_t i = 0; i <= nx; i++)
+            //DEBUG     printf("%d ", x2indices[i]);
+            //DEBUG printf("\n");
             uint8_t idx_next = x2indices[i+1] >= x2indices[i] ? x2indices[i+1] : (x2indices[i+1] + p2.nvertices);
+            //DEBUG printf("add p2 points from %d to %d\n", x2indices[i] + 1, idx_next);
             for (uint8_t j = x2indices[i] + 1; j <= idx_next; j++)
             {
                 uint8_t jmod = j < p2.nvertices ? j : (j - p2.nvertices);
                 if (xflags != nullptr)
                     xflags[result.nvertices] = jmod << 1;
                 result.vertices[result.nvertices++] = p2.vertices[jmod];
+                assert(result.nvertices <= MaxPoints1 + MaxPoints2);
+                //DEBUG printf("%d, add p2 points\n", result.nvertices);
             }
         }
         edge_flag = !edge_flag;
