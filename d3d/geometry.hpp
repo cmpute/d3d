@@ -225,7 +225,7 @@ Poly2<scalar_t, 4> poly2_from_xywhr(const scalar_t& x, const scalar_t& y,
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t distance(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2)
 {
-    return sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+    return hypot(p1.x - p2.x, p1.y - p2.y);
 }
 
 // Calculate signed distance from point p to the line
@@ -234,7 +234,7 @@ scalar_t distance(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2)
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t distance(const Line2<scalar_t> &l, const Point2<scalar_t> &p)
 {
-    return (l.a*p.x + l.b*p.y + l.c) / sqrt(l.a*l.a + l.b*l.b);
+    return (l.a*p.x + l.b*p.y + l.c) / hypot(l.a, l.b);
 }
 
 // Calculate intersection point of two lines
@@ -549,8 +549,7 @@ scalar_t area(const Poly2<scalar_t, MaxPoints> &p)
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t dimension(const AABox2<scalar_t> &a)
 {
-    scalar_t dx = a.max_x - a.min_x, dy = a.max_y - a.min_y;
-    return sqrt(dx * dx + dy * dy);
+    return hypot(a.max_x - a.min_x, a.max_y - a.min_y);
 }
 
 // use Rotating Caliper to find the dimension
@@ -561,7 +560,7 @@ scalar_t dimension(const Poly2<scalar_t, MaxPoints> &p, uint8_t &flag1, uint8_t 
     if (p.nvertices == 2)
     {
         flag1 = 0; flag2 = 1;
-        return distance (p.vertices[0], p.vertices[1]);
+        return distance(p.vertices[0], p.vertices[1]);
     }
 
     uint8_t u = 0, unext = 1, v = 1, vnext = 2;

@@ -1,5 +1,7 @@
 ## AV datasets
 
+<!-- TODO: create a table for all the dataset, marking availability -->
+
 - [x] [KITTI](http://www.cvlibs.net/datasets/kitti/): Object only
 - [x] [Waymo](https://waymo.com/open/data/): Added
 - [x] [NuScenes](https://www.nuscenes.org/): Added
@@ -15,6 +17,7 @@
 - [ ] [MVSEC](https://daniilidis-group.github.io/mvsec/): To be added, no label
 - [ ] [BLVD](https://github.com/VCCIV/BLVD): To be added
 - [ ] [Pandaset](https://pandaset.org/): To be added
+- [ ] [CADC](http://cadcd.uwaterloo.ca/) ([github](https://github.com/mpitropov/cadc_devkit)): To be added
 
 ## Datasets of other type
 - [ ] [CityScape](https://www.cityscapes-dataset.com/):

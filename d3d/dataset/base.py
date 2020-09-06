@@ -227,6 +227,12 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         pass
 
+    def timestamp(self, idx: Union[int, Tuple[int, int]]) -> Union[float, List[float]]:
+        '''
+        Return the timestamp of frames specified the index
+        '''
+        pass
+
     @property
     def sequence_sizes(self) -> Dict[Any, int]:
         '''

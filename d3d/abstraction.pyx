@@ -392,7 +392,7 @@ cdef class Target3DArray(list):
             return self
         if not isinstance(tags, (list, tuple)):
             tags = [tags]
-        tags = (str(t) if not isinstance(t, str) else t for t in tags) # use tag name to filter
+        tags = [str(t) if not isinstance(t, str) else t for t in tags] # use tag name to filter
         tags = [t.lower() for t in tags]
         return Target3DArray([box for box in self if box.tag_name.lower() in tags], self.frame)
 

@@ -12,7 +12,10 @@ class VanillaTracker:
         matcher_factory=HungarianMatcher,
         matcher_distance_type="position",
         matcher_distance_threshold=1,
-        lost_time=1
+        lost_time=1,
+        default_position_var=np.eye(3),
+        default_dimension_var=np.eye(3),
+        default_orientation_var=1
     ):
         '''
         :param lost_time: determine the time length of a target being lost before it's removed from tracking
@@ -21,11 +24,18 @@ class VanillaTracker:
         :param matcher_factory: factory function to generate a new target matcher
         :param matcher_distance_type: distance type used to match targets
         :param matcher_distance_threshold: distance threshold used in target matcher
+        :param default_position_var: default positional covariance assigned to targets (if not provided)
+        :param default_dimension_var: default dimensional covariance assigned to targets (if not provided)
+        :param default_orientation_var: default orientational covariance assigned to targets (if not provided)
         '''
         self._tracked_poses = dict() # Object trackers
         self._tracked_features = dict() # Feature trackers (shape, class, etc)
         self._timer_track = dict() # Timer for frames tracked consecutively
         self._timer_lost = dict() # Timer for frames lost consecutively
+
+        self._default_position_var = default_position_var
+        self._default_dimension_var = default_dimension_var
+        self._default_orientation_var = default_orientation_var
 
         self._last_timestamp = None
         self._last_frameid = None
@@ -53,8 +63,8 @@ class VanillaTracker:
         '''
         self._tracked_poses[self._id_counter] = self._pose_factory(target)
         self._tracked_features[self._id_counter] = self._feature_factory(target)
-        self._timer_track[self._id_counter] = 0
-        self._timer_lost[self._id_counter] = 0
+        self._timer_track[self._id_counter] = 0.
+        self._timer_lost[self._id_counter] = 0.
         self._id_counter += 1
 
     @property
@@ -84,13 +94,12 @@ class VanillaTracker:
         return array
 
     def _assign_default_var(self, target: ObjectTarget3D):
-        # TODO: offer parameter setting for these default values
         if not np.any(target.position_var):
-            target.position_var = np.eye(3)
+            target.position_var = self._default_position_var
         if not np.any(target.dimension_var):
-            target.dimension_var = np.eye(3)
+            target.dimension_var = self._default_dimension_var
         if not np.any(target.orientation_var):
-            target.orientation_var = 1
+            target.orientation_var = self._default_orientation_var
         return target
 
     def update(self, detections: Target3DArray):
@@ -103,13 +112,14 @@ class VanillaTracker:
                 self._assign_default_var(target)
                 self._initialize(target)
         else:
-            # Match existing trackers
+            # do prediction on each tracklet
             dt = detections.timestamp - self._last_timestamp
             for tracker in self._tracked_poses.values():
                 tracker.predict(dt)
             for tracker in self._tracked_features.values():
                 tracker.predict(dt)
 
+            # Match existing trackers
             current_targets = self._current_objects_array()
             
             if isinstance(self._match_threshold, (float, int)):
@@ -136,7 +146,7 @@ class VanillaTracker:
                     tid = current_targets[idx_match].tid
                     self._tracked_poses[tid].update(target)
                     self._tracked_features[tid].update(target)
-                    self._timer_lost[tid] = 0
+                    self._timer_lost[tid] = 0.
                     self._timer_track[tid] += dt
 
                     if tid in lost_indices:
@@ -144,8 +154,8 @@ class VanillaTracker:
 
             for idx in lost_indices:
                 self._timer_lost[idx] += dt
-                self._timer_track[idx] = 0
-    
+                self._timer_track[idx] = 0.
+
         # Deal with out-dated or invalid trackers
         rm_list = []
         for tid, time in self._timer_lost.items():
