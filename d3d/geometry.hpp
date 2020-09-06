@@ -275,7 +275,6 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
     uint8_t i1 = idx1, i2 = idx2;
     bool finished = false;
     scalar_t dist, last_dist; // here we use cross product to represent distance
-    Line2<scalar_t> edge;
 
     while (!finished)
     { 
@@ -301,7 +300,6 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
         last_dist = -std::numeric_limits<scalar_t>::infinity();
         const Point2<scalar_t> &p2a = p2.vertices[i2];
         const Point2<scalar_t> &p2b = p2.vertices[_mod_inc(i2, p2.nvertices)];
-        edge = line2_from_pp(p2.vertices[i2], p2.vertices[_mod_inc(i2, p2.nvertices)]);
         while (true)
         {
             dist = _cross(p2a, p2b, p1.vertices[_mod_dec(i1, p1.nvertices)]);

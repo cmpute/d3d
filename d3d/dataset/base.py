@@ -227,9 +227,9 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         pass
 
-    def timestamp(self, idx: Union[int, Tuple[int, int]]) -> Union[float, List[float]]:
+    def timestamp(self, idx: Union[int, Tuple[int, int]]) -> Union[int, List[int]]:
         '''
-        Return the timestamp of frames specified the index
+        Return the timestamp of frames specified the index, represented by Unix timestamp in miliseconds
         '''
         pass
 

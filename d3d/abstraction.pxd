@@ -24,7 +24,7 @@ cdef class TrackingTarget3D(ObjectTarget3D):
 
 cdef class Target3DArray(list):
     cdef public str frame
-    cdef public float timestamp
+    cdef public unsigned long long timestamp # unix timestamp in miliseconds
 
     cdef ObjectTarget3D get(self, int index)
     cdef TrackingTarget3D tget(self, int index)

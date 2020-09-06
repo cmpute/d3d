@@ -106,6 +106,7 @@ class VanillaTracker:
         '''
         Update the filters when receiving new detections
         '''
+        current_ts = detections.timestamp / 1e6
         if self._last_timestamp is None:
             # Initialize all trackers
             for target in detections:
@@ -113,7 +114,7 @@ class VanillaTracker:
                 self._initialize(target)
         else:
             # do prediction on each tracklet
-            dt = detections.timestamp - self._last_timestamp
+            dt = current_ts - self._last_timestamp
             for tracker in self._tracked_poses.values():
                 tracker.predict(dt)
             for tracker in self._tracked_features.values():
@@ -168,7 +169,7 @@ class VanillaTracker:
             del self._timer_track[idx]
 
         # Update times
-        self._last_timestamp = detections.timestamp
+        self._last_timestamp = current_ts
         self._last_frameid = detections.frame
 
     def report(self) -> Target3DArray:

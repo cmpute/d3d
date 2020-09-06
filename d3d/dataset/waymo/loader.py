@@ -236,7 +236,7 @@ class WaymoObjectLoader(TrackingDatasetBase):
         return self.phase, seq_id, frame_id
 
     def timestamp(self, idx):
-        result = [int(d[0].decode()) / 1e6 for d in self._load_files(idx, ["timestamp"], "txt")]
+        result = [int(d[0].decode()) for d in self._load_files(idx, ["timestamp"], "txt")]
         return result[0] if self.nframes == 0 else result
 
     def pose(self, idx, raw=False):

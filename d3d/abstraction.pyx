@@ -309,7 +309,7 @@ cdef class TrackingTarget3D(ObjectTarget3D):
         return arr
 
 cdef class Target3DArray(list):
-    def __init__(self, iterable=[], frame=None, timestamp=float("nan")):
+    def __init__(self, iterable=[], frame=None, timestamp=0):
         '''
         :param frame: Frame that the box parameters used. None means base frame (in TransformSet)
         '''
