@@ -183,6 +183,7 @@ void nms2d_cuda_templated(
 
     dim3 blocks(nblocks, nblocks);
     dim3 threads(FLAG_WIDTH);
+    CUDA_CHECK_ERROR_SYNC("Error when initializing NMS!");
 
     // calculate iou
     nms2d_iou_kernel<scalar_t, Iou, Supression><<<blocks, threads>>>(
@@ -193,6 +194,7 @@ void nms2d_cuda_templated(
         iou_coeffs._cuda_accessor(2),
         iou_mask._cuda_accessor_t(bitvec_t, 2)
     );
+    CUDA_CHECK_ERROR_SYNC("Error when calculate iou matrix for NMS!");
 
     // do suppression
     if (Supression == SupressionType::HARD)
@@ -209,6 +211,7 @@ void nms2d_cuda_templated(
             score_threshold,
             suppressed._cuda_accessor_t(bool, 1)
         );
+    CUDA_CHECK_ERROR_SYNC("Error when applying NMS and collect results!");
 }
 
 Tensor nms2d_cuda(

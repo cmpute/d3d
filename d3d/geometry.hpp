@@ -289,7 +289,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
             dist = _cross(p1a, p1b, p2.vertices[_mod_inc(i2, p2.nvertices)]);
             //DEBUG printf("bridge down along _p2 (%d), cross: %.7f\n", _mod_inc(i2, p2.nvertices), dist);
             if (dist < last_dist) return false;
-            if (dist > _eps) break;
+            if (dist > -_eps) break;
 
             i2 = _mod_inc(i2, p2.nvertices);
             last_dist = dist;
@@ -305,7 +305,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
             dist = _cross(p2a, p2b, p1.vertices[_mod_dec(i1, p1.nvertices)]);
             //DEBUG printf("bridge down along _p1 (%d), cross: %.7f\n", _mod_dec(i1, p1.nvertices), dist);
             if (dist < last_dist) return false;
-            if (dist > _eps) break;
+            if (dist > -_eps) break;
 
             i1 = _mod_dec(i1, p1.nvertices);
             last_dist = dist;
