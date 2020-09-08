@@ -236,7 +236,7 @@ cdef class DetectionEvaluator:
                 angular_acc_cur = (gt_boxes.get(gt_idx).orientation.inv() * dt_boxes.get(dt_idx).orientation).magnitude()
                 angular_acc[score_idx][gt_idx] = angular_acc_cur / PI
 
-                if dt_boxes[dt_idx].orientation_var > 0:
+                if dt_boxes[dt_idx].orientation_var > 0: # FIXME: these operations slow down the evaluator
                     var_acc_cur = sps.multivariate_normal.logpdf(gt_boxes[gt_idx].position,
                         dt_boxes[dt_idx].position, cov=dt_boxes[dt_idx].position_var)
                     var_acc_cur += sps.multivariate_normal.logpdf(gt_boxes[gt_idx].dimension,
@@ -424,7 +424,7 @@ cdef class TrackingEvalStats(DetectionEvalStats):
     # gt_tracked: set of tracked ground-truth targets (represented by their IDs)
     # gt_all: set of all ground-truth targets (represented by their IDs)
     cdef public unordered_map[int, unordered_set[ull]] gt_all
-    cdef public unordered_map[int, vector[unordered_set[ull]]] gt_tracked
+    cdef public unordered_map[int, vector[unordered_set[ull]]] gt_tracked, dt_all
 
 @cython.auto_pickle(True)
 cdef class TrackingEvaluator(DetectionEvaluator):
@@ -433,7 +433,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
     # statics member declarations
     cdef unordered_map[int, vector[int]] _idsw, _frag
     cdef unordered_map[int, unordered_map[ull, int]] _ngt_frames
-    cdef unordered_map[int, vector[unordered_map[ull, int]]] _ngt_tracked_frames
+    cdef unordered_map[int, vector[unordered_map[ull, int]]] _ngt_tracked_frames, _ndt_frames
 
     # temporary variables for tracking
     cdef vector[unordered_map[ull, ull]] _last_gt_assignment, _last_dt_assignment
@@ -464,6 +464,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
             self._ngt_frames[k] = unordered_map[ull, int]()
             self._ngt_tracked_frames[k] = vector[unordered_map[ull, int]](self._pr_nsamples)
+            self._ndt_frames[k] = vector[unordered_map[ull, int]](self._pr_nsamples)
 
     cpdef TrackingEvalStats get_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes, TransformSet calib=None):
         # convert boxes to the same frame
@@ -496,6 +497,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             summary.fragments[k] = vector[int](self._pr_nsamples, 0)
             summary.gt_all[k] = unordered_set[ull]()
             summary.gt_tracked[k] = vector[unordered_set[ull]](self._pr_nsamples)
+            summary.dt_all[k] = vector[unordered_set[ull]](self._pr_nsamples)
 
             iou_acc.resize(self._pr_nsamples)
             angular_acc.resize(self._pr_nsamples)
@@ -531,10 +533,11 @@ cdef class TrackingEvaluator(DetectionEvaluator):
                 if dt_boxes.get(dt_idx).tag.scores[0] < score_thres:
                     continue  # skip objects with lower scores
 
-                summary.ndt[dt_tag][score_idx] += 1
                 dt_tid = dt_boxes.get(dt_idx).tid
                 assert dt_tid > 0, "Tracking id should be greater than 0 for a valid object!"
                 dt_tid_set.insert(dt_tid)
+                summary.ndt[dt_tag][score_idx] += 1
+                summary.dt_all[dt_tag][score_idx].insert(dt_tid)
 
                 if self._last_dt_assignment[score_idx].find(dt_tid) == self._last_dt_assignment[score_idx].end():
                     dt_indices.push_back(dt_idx)  # match objects without previous assignment
@@ -677,6 +680,12 @@ cdef class TrackingEvaluator(DetectionEvaluator):
                     else:
                         self._ngt_tracked_frames[k][i][gt_tid] += 1
 
+                for dt_tid in tstats.dt_all[k][i]:
+                    if self._ndt_frames[k][i].find(dt_tid) == self._ndt_frames[k][i].end():
+                        self._ndt_frames[k][i][dt_tid] = 1
+                    else:
+                        self._ndt_frames[k][i][dt_tid] += 1
+
     cpdef void reset(self):
         DetectionEvaluator.reset(self)
 
@@ -706,7 +715,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
         '''Return total ground-truth trajectory count. gt() will return total bounding box count'''
         return {self._class_type(diter.first): diter.second.size() for diter in self._ngt_frames}
 
-    def _calc_frame_ratio(self, float score, float frame_ratio_threshold, bint high_pass, bint return_all):
+    cdef dict _calc_frame_ratio(self, float score, float frame_ratio_threshold, bint high_pass, bint return_all):
         # helper function for tracked_ratio and lost_ratio
         cdef int score_idx
         cdef float frame_ratio
@@ -751,3 +760,48 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             A trajectory with lower tracked frames ratio will be counted as mostly tracked
         '''
         return self._calc_frame_ratio(score, frame_ratio_threshold, high_pass=False, return_all=return_all)
+
+    def summary(self, float score_thres = 0.8, tracked_ratio_thres = 0.8, lost_ratio_thres = 0.2):
+        '''
+        Print default summary (into returned string)
+        '''
+        cdef int score_idx = self._get_score_idx(score_thres)
+
+        cdef list lines = [''] # prepend an empty line
+        precision, recall = self.precision(score_thres), self.recall(score_thres)
+        fscore, ap = self.fscore(return_all=True), self.ap()
+
+        mlt = self.tracked_ratio(score_thres, tracked_ratio_thres)
+        mll = self.lost_ratio(score_thres, lost_ratio_thres)
+
+        lines.append("========== Benchmark Summary ==========")
+        for k in self._classes:
+            typed_k = self._class_type(k)
+            lines.append("Results for %s:" % typed_k.name)
+            lines.append("\tTotal processed targets:\t%d gt boxes, %d dt boxes" % (
+                self._total_gt[k], max(self._total_dt[k])
+            ))
+            lines.append("\tTotal processed trajectories:\t%d gt tracklets, %d dt tracklets" % (
+                self.gt_traj_count()[typed_k], max(len(self._ndt_frames[k][i]) for i in range(self._pr_nsamples))
+            ))
+            lines.append("\tPrecision (score > %.2f):\t%.3f" % (score_thres, precision[typed_k]))
+            lines.append("\tRecall (score > %.2f):\t\t%.3f" % (score_thres, recall[typed_k]))
+            lines.append("\tMax F1:\t\t\t\t%.3f" % max(fscore[typed_k]))
+            lines.append("\tAP:\t\t\t\t%.3f" % ap[typed_k])
+            lines.append("")
+            lines.append("\tID switches (score > %.2f):\t\t%d" % (score_thres, self._idsw[k][score_idx]))
+            lines.append("\tFragments (score > %.2f):\t\t%d" % (score_thres, self._frag[k][score_idx]))
+            lines.append("\tMostly tracked (score > %.2f, ratio > %.2f):\t%.3f" % (
+                score_thres, tracked_ratio_thres, mlt[typed_k]))
+            lines.append("\tMostly lost (score > %.2f, ratio < %.2f):\t%.3f" % (
+                score_thres, lost_ratio_thres, mll[typed_k]))
+            lines.append("")
+            lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, self._acc_iou[k][score_idx]))
+            lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._acc_angular[k][score_idx]))
+            lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._acc_dist[k][score_idx]))
+            lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._acc_box[k][score_idx]))
+            if not isinf(self._acc_var[k][score_idx]):
+                lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._acc_var[k][score_idx]))
+        lines.append("========== Summary End ==========")
+
+        return '\n'.join(lines)
