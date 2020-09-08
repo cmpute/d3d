@@ -12,7 +12,7 @@ from libcpp.vector cimport vector
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
 
-from d3d.abstraction cimport Target3DArray
+from d3d.abstraction cimport Target3DArray, TransformSet
 from d3d.tracking.matcher cimport ScoreMatcher, DistanceTypes
 from d3d.box import box2d_iou
 from d3d.math cimport wmean, diffnorm3
@@ -157,8 +157,12 @@ cdef class DetectionEvaluator:
                     aggregated[k][score_idx] = NAN
         return aggregated
 
-    cpdef DetectionEvalStats get_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes):
-        assert gt_boxes.frame == dt_boxes.frame        
+    cpdef DetectionEvalStats get_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes, TransformSet calib=None):
+        # convert boxes to the same frame
+        if gt_boxes.frame != dt_boxes.frame:
+            if calib is None:
+                raise ValueError("Calibration is not provided when dt_boxes and gt_boxes are in different frames!")
+            gt_boxes = calib.transform_objects(gt_boxes, frame_to=dt_boxes.frame)
 
         # forward definitions
         cdef int gt_idx, gt_tag, dt_idx, dt_tag
@@ -189,7 +193,7 @@ cdef class DetectionEvaluator:
         cdef vector[int] gt_indices, dt_indices
         for gt_idx in range(len(gt_boxes)):
             gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
-            if self._max_distance.find(gt_tag) == self._max_distance.end():
+            if self._classes.find(gt_tag) == self._classes.end():
                 continue  # skip objects within ignored category
 
             summary.ngt[gt_tag] += 1
@@ -203,7 +207,7 @@ cdef class DetectionEvaluator:
             dt_indices.clear()
             for dt_idx in range(len(dt_boxes)):
                 dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
-                if self._max_distance.find(dt_tag) == self._max_distance.end():
+                if self._classes.find(dt_tag) == self._classes.end():
                     continue  # skip objects within ignored category
                 if dt_boxes.get(dt_idx).tag.scores[0] < score_thres:
                     continue  # skip objects with lower scores
@@ -461,8 +465,12 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             self._ngt_frames[k] = unordered_map[ull, int]()
             self._ngt_tracked_frames[k] = vector[unordered_map[ull, int]](self._pr_nsamples)
 
-    cpdef TrackingEvalStats get_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes):
-        assert gt_boxes.frame == dt_boxes.frame        
+    cpdef TrackingEvalStats get_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes, TransformSet calib=None):
+        # convert boxes to the same frame
+        if gt_boxes.frame != dt_boxes.frame:
+            if calib is None:
+                raise ValueError("Calibration is not provided when dt_boxes and gt_boxes are in different frames!")
+            gt_boxes = calib.transform_objects(gt_boxes, frame_to=dt_boxes.frame)      
 
         # forward definitions
         cdef int gt_idx, gt_tag, dt_idx, dt_tag
@@ -500,7 +508,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
         cdef vector[int] gt_indices, dt_indices
         for gt_idx in range(len(gt_boxes)):
             gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
-            if self._max_distance.find(gt_tag) == self._max_distance.end():
+            if self._classes.find(gt_tag) == self._classes.end():
                 continue  # skip objects within ignored category
 
             gt_tid = gt_boxes.get(gt_idx).tid
@@ -518,7 +526,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             dt_tid_set.clear()
             for dt_idx in range(len(dt_boxes)):
                 dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
-                if self._max_distance.find(dt_tag) == self._max_distance.end():
+                if self._classes.find(dt_tag) == self._classes.end():
                     continue  # skip objects within ignored category
                 if dt_boxes.get(dt_idx).tag.scores[0] < score_thres:
                     continue  # skip objects with lower scores
@@ -557,7 +565,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
                     dt_tid = dt_boxes.get(dt_idx).tid
                     if gt_assignment_idx.find(gt_tid) != gt_assignment_idx.end():
                         # overwrite previous matching
-                        dt_assignment_idx.erase(gt_assignment_idx[gt_tid])
+                        dt_assignment_idx.erase(dt_boxes.get(gt_assignment_idx[gt_tid]).tid)
                         dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
                         summary.fp[dt_tag][score_idx] += 1
                     gt_assignment_idx[gt_tid] = dt_idx

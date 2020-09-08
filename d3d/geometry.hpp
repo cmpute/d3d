@@ -355,8 +355,54 @@ bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scal
     scalar_t d4 = _cross(p1.vertices[idx1], p2.vertices[idx2], p2.vertices[_mod_inc(idx2, p2.nvertices)]);
     //DEBUG printf("bridge test: %.7f\t %.7f\t %.7f\t %.7f\n", d1, d2, d3, d4);
 
-    reverse = d1 < 0;
-    return d1*d2 > 0 && d2*d3 > 0 && d3*d4 > 0;
+    bool found = false;
+    if (abs(d1) > _eps)
+    {
+        found = true;
+        reverse = d1 < 0;
+    }
+    if (abs(d2) > _eps)
+    {
+        if (found)
+        {
+            if (reverse != (d2 < 0))
+            return false;
+        }
+        else
+        {
+            found = true;
+            reverse = d2 < 0;
+        }
+    }
+    if (abs(d3) > _eps)
+    {
+        if (found)
+        {
+            if (reverse != (d3 < 0))
+            return false;
+        }
+        else
+        {
+            found = true;
+            reverse = d3 < 0;
+        }
+    }
+    if (abs(d4) > _eps)
+    {
+        if (found)
+        {
+            if (reverse != (d4 < 0))
+            return false;
+        }
+        else
+        {
+            found = true;
+            reverse = d4 < 0;
+        }
+    }
+
+    if (!found) assert(false); // all adjacent points are on the same line!
+    return true;
 }
 
 // Rotating Caliper implementation of intersecting

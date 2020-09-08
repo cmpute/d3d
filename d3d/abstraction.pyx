@@ -424,13 +424,13 @@ CameraMetadata = namedtuple('CameraMetadata', [
 LidarMetadata = namedtuple('LidarMetadata', [])
 RadarMetadata = namedtuple('RadarMetadata', [])
 PinMetadata = namedtuple('PinMetadata', ['lon', 'lat']) # represent a ground-fixed coordinate
-class TransformSet:
+cdef class TransformSet:
     '''
     This object load a collection of intrinsic and extrinsic parameters
     All extrinsic parameters are stored as transform from base frame to its frame
     In this class, we require all frames to use FLU coordinate including camera frame
     '''
-    def __init__(self, base_frame):
+    def __init__(self, str base_frame):
         '''
         :param base_frame: name of base frame used by extrinsics
         '''
@@ -439,13 +439,13 @@ class TransformSet:
         self.intrinsics_meta = {} # sensor metadata
         self.extrinsics = {} # transforms from base frame
         
-    def _is_base(self, frame):
+    cdef bint _is_base(self, str frame):
         return frame is None or frame == self.base_frame
 
-    def _is_same(self, frame1, frame2):
+    cdef bint _is_same(self, str frame1, str frame2):
         return (frame1 == frame2) or (self._is_base(frame1) and self._is_base(frame2))
 
-    def _assert_exist(self, frame_id, extrinsic=False):
+    cdef void _assert_exist(self, str frame_id, bint extrinsic=False):
         if self._is_base(frame_id):
             return
 
@@ -457,7 +457,7 @@ class TransformSet:
             raise ValueError("Frame {0} not found in extrinsic parameters, "
                 "please add extrinsic for {0} first!".format(frame_id))
 
-    def set_intrinsic_general(self, frame_id, metadata=None):
+    cpdef void set_intrinsic_general(self, str frame_id, object metadata=None):
         '''
         Set intrinsic for a general sensor.
         This is used for marking existence of a frame
@@ -465,7 +465,7 @@ class TransformSet:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = metadata
 
-    def set_intrinsic_camera(self, frame_id, transform, size, rotate=True, distort_coeffs=[], intri_matrix=None):
+    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, rotate=True, distort_coeffs=[], intri_matrix=None):
         '''
         Set camera intrinsics
         :param size: (width, height)
@@ -482,15 +482,15 @@ class TransformSet:
         self.intrinsics[frame_id] = transform
         self.intrinsics_meta[frame_id] = CameraMetadata(width, height, distort_coeffs, intri_matrix)
 
-    def set_intrinsic_lidar(self, frame_id):
+    cpdef void set_intrinsic_lidar(self, str frame_id):
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = LidarMetadata()
 
-    def set_intrinsic_radar(self, frame_id):
+    cpdef void set_intrinsic_radar(self, str frame_id):
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = RadarMetadata()
 
-    def set_intrinsic_pinhole(self, frame_id, size, cx, cy, fx, fy, s=0, distort_coeffs=[]):
+    cpdef void set_intrinsic_pinhole(self, str frame_id, size, cx, cy, fx, fy, s=0, distort_coeffs=[]):
         '''
         Set camera intrinsics with pinhole model parameters
         :param s: skew coefficient
@@ -499,11 +499,11 @@ class TransformSet:
         self.set_intrinsic_camera(frame_id, P, size,
             rotate=True, distort_coeffs=distort_coeffs, intri_matrix=P)
 
-    def set_intrinsic_map_pin(self, frame_id, lon=float('nan'), lat=float('nan')):
+    cpdef void set_intrinsic_map_pin(self, str frame_id, lon=float('nan'), lat=float('nan')):
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = PinMetadata(lon, lat)
 
-    def set_extrinsic(self, transform, frame_to=None, frame_from=None):
+    cpdef void set_extrinsic(self, transform, str frame_to=None, str frame_from=None):
         '''
         All extrinsics are stored as transform convert point from `frame_from` to `frame_to`
         :param frame_from: If set to None, then the source frame is base frame
@@ -544,12 +544,12 @@ class TransformSet:
             raise ValueError("All frames are not present in extrinsics! "
                 "Please add one of them first!")
 
-    def get_extrinsic(self, frame_to=None, frame_from=None):
+    cpdef np.ndarray get_extrinsic(self, str frame_to=None, str frame_from=None):
         '''
         :param frame_from: If set to None, then the source frame is base frame
         '''
         if self._is_same(frame_to, frame_from):
-            return 1 # identity
+            return np.eye(4)
 
         if not self._is_base(frame_from):
             self._assert_exist(frame_from, extrinsic=True)
@@ -563,7 +563,7 @@ class TransformSet:
                 self._assert_exist(frame_to, extrinsic=True)
                 return self.extrinsics[frame_to]
             else:
-                return 1 # identity
+                return np.eye(4)
 
     @property
     def frames(self):
@@ -574,7 +574,7 @@ class TransformSet:
     def __repr__(self):
         return "<TransformSet with frames: *%s>" % ", ".join([self.base_frame] + self.frames)
 
-    def transform_objects(self, objects: Target3DArray, frame_to=None):
+    cpdef Target3DArray transform_objects(self, Target3DArray objects, str frame_to=None):
         '''
         Change the representing frame of a object array
         '''
@@ -609,7 +609,7 @@ class TransformSet:
                 raise ValueError("Unsupported target type!")
         return new_objs
 
-    def project_points_to_camera(self, points, frame_to, frame_from=None, remove_outlier=True, return_dmask=False):
+    cpdef np.ndarray project_points_to_camera(self, points, str frame_to, str frame_from=None, remove_outlier=True, return_dmask=False):
         '''
         :param remove_outlier: If set to True, the mask will be applied, i.e. only points
             that fall into image view will be returned
