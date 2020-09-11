@@ -7,14 +7,14 @@ import numpy as np
 eps = 1e-3 # used to avoid unstability
 
 def test_create_line():
-    p1, p2 = Point2d(1, 2), Point2d(3, 4)
+    p1, p2 = Point2(1, 2), Point2(3, 4)
     l = line2_from_pp(p1, p2)
 
-    p1, p2 = Point2d(1, 2), Point2d(1, 1)
+    p1, p2 = Point2(1, 2), Point2(1, 1)
     l = line2_from_pp(p1, p2)
     assert l.c == 1
 
-    p1, p2 = Point2d(1, 2), Point2d(2, 2)
+    p1, p2 = Point2(1, 2), Point2(2, 2)
     l = line2_from_pp(p1, p2)
     assert l.c == 2
 
@@ -30,7 +30,7 @@ def test_intersect():
     assert np.isclose(pi.x, 0.5) and np.isclose(pi.y, 0.5)
 
     # bounding box intersection
-    b1, b2 = AABox2d(1, 3, 1, 3), AABox2d(2, 4, 2, 4)
+    b1, b2 = AABox2(1, 3, 1, 3), AABox2(2, 4, 2, 4)
     bi = intersect(b1, b2)
     assert bi.min_x == 2 and bi.min_y == 2
     assert bi.max_x == 3 and bi.max_y == 3
@@ -68,7 +68,7 @@ def test_merge():
     assert area(bi) > 24 - area(intersect(b1, b2))
 
     # test aabox merge
-    b1, b2 = AABox2d(1, 3, 1, 3), AABox2d(2, 4, 2, 4)
+    b1, b2 = AABox2(1, 3, 1, 3), AABox2(2, 4, 2, 4)
     bi = merge(b1, b2)
     assert bi.min_x == 1 and bi.min_y == 1
     assert bi.max_x == 4 and bi.max_y == 4
@@ -128,11 +128,11 @@ def test_grads():
     ai = area(bi)
     grad = 4 - ai
 
-    gi = Poly2d8()
+    gi = Poly28()
     area_grad(bi, grad, gi)
     assert gi.nvertices == 8
 
-    g1, g2 = Box2d(), Box2d()
+    g1, g2 = Box2(), Box2()
     intersect_grad(b1, b2, gi, flags, g1, g2)
     assert g1.nvertices == 4
     assert g2.nvertices == 4

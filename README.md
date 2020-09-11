@@ -62,3 +62,6 @@ Prebuilt wheels will be distributed in the future, through either release page o
 - Major version will be increased when big feature is added
 - Minor version will be increased when API compatibility is broken
 - Patch version will be increased when new feature is completed.
+
+# Tips
+- Current polygon intersecting algorithm is not very stable, so try to convert the input to double precision if you met error with the iou functions
