@@ -42,6 +42,12 @@ cdef class DetectionEvalStats:
     cdef public unordered_map[int, int] ngt
     cdef public unordered_map[int, vector[int]] tp, fp, fn, ndt
 
+    def as_object(self):
+        return dict(ngt=self.ngt, tp=self.tp, fp=self.fp, fn=self.fn, ndt=self.ndt,
+            acc_iou=self.acc_iou, acc_angular=self.acc_angular, acc_dist=self.acc_dist,
+            acc_box=self.acc_box, acc_var=self.acc_var
+        )
+
 @cython.auto_pickle(True)
 cdef class DetectionEvaluator:
     '''Benchmark for object detection'''
@@ -426,6 +432,16 @@ cdef class TrackingEvalStats(DetectionEvalStats):
     cdef public unordered_map[int, unordered_set[ull]] gt_all
     cdef public unordered_map[int, vector[unordered_set[ull]]] gt_tracked, dt_all
 
+    def as_object(self):
+        ret = dict(ngt=self.ngt, tp=self.tp, fp=self.fp, fn=self.fn, ndt=self.ndt,
+            acc_iou=self.acc_iou, acc_angular=self.acc_angular, acc_dist=self.acc_dist,
+            acc_box=self.acc_box, acc_var=self.acc_var,
+            id_switches=self.id_switches, fragments=self.fragments,
+            gt_all={i.first: list(i.second) for i in self.gt_all},
+            gt_tracked={i.first: [list(s) for s in i.second] for i in self.gt_tracked},
+            dt_all={i.first: [list(s) for s in i.second] for i in self.dt_all}
+        )
+
 @cython.auto_pickle(True)
 cdef class TrackingEvaluator(DetectionEvaluator):
     '''Benchmark for object tracking'''
@@ -761,6 +777,16 @@ cdef class TrackingEvaluator(DetectionEvaluator):
         '''
         return self._calc_frame_ratio(score, frame_ratio_threshold, high_pass=False, return_all=return_all)
 
+    def mota(self, float score=NAN):
+        '''Return the MOTA metric defined by the CLEAR MOT metrics. For MOTP equivalents, see acc_* properties'''
+        # TODO: use idswitch is incorrect, we need to find best match among all hypothese
+        cdef int score_idx = self._get_score_idx(score)
+        for k in self._classes:
+            print(self._fp[k][score_idx], self._fn[k][score_idx], self._idsw[k][score_idx], self._total_dt[k][score_idx])
+        ret = {self._class_type(k): 1 - float(self._fp[k][score_idx] + self._fn[k][score_idx] + self._idsw[k][score_idx])
+            / self._total_gt[k] for k in self._classes}
+        return ret
+
     def summary(self, float score_thres = 0.8, tracked_ratio_thres = 0.8, lost_ratio_thres = 0.2):
         '''
         Print default summary (into returned string)
@@ -773,6 +799,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
         mlt = self.tracked_ratio(score_thres, tracked_ratio_thres)
         mll = self.lost_ratio(score_thres, lost_ratio_thres)
+        mota = self.mota(score_thres)
 
         lines.append("========== Benchmark Summary ==========")
         for k in self._classes:
@@ -791,6 +818,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             lines.append("")
             lines.append("\tID switches (score > %.2f):\t\t%d" % (score_thres, self._idsw[k][score_idx]))
             lines.append("\tFragments (score > %.2f):\t\t%d" % (score_thres, self._frag[k][score_idx]))
+            lines.append("\tMOTA (score > %.2f):\t\t%d" % (score_thres, mota[typed_k]))
             lines.append("\tMostly tracked (score > %.2f, ratio > %.2f):\t%.3f" % (
                 score_thres, tracked_ratio_thres, mlt[typed_k]))
             lines.append("\tMostly lost (score > %.2f, ratio < %.2f):\t%.3f" % (

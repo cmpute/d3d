@@ -609,7 +609,7 @@ cdef class TransformSet:
                 raise ValueError("Unsupported target type!")
         return new_objs
 
-    cpdef np.ndarray project_points_to_camera(self, points, str frame_to, str frame_from=None, remove_outlier=True, return_dmask=False):
+    cpdef tuple project_points_to_camera(self, points, str frame_to, str frame_from=None, remove_outlier=True, return_dmask=False):
         '''
         :param remove_outlier: If set to True, the mask will be applied, i.e. only points
             that fall into image view will be returned

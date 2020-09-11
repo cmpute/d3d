@@ -50,4 +50,4 @@ cdef class TransformSet:
     cpdef np.ndarray get_extrinsic(self, str frame_to=*, str frame_from=*)
 
     cpdef Target3DArray transform_objects(self, Target3DArray objects, str frame_to=*)
-    cpdef np.ndarray project_points_to_camera(self, points, str frame_to, str frame_from=*, remove_outlier=*, return_dmask=*)
+    cpdef tuple project_points_to_camera(self, points, str frame_to, str frame_from=*, remove_outlier=*, return_dmask=*)
