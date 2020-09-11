@@ -144,10 +144,11 @@ def seg1d_iou(seg1, seg2):
     u = torch.clamp_min(umax - umin, 1e-6)
     return i / u
 
-def box2d_iou(boxes1, boxes2, method="box"):
+def box2d_iou(boxes1, boxes2, method="box", precise=True):
     '''
     :param method: 'box' - normal box, 'rbox' - rotated box,
         'grbox' - giou for rotated box, 'drbox' - diou for rotated box
+    :param precise: force using double precision to calculate iou
     '''
     convert_numpy = False
     if isinstance(boxes1, np.ndarray):
@@ -155,6 +156,11 @@ def box2d_iou(boxes1, boxes2, method="box"):
         boxes1 = torch.from_numpy(boxes1)
         boxes2 = torch.from_numpy(boxes2)
         convert_numpy = True
+
+    otype = boxes1.dtype
+    if precise:
+        boxes1 = boxes1.to(torch.float64)
+        boxes2 = boxes2.to(torch.float64)
 
     if len(boxes1.shape) != 2 or len(boxes2.shape) != 2:
         raise ValueError("Input of rbox_2d_iou should be Nx2 tensors!")
@@ -174,14 +180,17 @@ def box2d_iou(boxes1, boxes2, method="box"):
         raise ValueError("Unrecognized iou type!")
     result = impl.apply(boxes1, boxes2)
 
+    if precise:
+        result = result.to(otype)
     if convert_numpy:
         return result.numpy()
     return result
 
 def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
-    iou_threshold=0, score_threshold=0, supression_param=0):
+    iou_threshold=0, score_threshold=0, supression_param=0, precise=True):
     '''
     :param method: 'box' - normal box, 'rbox' - rotated box
+    :param precise: force using double precision to calculate iou
 
     Soft-NMS: Bodla, Navaneeth, et al. "Soft-NMS--improving object detection with one line of code." Proceedings of the IEEE international conference on computer vision. 2017.
     '''
@@ -191,6 +200,9 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
         boxes = torch.from_numpy(boxes)
         scores = torch.from_numpy(scores)
         convert_numpy = True
+
+    if precise:
+        boxes = boxes.to(torch.float64)
 
     if len(boxes) != len(scores):
         raise ValueError("Numbers of boxes and scores are inconsistent!")

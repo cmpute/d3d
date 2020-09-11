@@ -62,9 +62,9 @@ using Box2d = Box2<double>;
 template <typename T> class Numeric
 { public: static constexpr T eps(); };
 template <> class Numeric<float>
-{ public: static constexpr float eps() {return 1e-6;} };
+{ public: static constexpr float eps() {return 3e-7;} };
 template <> class Numeric<double>
-{ public: static constexpr double eps() {return 1e-12;} };
+{ public: static constexpr double eps() {return 6e-15;} };
 
 constexpr double _pi = 3.14159265358979323846;
 
@@ -527,11 +527,11 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         if (edge_flag)
         {
             //DEBUG printf("[Debug] x1: ");
-            //DEBUG for (uint8_t i = 0; i <= nx; i++)
-            //DEBUG     printf("%d ", x1indices[i]);
+            //DEBUG for (uint8_t x = 0; x <= nx; x++)
+            //DEBUG     printf("%d ", x1indices[x]);
             //DEBUG printf("\n[Debug] x2: ");
-            //DEBUG for (uint8_t i = 0; i <= nx; i++)
-            //DEBUG     printf("%d ", x2indices[i]);
+            //DEBUG for (uint8_t x = 0; x <= nx; x++)
+            //DEBUG     printf("%d ", x2indices[x]);
             //DEBUG printf("\n");
             uint8_t idx_next = x1indices[i+1] >= x1indices[i] ? x1indices[i+1] : (x1indices[i+1] + p1.nvertices);
             //DEBUG printf("add p1 points from %d to %d\n", x1indices[i] + 1, idx_next);
@@ -548,11 +548,11 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> intersect(
         else
         {
             //DEBUG printf("[Debug] x1: ");
-            //DEBUG for (uint8_t i = 0; i <= nx; i++)
-            //DEBUG     printf("%d ", x1indices[i]);
+            //DEBUG for (uint8_t x = 0; x <= nx; x++)
+            //DEBUG     printf("%d ", x1indices[x]);
             //DEBUG printf("\n[Debug] x2: ");
-            //DEBUG for (uint8_t i = 0; i <= nx; i++)
-            //DEBUG     printf("%d ", x2indices[i]);
+            //DEBUG for (uint8_t x = 0; x <= nx; x++)
+            //DEBUG     printf("%d ", x2indices[x]);
             //DEBUG printf("\n");
             uint8_t idx_next = x2indices[i+1] >= x2indices[i] ? x2indices[i+1] : (x2indices[i+1] + p2.nvertices);
             //DEBUG printf("add p2 points from %d to %d\n", x2indices[i] + 1, idx_next);
