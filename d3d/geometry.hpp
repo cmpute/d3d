@@ -59,11 +59,13 @@ using Box2f = Box2<float>;
 using Box2d = Box2<double>;
 
 ////////////////////////// Helpers //////////////////////////
-#ifndef GEOMETRY_EPS
-    constexpr double _eps = 1e-6;
-#else
-    constexpr double _eps = GEOMETRY_EPS;
-#endif
+template <typename T> class Numeric
+{ public: static constexpr T eps(); };
+template <> class Numeric<float>
+{ public: static constexpr float eps() {return 1e-6;} };
+template <> class Numeric<double>
+{ public: static constexpr double eps() {return 1e-12;} };
+
 constexpr double _pi = 3.14159265358979323846;
 
 template <typename T> constexpr CUDA_CALLABLE_MEMBER inline
@@ -289,7 +291,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
             dist = _cross(p1a, p1b, p2.vertices[_mod_inc(i2, p2.nvertices)]);
             //DEBUG printf("bridge down along _p2 (%d), cross: %.7f\n", _mod_inc(i2, p2.nvertices), dist);
             if (dist < last_dist) return false;
-            if (dist > -_eps) break;
+            if (dist > -Numeric<scalar_t>::eps()) break;
 
             i2 = _mod_inc(i2, p2.nvertices);
             last_dist = dist;
@@ -305,7 +307,7 @@ bool _find_intersection_under_bridge(const Poly2<scalar_t, MaxPoints1> &p1, cons
             dist = _cross(p2a, p2b, p1.vertices[_mod_dec(i1, p1.nvertices)]);
             //DEBUG printf("bridge down along _p1 (%d), cross: %.7f\n", _mod_dec(i1, p1.nvertices), dist);
             if (dist < last_dist) return false;
-            if (dist > -_eps) break;
+            if (dist > -Numeric<scalar_t>::eps()) break;
 
             i1 = _mod_dec(i1, p1.nvertices);
             last_dist = dist;
@@ -340,7 +342,7 @@ void _find_extreme(const Poly2<scalar_t, MaxPoints> &p, uint8_t &idx, scalar_t &
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t _slope_pp(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2)
 {
-    return atan2(p2.y - p1.y - _eps, p2.x - p1.x); // eps is used to let atan2(0, -1)=-pi instead of pi
+    return atan2(p2.y - p1.y - Numeric<scalar_t>::eps(), p2.x - p1.x); // eps is used to let atan2(0, -1)=-pi instead of pi
 }
 
 // check if the bridge defined between two polygon (from p1 to p2) is valid.
@@ -356,12 +358,12 @@ bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scal
     //DEBUG printf("bridge test: %.7f\t %.7f\t %.7f\t %.7f\n", d1, d2, d3, d4);
 
     bool found = false;
-    if (abs(d1) > _eps)
+    if (abs(d1) > Numeric<scalar_t>::eps())
     {
         found = true;
         reverse = d1 < 0;
     }
-    if (abs(d2) > _eps)
+    if (abs(d2) > Numeric<scalar_t>::eps())
     {
         if (found)
         {
@@ -374,7 +376,7 @@ bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scal
             reverse = d2 < 0;
         }
     }
-    if (abs(d3) > _eps)
+    if (abs(d3) > Numeric<scalar_t>::eps())
     {
         if (found)
         {
@@ -387,7 +389,7 @@ bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scal
             reverse = d3 < 0;
         }
     }
-    if (abs(d4) > _eps)
+    if (abs(d4) > Numeric<scalar_t>::eps())
     {
         if (found)
         {
