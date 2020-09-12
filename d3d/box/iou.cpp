@@ -99,7 +99,7 @@ void iou2dr_forward_templated(
     _CpuAccessorT(uint8_t, 2) nx_,
     _CpuAccessorT(uint8_t, 3) xflags_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
 
@@ -150,7 +150,7 @@ void iou2dr_backward_templated(
     _CpuAccessor(2) grad_boxes1_,
     _CpuAccessor(2) grad_boxes2_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
 
@@ -211,7 +211,7 @@ void giou2dr_forward_templated(
     _CpuAccessorT(uint8_t, 3) nxm_,
     _CpuAccessorT(uint8_t, 3) xmflags_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
 
@@ -262,7 +262,7 @@ void giou2dr_backward_templated(
     _CpuAccessor(2) grad_boxes1_,
     _CpuAccessor(2) grad_boxes2_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
 
@@ -323,7 +323,7 @@ void diou2dr_forward_templated(
     _CpuAccessorT(uint8_t, 3) nxd_,
     _CpuAccessorT(uint8_t, 3) xflags_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
 
@@ -374,7 +374,7 @@ void diou2dr_backward_templated(
     _CpuAccessor(2) grad_boxes1_,
     _CpuAccessor(2) grad_boxes2_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
 

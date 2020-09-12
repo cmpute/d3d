@@ -45,7 +45,7 @@ template <typename scalar_t> struct Point2;
 template <typename scalar_t> struct Line2;
 template <typename scalar_t> struct AABox2;
 template <typename scalar_t, uint8_t MaxPoints> struct Poly2;
-template <typename scalar_t> using Box2 = Poly2<scalar_t, 4>; // TODO: rename as Quad4
+template <typename scalar_t> using Quad2 = Poly2<scalar_t, 4>; // TODO: rename as Quad4
 
 using Point2f = Point2<float>;
 using Point2d = Point2<double>;
@@ -55,8 +55,8 @@ using AABox2f = AABox2<float>;
 using AABox2d = AABox2<double>;
 template <uint8_t MaxPoints> using Poly2f = Poly2<float, MaxPoints>;
 template <uint8_t MaxPoints> using Poly2d = Poly2<double, MaxPoints>;
-using Box2f = Box2<float>;
-using Box2d = Box2<double>;
+using Box2f = Quad2<float>;
+using Box2d = Quad2<double>;
 
 ////////////////////////// Helpers //////////////////////////
 template <typename T> class Numeric
@@ -244,7 +244,7 @@ template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 Point2<scalar_t> intersect(const Line2<scalar_t> &l1, const Line2<scalar_t> &l2)
 {
     scalar_t w = l1.a*l2.b - l2.a*l1.b;
-    return {.x=(l1.b*l2.c - l2.b*l1.c) / w, .y=(l1.c*l2.a - l2.c*l1.a) / w};
+    return {.x = (l1.b*l2.c - l2.b*l1.c) / w, .y = (l1.c*l2.a - l2.c*l1.a) / w};
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline

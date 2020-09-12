@@ -104,7 +104,7 @@ __global__ void iou2dr_forward_kernel(
     _CudaAccessorT(uint8_t, 2) nx_,
     _CudaAccessorT(uint8_t, 3) xflags_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const int nm = blockIdx.x * blockDim.x + threadIdx.x;    
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
@@ -160,7 +160,7 @@ __global__ void iou2dr_backward_kernel(
     _CudaAccessor(2) grad_boxes1_,
     _CudaAccessor(2) grad_boxes2_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const int nm = blockIdx.x * blockDim.x + threadIdx.x;    
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
@@ -219,7 +219,7 @@ __global__ void giou2dr_forward_kernel(
     _CudaAccessorT(uint8_t, 3) nxm_,
     _CudaAccessorT(uint8_t, 3) xmflags_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const int nm = blockIdx.x * blockDim.x + threadIdx.x;    
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
@@ -275,7 +275,7 @@ __global__ void giou2dr_backward_kernel(
     _CudaAccessor(2) grad_boxes1_,
     _CudaAccessor(2) grad_boxes2_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const int nm = blockIdx.x * blockDim.x + threadIdx.x;    
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
@@ -334,7 +334,7 @@ __global__ void diou2dr_forward_kernel(
     _CudaAccessorT(uint8_t, 3) nxd_,
     _CudaAccessorT(uint8_t, 3) xflags_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const int nm = blockIdx.x * blockDim.x + threadIdx.x;    
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);
@@ -390,7 +390,7 @@ __global__ void diou2dr_backward_kernel(
     _CudaAccessor(2) grad_boxes1_,
     _CudaAccessor(2) grad_boxes2_
 ) {
-    using BoxType = Box2<scalar_t>;
+    using BoxType = Quad2<scalar_t>;
     const int nm = blockIdx.x * blockDim.x + threadIdx.x;    
     const auto N = boxes1_.size(0);
     const auto M = boxes2_.size(0);

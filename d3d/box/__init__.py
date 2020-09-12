@@ -203,6 +203,7 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
 
     if precise:
         boxes = boxes.to(torch.float64)
+        scores = scores.to(torch.float64)
 
     if len(boxes) != len(scores):
         raise ValueError("Numbers of boxes and scores are inconsistent!")

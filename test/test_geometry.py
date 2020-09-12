@@ -132,7 +132,7 @@ def test_grads():
     area_grad(bi, grad, gi)
     assert gi.nvertices == 8
 
-    g1, g2 = Box2(), Box2()
+    g1, g2 = Quad2(), Quad2()
     intersect_grad(b1, b2, gi, flags, g1, g2)
     assert g1.nvertices == 4
     assert g2.nvertices == 4

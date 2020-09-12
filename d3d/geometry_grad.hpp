@@ -98,7 +98,8 @@ void poly2_from_xywhr_grad(const scalar_t& x, const scalar_t& y,
 
     grad_w += (dxsin_grad*sin(r) + dxcos_grad*cos(r))/2;
     grad_h += (dysin_grad*sin(r) + dycos_grad*cos(r))/2;
-    grad_r += (dxsin_grad*w*cos(r) - dxcos_grad*w*sin(r) + dysin_grad*h*cos(r) - dysin_grad*h*sin(r))/2;
+    grad_r += (dxsin_grad*w*cos(r) - dxcos_grad*w*sin(r)
+             + dysin_grad*h*cos(r) - dycos_grad*h*sin(r))/2;
 }
 
 ///////////// gradient implementation of functions //////////////
@@ -107,7 +108,7 @@ template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 void distance_grad(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2, const scalar_t &grad,
     Point2<scalar_t> &grad_p1, Point2<scalar_t> &grad_p2)
 {
-    scalar_t dx = p1.x - p2.x, dy = p1.y - p2.y, d = sqrt(dx*dx + dy*dy);
+    scalar_t dx = p1.x - p2.x, dy = p1.y - p2.y, d = hypot(dx, dy);
     grad_p1.x += grad * dx/d;
     grad_p2.x -= grad * dx/d;
     grad_p1.y += grad * dy/d;
@@ -122,16 +123,16 @@ void intersect_grad(const Line2<scalar_t> &l1, const Line2<scalar_t> &l2, const 
     scalar_t wbc = l1.b*l2.c - l2.b*l1.c;
     scalar_t wca = l1.c*l2.a - l2.c*l1.a;
 
-    scalar_t g_xab = grad.x/wab;
-    scalar_t g_yab = grad.y/wab;
-    scalar_t g_xyab2 = (wbc*g_xab + wca*g_yab)/wab;
+    scalar_t g_wbc = grad.x/wab;
+    scalar_t g_wca = grad.y/wab;
+    scalar_t g_wab = -(wbc*g_wbc + wca*g_wca)/wab;
 
-    grad_l1.a += -l2.c*g_yab - l2.b*g_xyab2;
-    grad_l1.b +=  l2.c*g_xab + l2.a*g_xyab2;
-    grad_l1.c +=  l2.a*g_yab - l2.b*g_xab;
-    grad_l2.a +=  l1.c*g_yab + l1.b*g_xyab2;
-    grad_l2.b += -l1.c*g_xab - l1.a*g_xyab2;
-    grad_l2.c +=  l1.b*g_xab - l1.a*g_yab;
+    grad_l1.a += -l2.c*g_wca + l2.b*g_wab;
+    grad_l1.b +=  l2.c*g_wbc - l2.a*g_wab;
+    grad_l1.c +=  l2.a*g_wca - l2.b*g_wbc;
+    grad_l2.a +=  l1.c*g_wca - l1.b*g_wab;
+    grad_l2.b += -l1.c*g_wbc + l1.a*g_wab;
+    grad_l2.c +=  l1.b*g_wbc - l1.a*g_wca;
 }
 
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
@@ -139,7 +140,7 @@ void intersect_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t,
     const Poly2<scalar_t, MaxPoints1 + MaxPoints2> grad, const CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2],
     Poly2<scalar_t, MaxPoints1> &grad_p1, Poly2<scalar_t, MaxPoints2> &grad_p2
 ) {
-    // initialize output // TODO: then make all grad calculation additive, not assignment
+    // initialize output
     grad_p1.nvertices = p1.nvertices;
     grad_p2.nvertices = p2.nvertices;
 
@@ -158,8 +159,8 @@ void intersect_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t,
             Line2<scalar_t> edge_next, edge_prev, grad_edge_next, grad_edge_prev;
             if (xflags[i] & 1) // next edge is from p1 and previous edge is from p2
             {
-                uint8_t epni = xflags[i] >> 1, epnj = _mod_inc(epni, p1.nvertices);
-                uint8_t eppj = xflags[iprev] >> 1, eppi = _mod_dec(eppj, p2.nvertices);
+                uint8_t epni = xflags[i    ] >> 1, epnj = _mod_inc(epni, p1.nvertices);
+                uint8_t eppi = xflags[iprev] >> 1, eppj = _mod_inc(eppi, p2.nvertices);
                 edge_next = line2_from_pp(p1.vertices[epni], p1.vertices[epnj]);
                 edge_prev = line2_from_pp(p2.vertices[eppi], p2.vertices[eppj]);
                 intersect_grad(edge_next, edge_prev, grad.vertices[i], grad_edge_next, grad_edge_prev);
@@ -168,8 +169,8 @@ void intersect_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t,
             }
             else // next edge is from p2 and previous edge is from p1
             {
-                uint8_t epni = xflags[i] >> 1, epnj = _mod_inc(epni, p2.nvertices);
-                uint8_t eppj = xflags[iprev] >> 1, eppi = _mod_dec(eppj, p1.nvertices);
+                uint8_t epni = xflags[i    ] >> 1, epnj = _mod_inc(epni, p2.nvertices);
+                uint8_t eppi = xflags[iprev] >> 1, eppj = _mod_inc(eppi, p1.nvertices);
                 edge_next = line2_from_pp(p2.vertices[epni], p2.vertices[epnj]);
                 edge_prev = line2_from_pp(p1.vertices[eppi], p1.vertices[eppj]);
                 intersect_grad(edge_next, edge_prev, grad.vertices[i], grad_edge_next, grad_edge_prev);
@@ -207,18 +208,21 @@ void area_grad(const Poly2<scalar_t, MaxPoints> &p, const scalar_t &grad, Poly2<
     if (p.nvertices <= 2) return;
     grad_p.nvertices = p.nvertices;
 
+    scalar_t hgrad = grad / 2;
+
     // deal with head and tail vertex
-    uint8_t ilast = p.nvertices-1;
-    grad_p.vertices[0].x += grad * (p.vertices[1].y - p.vertices[ilast].y);
-    grad_p.vertices[0].y += grad * (p.vertices[ilast].x - p.vertices[1].x);
-    grad_p.vertices[ilast].x += grad * (p.vertices[0].y - p.vertices[ilast-1].y);
-    grad_p.vertices[ilast].y += grad * (p.vertices[ilast-1].x - p.vertices[0].x);
+    grad_p.vertices[0].x             -= hgrad * p.vertices[p.nvertices-1].y;
+    grad_p.vertices[0].y             += hgrad * p.vertices[p.nvertices-1].x;
+    grad_p.vertices[p.nvertices-1].x += hgrad * p.vertices[0].y;
+    grad_p.vertices[p.nvertices-1].y -= hgrad * p.vertices[0].x;
 
     // process other vertices
-    for (uint8_t i = 1; i < ilast; i++)
+    for (uint8_t i = 1; i < p.nvertices; i++)
     {
-        grad_p.vertices[i].x += grad * (p.vertices[i-1].y - p.vertices[i+1].y);
-        grad_p.vertices[i].y += grad * (p.vertices[i+1].x - p.vertices[i-1].x);
+        grad_p.vertices[i].x   -= hgrad * p.vertices[i-1].y;
+        grad_p.vertices[i].y   += hgrad * p.vertices[i-1].x;
+        grad_p.vertices[i-1].x += hgrad * p.vertices[i].y;
+        grad_p.vertices[i-1].y -= hgrad * p.vertices[i].x;
     }
 }
 
@@ -226,11 +230,11 @@ template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 void dimension_grad(const AABox2<scalar_t> &a, const scalar_t &grad, AABox2<scalar_t> &grad_a)
 {
     // basically equivalent to distance_grad of (max_x, max_y) and (min_x, min_y)
-    scalar_t dx = a.max_x - a.min_x, dy = a.max_y - a.min_y, d = sqrt(dx*dx + dy*dy);
-    grad_a.max_x += dx / d;
-    grad_a.min_x -= dx / d;
-    grad_a.max_y += dy / d;
-    grad_a.min_y -= dy / d;
+    scalar_t dx = a.max_x - a.min_x, dy = a.max_y - a.min_y, d = hypot(dx, dy);
+    grad_a.max_x += grad * dx / d;
+    grad_a.min_x -= grad * dx / d;
+    grad_a.max_y += grad * dy / d;
+    grad_a.min_y -= grad * dy / d;
 }
 
 template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
@@ -283,7 +287,7 @@ void iou_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const scal
     scalar_t area_u = area(a1) + area(a2) - area_i;
 
     scalar_t gi =  grad / area_u;
-    scalar_t gu = -grad * area_i / (area_u * area_u);
+    scalar_t gu = -gi * area_i / area_u; // i.e. -grad * area_i / area_u^2
     gi -= gu;
     
     AABox2<scalar_t> grad_ai;
@@ -315,20 +319,19 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> _construct_intersection(
         {
             if (xflags[i] & 1) // next edge is from p1 and previous edge is from p2
             {
-                uint8_t epni = xflags[i] >> 1, epnj = _mod_inc(epni, p1.nvertices);
-                uint8_t eppj = xflags[iprev] >> 1, eppi = _mod_dec(eppj, p2.nvertices);
+                uint8_t epni = xflags[i    ] >> 1, epnj = _mod_inc(epni, p1.nvertices);
+                uint8_t eppi = xflags[iprev] >> 1, eppj = _mod_inc(eppi, p2.nvertices);
                 edge_next = line2_from_pp(p1.vertices[epni], p1.vertices[epnj]);
                 edge_prev = line2_from_pp(p2.vertices[eppi], p2.vertices[eppj]);
-                pi.vertices[i] = intersect(edge_prev, edge_next);
             }
             else // next edge is from p2 and previous edge is from p1
             {
-                uint8_t epni = xflags[i] >> 1, epnj = _mod_inc(epni, p2.nvertices);
-                uint8_t eppj = xflags[iprev] >> 1, eppi = _mod_dec(eppj, p1.nvertices);
+                uint8_t epni = xflags[i    ] >> 1, epnj = _mod_inc(epni, p2.nvertices);
+                uint8_t eppi = xflags[iprev] >> 1, eppj = _mod_inc(eppi, p1.nvertices);
                 edge_next = line2_from_pp(p2.vertices[epni], p2.vertices[epnj]);
                 edge_prev = line2_from_pp(p1.vertices[eppi], p1.vertices[eppj]);
-                pi.vertices[i] = intersect(edge_prev, edge_next);
             }
+            pi.vertices[i] = intersect(edge_prev, edge_next);
         }
     }
     return pi;
@@ -360,7 +363,7 @@ void iou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPo
     scalar_t area_u = area(p1) + area(p2) - area_i;
 
     scalar_t gi =  grad / area_u;
-    scalar_t gu = -grad * area_i / (area_u * area_u);
+    scalar_t gu = -gi * area_i / area_u; // i.e. -grad * area_i / area_u^2
     gi -= gu;
     
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> grad_pi;
