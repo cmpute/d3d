@@ -30,12 +30,14 @@
  * should be avoided! This is due to both the complex implementation and incompatible gradient calculation.
  */
 
-
 #ifndef D3D_GEOMETRY_HPP
 #define D3D_GEOMETRY_HPP
 
 #include <cmath>
 #include <limits>
+#include <string>
+#include <sstream>
+
 #include "d3d/common.h"
 
 namespace d3d {
@@ -45,7 +47,7 @@ template <typename scalar_t> struct Point2;
 template <typename scalar_t> struct Line2;
 template <typename scalar_t> struct AABox2;
 template <typename scalar_t, uint8_t MaxPoints> struct Poly2;
-template <typename scalar_t> using Quad2 = Poly2<scalar_t, 4>; // TODO: rename as Quad4
+template <typename scalar_t> using Quad2 = Poly2<scalar_t, 4>;
 
 using Point2f = Point2<float>;
 using Point2d = Point2<double>;
@@ -60,11 +62,23 @@ using Box2d = Quad2<double>;
 
 ////////////////////////// Helpers //////////////////////////
 template <typename T> class Numeric
-{ public: static constexpr T eps(); };
+{ 
+    public:
+        static constexpr T eps();
+        static constexpr char tchar();
+};
 template <> class Numeric<float>
-{ public: static constexpr float eps() {return 3e-7;} };
+{ 
+    public:
+        static constexpr float eps() {return 3e-7;}
+        static constexpr char tchar() {return 'f';}
+};
 template <> class Numeric<double>
-{ public: static constexpr double eps() {return 6e-15;} };
+{
+    public:
+        static constexpr double eps() {return 6e-15;}
+        static constexpr char tchar() {return 'd';}
+};
 
 constexpr double _pi = 3.14159265358979323846;
 
@@ -159,6 +173,76 @@ template <typename scalar_t, uint8_t MaxPoints> struct Poly2 // Convex polygon w
         return true;
     }
 };
+
+////////////////// print utilities (only available in CPU) //////////////////
+
+template <typename scalar_t>
+std::string to_string (const Point2<scalar_t> &val)
+{
+    std::stringstream ss;
+    ss << "(" << val.x << ", " << val.y << ")";
+    return ss.str();
+}
+
+template <typename scalar_t>
+std::string to_string (const Line2<scalar_t> &val)
+{
+    std::stringstream ss;
+    ss << "(a=" << val.a << ", b=" << val.b << ", c=" << val.c << ")";
+    return ss.str(); 
+}
+
+template <typename scalar_t>
+std::string to_string (const AABox2<scalar_t> &val)
+{
+    std::stringstream ss;
+    ss << "(x: " << val.min_x << " ~ " << val.max_x << ", y: " << val.min_y << " ~ " << val.max_y << ")";
+    return ss.str();
+}
+
+template <typename scalar_t, uint8_t MaxPoints>
+std::string to_string (const Poly2<scalar_t, MaxPoints> &val)
+{
+    std::stringstream ss;
+    ss << "[" << to_string(val.vertices[0]);
+    for (uint8_t i = 1; i < val.nvertices; i++)
+        ss << ", " << to_string(val.vertices[i]);
+    ss << "]";
+    return ss.str();
+}
+
+template <typename scalar_t>
+std::string pprint (const Point2<scalar_t> &val)
+{
+    std::stringstream ss;
+    ss << "<Point2" << Numeric<scalar_t>::tchar() << ' ' << to_string(val) << '>';
+    return ss.str();
+}
+
+
+template <typename scalar_t>
+std::string pprint (const Line2<scalar_t> &val)
+{
+    std::stringstream ss;
+    ss << "<Line2" << Numeric<scalar_t>::tchar() << ' ' << to_string(val) << '>';
+    return ss.str();
+}
+
+template <typename scalar_t>
+std::string pprint (const AABox2<scalar_t> &val)
+{
+    std::stringstream ss;
+    ss << "<AABox2" << Numeric<scalar_t>::tchar() << ' ' << to_string(val) << '>';
+    return ss.str();
+}
+
+template <typename scalar_t, uint8_t MaxPoints>
+std::string pprint (const Poly2<scalar_t, MaxPoints> &val)
+{
+    std::stringstream ss;
+    ss << "<Poly2" << Numeric<scalar_t>::tchar() << MaxPoints << ' ' << to_string(val) << '>';
+    return ss.str();
+}
 
 ////////////////// constructors ///////////////////
 
@@ -682,7 +766,7 @@ Point2<scalar_t> centroid(const Poly2<scalar_t, MaxPoints> &p)
 template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
 Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
     const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2] = nullptr
+    CUDA_RESTRICT uint8_t mflags[MaxPoints1 + MaxPoints2] = nullptr
 ) {
     // find the vertices with max y value, starting from line pointing to -x (angle is -pi)
     uint8_t pidx1, pidx2;
@@ -699,14 +783,14 @@ Poly2<scalar_t, MaxPoints1 + MaxPoints2> merge(
 
     const auto register_p1point = [&](uint8_t i1)
     {
-        if (xflags != nullptr)
-            xflags[result.nvertices] = (i1 << 1) | 1;
+        if (mflags != nullptr)
+            mflags[result.nvertices] = (i1 << 1) | 1;
         result.vertices[result.nvertices++] = p1.vertices[i1];
     };
     const auto register_p2point = [&](uint8_t i2)
     {
-        if (xflags != nullptr)
-            xflags[result.nvertices] = i2 << 1;
+        if (mflags != nullptr)
+            mflags[result.nvertices] = i2 << 1;
         result.vertices[result.nvertices++] = p2.vertices[i2];
     };
     const auto register_point = [&](uint8_t i1, uint8_t i2)
@@ -915,6 +999,12 @@ scalar_t giou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPo
     return area_i / area_u + area_u / area_m - 1;
 }
 
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+scalar_t giou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2)
+{
+    uint8_t _; return giou(p1, p2, _, _, nullptr, nullptr);
+}
+
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 scalar_t diou(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2)
 {
@@ -937,6 +1027,12 @@ scalar_t diou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPo
     dflag1 = mflags[idx1]; dflag2 = mflags[idx2];
 
     return piou - (cd*cd) / (maxd*maxd);
+}
+
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+scalar_t diou(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2)
+{
+    uint8_t _; return diou(p1, p2, _, _, _, nullptr);
 }
 
 } // namespace d3d

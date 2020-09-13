@@ -116,6 +116,95 @@ void distance_grad(const Point2<scalar_t> &p1, const Point2<scalar_t> &p2, const
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+void area_grad(const AABox2<scalar_t> &a, const scalar_t &grad, AABox2<scalar_t> &grad_a)
+{
+    scalar_t lx = a.max_x - a.min_x;
+    scalar_t ly = a.max_y - a.min_y;
+    grad_a.max_x += grad * ly;
+    grad_a.min_x -= grad * ly;
+    grad_a.max_y += grad * lx;
+    grad_a.min_y -= grad * lx;
+}
+
+template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
+void area_grad(const Poly2<scalar_t, MaxPoints> &p, const scalar_t &grad, Poly2<scalar_t, MaxPoints> &grad_p)
+{
+    if (p.nvertices <= 2) return;
+    grad_p.nvertices = p.nvertices;
+
+    scalar_t hgrad = grad / 2;
+
+    // deal with head and tail vertex
+    grad_p.vertices[0].x             -= hgrad * p.vertices[p.nvertices-1].y;
+    grad_p.vertices[0].y             += hgrad * p.vertices[p.nvertices-1].x;
+    grad_p.vertices[p.nvertices-1].x += hgrad * p.vertices[0].y;
+    grad_p.vertices[p.nvertices-1].y -= hgrad * p.vertices[0].x;
+
+    // process other vertices
+    for (uint8_t i = 1; i < p.nvertices; i++)
+    {
+        grad_p.vertices[i].x   -= hgrad * p.vertices[i-1].y;
+        grad_p.vertices[i].y   += hgrad * p.vertices[i-1].x;
+        grad_p.vertices[i-1].x += hgrad * p.vertices[i].y;
+        grad_p.vertices[i-1].y -= hgrad * p.vertices[i].x;
+    }
+}
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+void dimension_grad(const AABox2<scalar_t> &a, const scalar_t &grad, AABox2<scalar_t> &grad_a)
+{
+    // basically equivalent to distance_grad of (max_x, max_y) and (min_x, min_y)
+    scalar_t dx = a.max_x - a.min_x, dy = a.max_y - a.min_y, d = hypot(dx, dy);
+    grad_a.max_x += grad * dx / d;
+    grad_a.min_x -= grad * dx / d;
+    grad_a.max_y += grad * dy / d;
+    grad_a.min_y -= grad * dy / d;
+}
+
+template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
+void dimension_grad(const Poly2<scalar_t, MaxPoints> &p, const scalar_t &grad,
+    const uint8_t &flag1, const uint8_t &flag2, Poly2<scalar_t, MaxPoints> &grad_p)
+{
+    distance_grad(p.vertices[flag1], p.vertices[flag2], grad, grad_p.vertices[flag1], grad_p.vertices[flag2]);
+}
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+void center_grad(const AABox2<scalar_t> &a, const Point2<scalar_t> &grad, AABox2<scalar_t> &grad_a)
+{
+    grad_a.max_x += grad.x / 2;
+    grad_a.min_x += grad.x / 2;
+    grad_a.max_y += grad.y / 2;
+    grad_a.min_y += grad.y / 2;
+}
+
+template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
+void center_grad(const Poly2<scalar_t, MaxPoints> &p, const Point2<scalar_t> &grad, Poly2<scalar_t, MaxPoints> &grad_p)
+{
+    AABox2<scalar_t> a = aabox2_from_poly2(p), grad_a;
+    center_grad(a, grad, grad_a);
+    aabox2_from_poly2_grad(p, grad_a, grad_p);
+}
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
+void centroid_grad(const AABox2<scalar_t> &a, const Point2<scalar_t> &grad, AABox2<scalar_t> &grad_a)
+{
+    return center_grad(a, grad, grad_a);
+}
+
+template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
+void centroid_grad(const Poly2<scalar_t, MaxPoints> &p, const Point2<scalar_t> &grad, Poly2<scalar_t, MaxPoints> &grad_p)
+{
+    grad_p.nvertices = p.nvertices;
+    for (uint8_t i = 0; i < p.nvertices; i++)
+    {
+        grad_p.vertices[i].x += grad.x / p.nvertices;
+        grad_p.vertices[i].y += grad.y / p.nvertices;
+    }
+}
+
+///////////// gradient implementation of operators //////////////
+
+template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
 void intersect_grad(const Line2<scalar_t> &l1, const Line2<scalar_t> &l2, const Point2<scalar_t> &grad,
     Line2<scalar_t> &grad_l1, Line2<scalar_t> &grad_l2)
 {
@@ -191,91 +280,32 @@ void intersect_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, cons
     _min_grad(a1.max_y, a2.max_y, grad.max_y, grad_a1.max_y, grad_a2.max_y);
 }
 
-template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
-void area_grad(const AABox2<scalar_t> &a, const scalar_t &grad, AABox2<scalar_t> &grad_a)
-{
-    scalar_t lx = a.max_x - a.min_x;
-    scalar_t ly = a.max_y - a.min_y;
-    grad_a.max_x += grad * ly;
-    grad_a.min_x -= grad * ly;
-    grad_a.max_y += grad * lx;
-    grad_a.min_y -= grad * lx;
-}
+template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
+void merge_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
+    const Poly2<scalar_t, MaxPoints1 + MaxPoints2> &grad,
+    const CUDA_RESTRICT uint8_t mflags[MaxPoints1 + MaxPoints2],
+    Poly2<scalar_t, MaxPoints1> &grad_p1, Poly2<scalar_t, MaxPoints2> &grad_p2
+) {
+    grad_p1.nvertices = p1.nvertices;
+    grad_p2.nvertices = p2.nvertices;
 
-template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
-void area_grad(const Poly2<scalar_t, MaxPoints> &p, const scalar_t &grad, Poly2<scalar_t, MaxPoints> &grad_p)
-{
-    if (p.nvertices <= 2) return;
-    grad_p.nvertices = p.nvertices;
-
-    scalar_t hgrad = grad / 2;
-
-    // deal with head and tail vertex
-    grad_p.vertices[0].x             -= hgrad * p.vertices[p.nvertices-1].y;
-    grad_p.vertices[0].y             += hgrad * p.vertices[p.nvertices-1].x;
-    grad_p.vertices[p.nvertices-1].x += hgrad * p.vertices[0].y;
-    grad_p.vertices[p.nvertices-1].y -= hgrad * p.vertices[0].x;
-
-    // process other vertices
-    for (uint8_t i = 1; i < p.nvertices; i++)
+    for (uint8_t i = 0; i < grad.nvertices; i++)
     {
-        grad_p.vertices[i].x   -= hgrad * p.vertices[i-1].y;
-        grad_p.vertices[i].y   += hgrad * p.vertices[i-1].x;
-        grad_p.vertices[i-1].x += hgrad * p.vertices[i].y;
-        grad_p.vertices[i-1].y -= hgrad * p.vertices[i].x;
+        if (mflags[i] & 1)
+            grad_p1.vertices[mflags[i] >> 1] += grad.vertices[i];
+        else
+            grad_p2.vertices[mflags[i] >> 1] += grad.vertices[i];
     }
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
-void dimension_grad(const AABox2<scalar_t> &a, const scalar_t &grad, AABox2<scalar_t> &grad_a)
+void merge_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const AABox2<scalar_t> &grad,
+    AABox2<scalar_t> &grad_a1, AABox2<scalar_t> &grad_a2)
 {
-    // basically equivalent to distance_grad of (max_x, max_y) and (min_x, min_y)
-    scalar_t dx = a.max_x - a.min_x, dy = a.max_y - a.min_y, d = hypot(dx, dy);
-    grad_a.max_x += grad * dx / d;
-    grad_a.min_x -= grad * dx / d;
-    grad_a.max_y += grad * dy / d;
-    grad_a.min_y -= grad * dy / d;
-}
-
-template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
-void dimension_grad(const Poly2<scalar_t, MaxPoints> &p, const scalar_t &grad,
-    const uint8_t &flag1, const uint8_t &flag2, Poly2<scalar_t, MaxPoints> &grad_p)
-{
-    distance_grad(p.vertices[flag1], p.vertices[flag2], grad, grad_p.vertices[flag1], grad_p.vertices[flag2]);
-}
-
-template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
-void center_grad(const AABox2<scalar_t> &a, const Point2<scalar_t> &grad, Point2<scalar_t> &grad_a)
-{
-    grad_a.max_x += grad.x / 2;
-    grad_a.min_x += grad.x / 2;
-    grad_a.max_y += grad.y / 2;
-    grad_a.min_y += grad.y / 2;
-}
-
-template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
-void center_grad(const Poly2<scalar_t, MaxPoints> &p, const Point2<scalar_t> &grad, Poly2<scalar_t, MaxPoints> &grad_p)
-{
-    AABox2<scalar_t> a = aabox2_from_poly2(p), grad_a;
-    center_grad(a, grad, grad_a);
-    aabox2_from_poly2_grad(p, grad_a, grad_p);
-}
-
-template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
-void centroid_grad(const AABox2<scalar_t> &a, const Point2<scalar_t> &grad, Point2<scalar_t> &grad_a)
-{
-    return center_grad(a, grad, grad_a);
-}
-
-template <typename scalar_t, uint8_t MaxPoints> CUDA_CALLABLE_MEMBER inline
-void centroid_grad(const Poly2<scalar_t, MaxPoints> &p, const Point2<scalar_t> &grad, Poly2<scalar_t, MaxPoints> &grad_p)
-{
-    grad_p.nvertices = p.nvertices;
-    for (uint8_t i = 0; i < p.nvertices; i++)
-    {
-        grad_p.vertices[i].x += grad.x / p.nvertices;
-        grad_p.vertices[i].y += grad.y / p.nvertices;
-    }
+    _min_grad(a1.min_x, a2.min_x, grad.min_x, grad_a1.min_x, grad_a2.min_x);
+    _max_grad(a1.max_x, a2.max_x, grad.max_x, grad_a1.max_x, grad_a2.max_x);
+    _min_grad(a1.min_y, a2.min_y, grad.min_y, grad_a1.min_y, grad_a2.min_y);
+    _max_grad(a1.max_y, a2.max_y, grad.max_y, grad_a1.max_y, grad_a2.max_y);
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
@@ -371,34 +401,6 @@ void iou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPo
     area_grad(p2, gu, grad_p2);
     area_grad(pi, gi, grad_pi);
     intersect_grad(p1, p2, grad_pi, xflags, grad_p1, grad_p2);
-}
-
-template <typename scalar_t, uint8_t MaxPoints1, uint8_t MaxPoints2> CUDA_CALLABLE_MEMBER inline
-void merge_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPoints2> &p2,
-    const Poly2<scalar_t, MaxPoints1 + MaxPoints2> &grad,
-    const CUDA_RESTRICT uint8_t xflags[MaxPoints1 + MaxPoints2],
-    Poly2<scalar_t, MaxPoints1> &grad_p1, Poly2<scalar_t, MaxPoints2> &grad_p2
-) {
-    grad_p1.nvertices = p1.nvertices;
-    grad_p2.nvertices = p2.nvertices;
-
-    for (uint8_t i = 0; i < grad.nvertices; i++)
-    {
-        if (xflags[i] & 1)
-            grad_p1.vertices[xflags[i] >> 1] += grad.vertices[i];
-        else
-            grad_p2.vertices[xflags[i] >> 1] += grad.vertices[i];
-    }
-}
-
-template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
-void merge_grad(const AABox2<scalar_t> &a1, const AABox2<scalar_t> &a2, const AABox2<scalar_t> &grad,
-    AABox2<scalar_t> &grad_a1, AABox2<scalar_t> &grad_a2)
-{
-    _min_grad(a1.min_x, a2.min_x, grad.min_x, grad_a1.min_x, grad_a2.min_x);
-    _max_grad(a1.max_x, a2.max_x, grad.max_x, grad_a1.max_x, grad_a2.max_x);
-    _min_grad(a1.min_y, a2.min_y, grad.min_y, grad_a1.min_y, grad_a2.min_y);
-    _max_grad(a1.max_y, a2.max_y, grad.max_y, grad_a1.max_y, grad_a2.max_y);
 }
 
 template <typename scalar_t> CUDA_CALLABLE_MEMBER inline
