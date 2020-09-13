@@ -172,6 +172,16 @@ template <typename scalar_t, uint8_t MaxPoints> struct Poly2 // Convex polygon w
 
         return true;
     }
+
+    // initialize the point values to zeros
+    CUDA_CALLABLE_MEMBER inline void zero()
+    {
+        for (uint8_t i = 0; i < MaxPoints; i++)
+        {
+            vertices[i].x = 0;
+            vertices[i].y = 0;
+        }
+    }
 };
 
 ////////////////// print utilities (only available in CPU) //////////////////

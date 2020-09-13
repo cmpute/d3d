@@ -168,7 +168,7 @@ PYBIND11_MODULE(geometry, m) {
     m.def("poly2_from_aabox2_grad", &d3d::poly2_from_aabox2_grad<T>, "Calculate gradient of poly2_from_aabox2()");
     m.def("poly2_from_xywhr_grad", [](const T& x, const T& y,
         const T& w, const T& h, const T& r, const Quad2<T>& grad){
-            T gx, gy, gw, gh, gr;
+            T gx = 0, gy = 0, gw = 0, gh = 0, gr = 0;
             poly2_from_xywhr_grad(x, y, w, h, r, grad, gx, gy, gw, gh, gr);
             return make_tuple(gx, gy, gw, gh, gr);
         }, "Calculate gradient of poly2_from_xywhr");
@@ -198,33 +198,45 @@ PYBIND11_MODULE(geometry, m) {
 
     m.def("intersect_grad", py::overload_cast<const Line2<T>&, const Line2<T>&, const Point2<T>&, Line2<T>&, Line2<T>&>(&d3d::intersect_grad<T>),
         "Calculate gradient of intersect()");
-    m.def("intersect_grad", [](const Quad2<T>& b1, const Quad2<T>& b2,
-        const Poly2<T, 8>& grad, const vector<uint8_t>& xflags, Quad2<T>& grad_p1, Quad2<T>& grad_p2){
+    m.def("intersect_grad", [](const Quad2<T>& b1, const Quad2<T>& b2, const Poly2<T, 8>& grad, const vector<uint8_t>& xflags){
+            Quad2<T> grad_p1, grad_p2;
+            grad_p1.zero(); grad_p2.zero();
             intersect_grad(b1, b2, grad, xflags.data(), grad_p1, grad_p2);
+            return make_tuple(grad_p1, grad_p2);
         }, "Calculate gradient of intersect()");
     m.def("intersect_grad", py::overload_cast<const AABox2<T>&, const AABox2<T>&, const AABox2<T>&, AABox2<T>&, AABox2<T>&>(&d3d::intersect_grad<T>),
         "Calculate gradient of intersect()");
-    m.def("merge_grad", [](const Quad2<T>& b1, const Quad2<T>& b2,
-        const Poly2<T, 8>& grad, const vector<uint8_t>& mflags, Quad2<T>& grad_p1, Quad2<T>& grad_p2){
+    m.def("merge_grad", [](const Quad2<T>& b1, const Quad2<T>& b2, const Poly2<T, 8>& grad, const vector<uint8_t>& mflags){
+            Quad2<T> grad_p1, grad_p2;
+            grad_p1.zero(); grad_p2.zero();
             merge_grad(b1, b2, grad, mflags.data(), grad_p1, grad_p2);
+            return make_tuple(grad_p1, grad_p2);
         }, "Calculate gradient of merge()");
     m.def("merge_grad", py::overload_cast<const AABox2<T>&, const AABox2<T>&, const AABox2<T>&, AABox2<T>&, AABox2<T>&>(&d3d::merge_grad<T>),
         "Calculate gradient of merge()");
-    m.def("iou_grad", [](const Quad2<T>& b1, const Quad2<T>& b2,
-        const T grad, const vector<uint8_t>& xflags, Quad2<T>& grad_p1, Quad2<T>& grad_p2){
+    m.def("iou_grad", [](const Quad2<T>& b1, const Quad2<T>& b2, const T grad, const vector<uint8_t>& xflags){
+            Quad2<T> grad_p1, grad_p2;
+            grad_p1.zero(); grad_p2.zero();
             iou_grad(b1, b2, grad, xflags.size(), xflags.data(), grad_p1, grad_p2);
+            return make_tuple(grad_p1, grad_p2);
         }, "Calculate gradient of iou()");
     m.def("iou_grad", py::overload_cast<const AABox2<T>&, const AABox2<T>&, const T&, AABox2<T>&, AABox2<T>&>(&d3d::iou_grad<T>),
         "Calculate gradient of iou()");
-    m.def("giou_grad", [](const Quad2<T>& b1, const Quad2<T>& b2,
-        const T grad, const vector<uint8_t>& xflags, const vector<uint8_t>& mflags, Quad2<T>& grad_p1, Quad2<T>& grad_p2){
+    m.def("giou_grad", [](const Quad2<T>& b1, const Quad2<T>& b2, const T grad,
+        const vector<uint8_t>& xflags, const vector<uint8_t>& mflags){
+            Quad2<T> grad_p1, grad_p2;
+            grad_p1.zero(); grad_p2.zero();
             giou_grad(b1, b2, grad, xflags.size(), mflags.size(), xflags.data(), mflags.data(), grad_p1, grad_p2);
+            return make_tuple(grad_p1, grad_p2);
         }, "Calculate gradient of giou()");
     m.def("giou_grad", py::overload_cast<const AABox2<T>&, const AABox2<T>&, const T&, AABox2<T>&, AABox2<T>&>(&d3d::giou_grad<T>),
         "Calculate gradient of giou()");
-    m.def("diou_grad", [](const Quad2<T>& b1, const Quad2<T>& b2,
-        const T grad, const vector<uint8_t>& xflags, const uint8_t& dflag1, const uint8_t& dflag2, Quad2<T>& grad_p1, Quad2<T>& grad_p2){
+    m.def("diou_grad", [](const Quad2<T>& b1, const Quad2<T>& b2, const T grad,
+    const vector<uint8_t>& xflags, const uint8_t& dflag1, const uint8_t& dflag2){
+            Quad2<T> grad_p1, grad_p2;
+            grad_p1.zero(); grad_p2.zero();
             diou_grad(b1, b2, grad, xflags.size(), dflag1, dflag2, xflags.data(), grad_p1, grad_p2);
+            return make_tuple(grad_p1, grad_p2);
         }, "Calculate gradient of diou()");
     m.def("diou_grad", py::overload_cast<const AABox2<T>&, const AABox2<T>&, const T&, AABox2<T>&, AABox2<T>&>(&d3d::diou_grad<T>),
         "Calculate gradient of diou()");

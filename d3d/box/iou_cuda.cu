@@ -174,6 +174,7 @@ __global__ void iou2dr_backward_kernel(
         BoxType bj = _BoxUtilCuda<scalar_t, BoxType>::make_box(boxes2_[j]);
 
         BoxType grad_i, grad_j;
+        grad_i.zero(); grad_j.zero();
         uint8_t flags[8];
         #pragma unroll
         for(int k = 0; k < 8; k++)
@@ -289,6 +290,7 @@ __global__ void giou2dr_backward_kernel(
         BoxType bj = _BoxUtilCuda<scalar_t, BoxType>::make_box(boxes2_[j]);
 
         BoxType grad_i, grad_j;
+        grad_i.zero(); grad_j.zero();
         uint8_t flags[16];
         #pragma unroll
         for(int k = 0; k < 16; k++)
@@ -404,6 +406,7 @@ __global__ void diou2dr_backward_kernel(
         BoxType bj = _BoxUtilCuda<scalar_t, BoxType>::make_box(boxes2_[j]);
 
         BoxType grad_i, grad_j;
+        grad_i.zero(); grad_j.zero();
         uint8_t flags[8];
         #pragma unroll
         for(int k = 0; k < 8; k++)

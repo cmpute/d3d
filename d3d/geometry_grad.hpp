@@ -2,6 +2,10 @@
  * Copyright (c) 2019- Yuanxin Zhong. All rights reserved.
  * This file contains implementations of gradient calculation of simple geometries suitable for using in GPU.
  * The gradients are stored in the same data structure as data passed forward.
+ * 
+ * Note:
+ * - For polygon gradients, since the gradients are calculated additively, it's required to initialize the
+ *   output gradient polygon objects to zeros (using .zero()).
  */
 
 #ifndef D3D_GEOMETRY_GRAD_HPP
@@ -397,6 +401,7 @@ void iou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxPo
     gi -= gu;
     
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> grad_pi;
+    grad_pi.zero();
     area_grad(p1, gu, grad_p1);
     area_grad(p2, gu, grad_p2);
     area_grad(pi, gi, grad_pi);
@@ -445,6 +450,7 @@ void giou_grad(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scalar_t, MaxP
     scalar_t gm = grad * (-area_u / (area_m * area_m));
     
     Poly2<scalar_t, MaxPoints1 + MaxPoints2> grad_pi, grad_pm;
+    grad_pi.zero(); grad_pm.zero();
     area_grad(p1, gu, grad_p1);
     area_grad(p2, gu, grad_p2);
     area_grad(pi, gi, grad_pi);
