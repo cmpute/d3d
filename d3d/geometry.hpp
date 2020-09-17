@@ -502,7 +502,7 @@ bool _check_valid_bridge(const Poly2<scalar_t, MaxPoints1> &p1, const Poly2<scal
 }
 
 // Rotating Caliper implementation of intersecting
-// Reference: https://web.archive.org/web/20150415231115/http://cgm.cs.mcgill.ca/~orm/rotcal.frame.htm
+// Reference: https://web.archive.org/web/20150415231115/http://cgm.cs.mcgill.ca/~orm/rotcal.frame.html
 //    and http://cgm.cs.mcgill.ca/~godfried/teaching/cg-projects/97/Plante/CompGeomProject-EPlante/algorithm.html
 // xflags stores edges flags for gradient computation:
 // left 7bits from the 8bits are index number of the edge (index of the first vertex of edge)

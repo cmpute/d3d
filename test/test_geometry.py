@@ -152,6 +152,9 @@ class TestWithAutograd(unittest.TestCase):
         return torch.stack([x, y])
 
     def intersect_poly2(self, p1, p2, xflags): # reconstruct intersection using xflags
+        if len(xflags) == 0:
+            return torch.tensor([], dtype=float)
+
         result = [None] * len(xflags)
         for i in range(len(xflags)):
             iprev = (i-1) % len(xflags)
@@ -174,29 +177,40 @@ class TestWithAutograd(unittest.TestCase):
                 result[i] = self.intersect_line2(edge_prev, edge_next)
         return torch.stack(result)
 
+    def merge_poly2(self, p1, p2, mflags): # reconstruction merged hull using mflags:
+        if len(mflags) == 0:
+            return torch.tensor([], dtype=float)
+
+        result = [None] * len(mflags)
+        for i, m in enumerate(mflags):
+            if m & 1:
+                result[i] = p1[m >> 1]
+            else:
+                result[i] = p2[m >> 1]
+        return torch.stack(result)
+
     def area_poly2(self, p):
+        if len(p) == 0:
+            return torch.tensor(0, dtype=float)
+
         s = p[-1,0]*p[0,1] - p[-1,1]*p[0,0]
         for i in range(1, len(p)):
             s = s + p[i-1,0]*p[i,1] - p[i,0]*p[i-1,1]
         return s / 2
 
-    def test_grads(self):
-        while True:
-            xs = (np.random.rand(2) - 0.5) * 10
-            ys = (np.random.rand(2) - 0.5) * 10
-            ws = np.random.rand(2) * 5
-            hs = np.random.rand(2) * 5
-            rs = (np.random.rand(2) - 0.5) * 10
+    def test_iou_grad(self):
+        xs = (np.random.rand(2) - 0.5) * 10
+        ys = (np.random.rand(2) - 0.5) * 10
+        ws = np.random.rand(2) * 5
+        hs = np.random.rand(2) * 5
+        rs = (np.random.rand(2) - 0.5) * 10
 
-            # polygon intersection
-            b1 = poly2_from_xywhr(xs[0], ys[0], ws[0], hs[0], rs[0])
-            b2 = poly2_from_xywhr(xs[1], ys[1], ws[1], hs[1], rs[1])
-            biou, xflags = iou_(b1, b2)
+        # polygon intersection
+        b1 = poly2_from_xywhr(xs[0], ys[0], ws[0], hs[0], rs[0])
+        b2 = poly2_from_xywhr(xs[1], ys[1], ws[1], hs[1], rs[1])
+        biou, xflags = iou_(b1, b2)
 
-            if biou > 1e-6:
-                break
-
-        grad = 1.
+        grad = np.random.rand()
         grad_p1, grad_p2 = iou_grad(b1, b2, grad, xflags)
         grad1 = poly2_from_xywhr_grad(xs[0], ys[0], ws[0], hs[0], rs[0], grad_p1)
         grad2 = poly2_from_xywhr_grad(xs[1], ys[1], ws[1], hs[1], rs[1], grad_p2)
@@ -220,8 +234,46 @@ class TestWithAutograd(unittest.TestCase):
         assert np.allclose(grad1, b1p.grad.detach())
         assert np.allclose(grad2, b2p.grad.detach())
 
+    def test_giou_grad(self):
+        xs = (np.random.rand(2) - 0.5) * 10
+        ys = (np.random.rand(2) - 0.5) * 10
+        ws = np.random.rand(2) * 5
+        hs = np.random.rand(2) * 5
+        rs = (np.random.rand(2) - 0.5) * 10
+
+        # polygon intersection
+        b1 = poly2_from_xywhr(xs[0], ys[0], ws[0], hs[0], rs[0])
+        b2 = poly2_from_xywhr(xs[1], ys[1], ws[1], hs[1], rs[1])
+        giou, xflags, mflags = giou_(b1, b2)
+
+        grad = np.random.rand()
+        grad_p1, grad_p2 = giou_grad(b1, b2, grad, xflags, mflags)
+        grad1 = poly2_from_xywhr_grad(xs[0], ys[0], ws[0], hs[0], rs[0], grad_p1)
+        grad2 = poly2_from_xywhr_grad(xs[1], ys[1], ws[1], hs[1], rs[1], grad_p2)
+
+        # autograd backward calculation
+        b1p = torch.tensor([xs[0], ys[0], ws[0], hs[0], rs[0]], dtype=float)
+        b2p = torch.tensor([xs[1], ys[1], ws[1], hs[1], rs[1]], dtype=float)
+        b1p.requires_grad = True
+        b2p.requires_grad = True
+
+        b1v = self.poly2_from_xywhr(b1p)
+        b2v = self.poly2_from_xywhr(b2p)
+        
+        bi = self.intersect_poly2(b1v, b2v, xflags)
+        bm = self.merge_poly2(b1v, b2v, mflags)
+        area_i = self.area_poly2(bi)
+        area_m = self.area_poly2(bm)
+        area_u = self.area_poly2(b1v) + self.area_poly2(b2v) - area_i
+        giou_torch = area_i / area_u + area_u / area_m - 1
+        assert np.isclose(giou, giou_torch.detach())
+
+        giou_torch.backward(torch.tensor(grad))
+        assert np.allclose(grad1, b1p.grad.detach())
+        assert np.allclose(grad2, b2p.grad.detach())
+
 if __name__ == "__main__":
-    TestWithAutograd().test_grads()
+    TestWithAutograd().test_giou_grad()
 
     # b1p, b2p = np.load("b1p.npy"), np.load("b2p.npy")
     # b1 = poly2_from_xywhr(b1p[0], b1p[1], b1p[2], b1p[3], b1p[4])

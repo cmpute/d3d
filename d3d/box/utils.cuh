@@ -45,6 +45,7 @@ struct _BoxUtilCuda<scalar_t, d3d::AABox2<scalar_t>>
         const d3d::AABox2<scalar_t> &grad, _CudaSubAccessor(1) grad_data)
     {
         d3d::Quad2<scalar_t> poly, grad_poly;
+        grad_poly.zero();
         poly = d3d::poly2_from_xywhr(data[0], data[1], data[2], data[3], data[4]);
         d3d::aabox2_from_poly2_grad(poly, grad, grad_poly);
         d3d::poly2_from_xywhr_grad(data[0], data[1], data[2], data[3], data[4], grad_poly,
