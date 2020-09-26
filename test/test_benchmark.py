@@ -7,7 +7,7 @@ from d3d.abstraction import Target3DArray, ObjectTarget3D, ObjectTag, TrackingTa
 from d3d.benchmarks import DetectionEvaluator, DetectionEvalStats, TrackingEvaluator
 
 class TestDetectionEvaluator(unittest.TestCase):
-    def test_get_stats(self):
+    def test_calc_stats(self):
         eval_classes = [KittiObjectClass.Car, KittiObjectClass.Van]
         evaluator = DetectionEvaluator(eval_classes, [0.1, 0.2])
 
@@ -28,7 +28,7 @@ class TestDetectionEvaluator(unittest.TestCase):
         dt_boxes = Target3DArray([dt1, dt2, dt3], frame="test")
         
         # test match with self
-        result = evaluator.get_stats(dt_boxes, dt_boxes)
+        result = evaluator.calc_stats(dt_boxes, dt_boxes)
         for clsobj in eval_classes:
             clsid = clsobj.value
             assert result.ngt[clsid] == 1
@@ -58,7 +58,7 @@ class TestDetectionEvaluator(unittest.TestCase):
             ObjectTag(KittiObjectClass.Pedestrian)
         )
         gt_boxes = Target3DArray([gt1, gt2, gt3], frame="test")
-        result = evaluator.get_stats(gt_boxes, dt_boxes)
+        result = evaluator.calc_stats(gt_boxes, dt_boxes)
         for clsobj in eval_classes:
             clsid = clsobj.value
             assert result.ngt[clsid] == 1
@@ -165,7 +165,7 @@ class TestTrackingEvaluator(unittest.TestCase):
         gt_trajs = [Target3DArray([t1, t2], frame="test") for t1, t2 in zip(gt1, gt2)]
 
         for dt_array, gt_array in zip(dt_trajs, gt_trajs):
-            stats = evaluator.get_stats(gt_array, dt_array)
+            stats = evaluator.calc_stats(gt_array, dt_array)
             evaluator.add_stats(stats)
         
         assert evaluator.tp()[KittiObjectClass.Car] == 10
@@ -206,7 +206,7 @@ class TestTrackingEvaluator(unittest.TestCase):
         dt_trajs += [Target3DArray([t3, t1], frame="test") for t1, t3 in zip(traj1[3:], traj3)]
 
         for dt_array, gt_array in zip(dt_trajs, gt_trajs):
-            stats = evaluator.get_stats(gt_array, dt_array)
+            stats = evaluator.calc_stats(gt_array, dt_array)
             evaluator.add_stats(stats)
 
         assert evaluator.tp()[KittiObjectClass.Car] == 10

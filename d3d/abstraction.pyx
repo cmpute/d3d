@@ -176,7 +176,8 @@ cdef class ObjectTarget3D:
         '''
         angles = self.orientation.as_euler("ZYX")
         if abs(angles[1]) + abs(angles[2]) > 0.2:
-            _logger.warn("The roll (%.2f) and pitch(%.2f) angle in objects may be to large to ignore!",
+            # TODO: use user warning
+            _logger.warning("The roll (%.2f) and pitch(%.2f) angle in objects may be to large to ignore!",
                 angles[2], angles[1])
         return angles[0]
 

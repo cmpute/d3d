@@ -38,9 +38,23 @@ cdef inline float calc_fscore(int tp, int fp, int fn, float b2) nogil:
 @cython.auto_pickle(True)
 cdef class DetectionEvalStats:
     '''Stats summary of a evaluation step'''
-    cdef public unordered_map[int, vector[float]] acc_iou, acc_angular, acc_dist, acc_box, acc_var
     cdef public unordered_map[int, int] ngt
     cdef public unordered_map[int, vector[int]] tp, fp, fn, ndt
+    cdef public unordered_map[int, vector[float]] acc_iou, acc_angular, acc_dist, acc_box, acc_var
+
+    cdef void initialize(self, unordered_set[int] classes, int nsamples):
+        for k in classes:
+            self.ngt[k] = 0
+            self.ndt[k] = vector[int](nsamples, 0)
+            self.tp[k] = vector[int](nsamples, 0)
+            self.fp[k] = vector[int](nsamples, 0)
+            self.fn[k] = vector[int](nsamples, 0)
+
+            self.acc_angular[k] = vector[float](nsamples, NAN)
+            self.acc_iou[k] = vector[float](nsamples, NAN)
+            self.acc_box[k] = vector[float](nsamples, NAN)
+            self.acc_dist[k] = vector[float](nsamples, NAN)
+            self.acc_var[k] = vector[float](nsamples, NAN)
 
     def as_object(self):
         return dict(ngt=self.ngt, tp=self.tp, fp=self.fp, fn=self.fn, ndt=self.ndt,
@@ -59,11 +73,12 @@ cdef class DetectionEvaluator:
     cdef object _class_type
     cdef unordered_map[int, float] _max_distance
     cdef vector[float] _pr_thresholds
+    cdef DetectionEvalStats _stats
 
     # aggregated statistics declarations
-    cdef unordered_map[int, int] _total_gt
-    cdef unordered_map[int, vector[int]] _total_dt, _tp, _fp, _fn
-    cdef unordered_map[int, vector[float]] _acc_angular, _acc_iou, _acc_box, _acc_dist, _acc_var
+    # cdef unordered_map[int, int] _total_gt
+    # cdef unordered_map[int, vector[int]] _total_dt, _tp, _fp, _fn
+    # cdef unordered_map[int, vector[float]] _acc_angular, _acc_iou, _acc_box, _acc_dist, _acc_var
 
     def __init__(self, classes, min_overlaps, int pr_sample_count=40, float min_score=0, str pr_sample_scale="log10"):
         '''
@@ -109,32 +124,11 @@ cdef class DetectionEvaluator:
         self._pr_thresholds = thresholds
 
         # initialize maps
-        for k in self._classes:
-            self._total_gt[k] = 0
-            self._total_dt[k] = vector[int](self._pr_nsamples, 0)
-            self._tp[k] = vector[int](self._pr_nsamples, 0)
-            self._fp[k] = vector[int](self._pr_nsamples, 0)
-            self._fn[k] = vector[int](self._pr_nsamples, 0)
-
-            self._acc_angular[k] = vector[float](self._pr_nsamples, NAN)
-            self._acc_iou[k] = vector[float](self._pr_nsamples, NAN)
-            self._acc_box[k] = vector[float](self._pr_nsamples, NAN)
-            self._acc_dist[k] = vector[float](self._pr_nsamples, NAN)
-            self._acc_var[k] = vector[float](self._pr_nsamples, NAN)
+        self._stats = DetectionEvalStats()
+        self._stats.initialize(self._classes, self._pr_nsamples)
 
     cpdef void reset(self):
-        for k in self._classes:
-            self._total_gt[k] = 0
-            self._total_dt[k].assign(self._pr_nsamples, 0)
-            self._tp[k].assign(self._pr_nsamples, 0)
-            self._fp[k].assign(self._pr_nsamples, 0)
-            self._fn[k].assign(self._pr_nsamples, 0)
-
-            self._acc_angular[k].assign(self._pr_nsamples, NAN)
-            self._acc_iou[k].assign(self._pr_nsamples, NAN)
-            self._acc_box[k].assign(self._pr_nsamples, NAN)
-            self._acc_dist[k].assign(self._pr_nsamples, NAN)
-            self._acc_var[k].assign(self._pr_nsamples, NAN)
+        self._stats.initialize(self._classes, self._pr_nsamples)
 
     cdef inline unordered_map[int, vector[float]] _aggregate_stats(self,
         vector[unordered_map[int, float]]& acc, vector[int]& gt_tags) nogil:
@@ -163,7 +157,7 @@ cdef class DetectionEvaluator:
                     aggregated[k][score_idx] = NAN
         return aggregated
 
-    cpdef DetectionEvalStats get_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes, TransformSet calib=None):
+    cpdef DetectionEvalStats calc_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes, TransformSet calib=None):
         # convert boxes to the same frame
         if gt_boxes.frame != dt_boxes.frame:
             if calib is None:
@@ -273,30 +267,36 @@ cdef class DetectionEvaluator:
 
     cpdef void add_stats(self, DetectionEvalStats stats):
         '''
-        Add statistics from get_stats into database
+        Add statistics from calc_stats into database
         '''
         cdef int otp, ntp
         for k in self._classes:
-            self._total_gt[k] += stats.ngt[k]
+            self._stats.ngt[k] += stats.ngt[k]
             for i in range(self._pr_nsamples):
                 # aggregate accuracies
-                otp, ntp = self._tp[k][i], stats.tp[k][i]
-                self._acc_angular[k][i] = wmean(
-                    self._acc_angular[k][i], otp, stats.acc_angular[k][i], ntp)
-                self._acc_box[k][i] = wmean(
-                    self._acc_box[k][i], otp, stats.acc_box[k][i], ntp)
-                self._acc_iou[k][i] = wmean(
-                    self._acc_iou[k][i], otp, stats.acc_iou[k][i], ntp)
-                self._acc_dist[k][i] = wmean(
-                    self._acc_dist[k][i], otp, stats.acc_dist[k][i], ntp)
-                self._acc_var[k][i] = wmean(
-                    self._acc_var[k][i], otp, stats.acc_var[k][i], ntp)
+                otp, ntp = self._stats.tp[k][i], stats.tp[k][i]
+                self._stats.acc_angular[k][i] = wmean(
+                    self._stats.acc_angular[k][i], otp, stats.acc_angular[k][i], ntp)
+                self._stats.acc_box[k][i] = wmean(
+                    self._stats.acc_box[k][i], otp, stats.acc_box[k][i], ntp)
+                self._stats.acc_iou[k][i] = wmean(
+                    self._stats.acc_iou[k][i], otp, stats.acc_iou[k][i], ntp)
+                self._stats.acc_dist[k][i] = wmean(
+                    self._stats.acc_dist[k][i], otp, stats.acc_dist[k][i], ntp)
+                self._stats.acc_var[k][i] = wmean(
+                    self._stats.acc_var[k][i], otp, stats.acc_var[k][i], ntp)
 
                 # aggregate common stats
-                self._total_dt[k][i] += stats.ndt[k][i]
-                self._tp[k][i] += stats.tp[k][i]
-                self._fp[k][i] += stats.fp[k][i]
-                self._fn[k][i] += stats.fn[k][i]
+                self._stats.ndt[k][i] += stats.ndt[k][i]
+                self._stats.tp[k][i] += stats.tp[k][i]
+                self._stats.fp[k][i] += stats.fp[k][i]
+                self._stats.fn[k][i] += stats.fn[k][i]
+
+    cpdef DetectionEvalStats get_stats(self):
+        '''
+        Summarize current state of the benchmark counters
+        '''
+        return self._stats
 
     cdef inline int _get_score_idx(self, float score) nogil:
         if isnan(score):
@@ -309,23 +309,23 @@ cdef class DetectionEvaluator:
         return np.asarray(self._pr_thresholds)
 
     def gt_count(self):
-        return self._total_gt
+        return self._stats.ngt
     def dt_count(self, float score=NAN):
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._total_dt}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._stats.ndt}
 
     def tp(self, float score=NAN):
         '''Return true positive count. If score is not specified, return the median value'''
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._tp}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._stats.tp}
     def fp(self, float score=NAN):
         '''Return false positive count. If score is not specified, return the median value'''
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._fp}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._stats.fp}
     def fn(self, float score=NAN):
         '''Return false negative count. If score is not specified, return the median value'''
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._fn}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._stats.fn}
 
     def precision(self, float score=NAN, bint return_all=False):
         cdef int score_idx
@@ -333,10 +333,10 @@ cdef class DetectionEvaluator:
             p = {self._class_type(k): [None] * self._pr_nsamples for k in self._classes}
             for k in self._classes:
                 for i in range(self._pr_nsamples):
-                    p[self._class_type(k)][i] = calc_precision(self._tp[k][i], self._fp[k][i])
+                    p[self._class_type(k)][i] = calc_precision(self._stats.tp[k][i], self._stats.fp[k][i])
         else:
             score_idx = self._get_score_idx(score)
-            p = {self._class_type(k): calc_precision(self._tp[k][score_idx], self._fp[k][score_idx])
+            p = {self._class_type(k): calc_precision(self._stats.tp[k][score_idx], self._stats.fp[k][score_idx])
                  for k in self._classes}
         return p
     def recall(self, float score=NAN, bint return_all=False):
@@ -345,10 +345,10 @@ cdef class DetectionEvaluator:
             r = {self._class_type(k): [None] * self._pr_nsamples for k in self._classes}
             for k in self._classes:
                 for i in range(self._pr_nsamples):
-                    r[self._class_type(k)][i] = calc_recall(self._tp[k][i], self._fn[k][i])
+                    r[self._class_type(k)][i] = calc_recall(self._stats.tp[k][i], self._stats.fn[k][i])
         else:
             score_idx = self._get_score_idx(score)
-            r = {self._class_type(k): calc_recall(self._tp[k][score_idx], self._fn[k][score_idx])
+            r = {self._class_type(k): calc_recall(self._stats.tp[k][score_idx], self._stats.fn[k][score_idx])
                  for k in self._classes}
         return r
     def fscore(self, float score=NAN, float beta=1, bint return_all=False):
@@ -358,10 +358,10 @@ cdef class DetectionEvaluator:
             fs = {self._class_type(k): [None] * self._pr_nsamples for k in self._classes}
             for k in self._classes:
                 for i in range(self._pr_nsamples):
-                    fs[self._class_type(k)][i] = calc_fscore(self._tp[k][i], self._fp[k][i], self._fn[k][i], b2)
+                    fs[self._class_type(k)][i] = calc_fscore(self._stats.tp[k][i], self._stats.fp[k][i], self._stats.fn[k][i], b2)
         else:
             score_idx = self._get_score_idx(score)
-            fs = {self._class_type(k): calc_fscore(self._tp[k][score_idx], self._fp[k][score_idx], self._fn[k][score_idx], b2)
+            fs = {self._class_type(k): calc_fscore(self._stats.tp[k][score_idx], self._stats.fp[k][score_idx], self._stats.fn[k][score_idx], b2)
                 for k in self._classes}
         return fs
 
@@ -376,16 +376,16 @@ cdef class DetectionEvaluator:
 
     def acc_iou(self, float score=NAN):
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._acc_iou}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._stats.acc_iou}
     def acc_box(self, float score=NAN):
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._acc_box}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._stats.acc_box}
     def acc_dist(self, float score=NAN):
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._acc_dist}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._stats.acc_dist}
     def acc_angular(self, float score=NAN):
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._acc_angular}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._stats.acc_angular}
 
     def summary(self, float score_thres = 0.8):
         '''
@@ -402,19 +402,19 @@ cdef class DetectionEvaluator:
             typed_k = self._class_type(k)
             lines.append("Results for %s:" % typed_k.name)
             lines.append("\tTotal processed targets:\t%d gt boxes, %d dt boxes" % (
-                self._total_gt[k], max(self._total_dt[k])
+                self._stats.ngt[k], max(self._stats.ndt[k])
             ))
             lines.append("\tPrecision (score > %.2f):\t%.3f" % (score_thres, precision[typed_k]))
             lines.append("\tRecall (score > %.2f):\t\t%.3f" % (score_thres, recall[typed_k]))
             lines.append("\tMax F1:\t\t\t\t%.3f" % max(fscore[typed_k]))
             lines.append("\tAP:\t\t\t\t%.3f" % ap[typed_k])
             lines.append("")
-            lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, self._acc_iou[k][score_idx]))
-            lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._acc_angular[k][score_idx]))
-            lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._acc_dist[k][score_idx]))
-            lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._acc_box[k][score_idx]))
-            if not isinf(self._acc_var[k][score_idx]):
-                lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._acc_var[k][score_idx]))
+            lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_iou[k][score_idx]))
+            lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_angular[k][score_idx]))
+            lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_dist[k][score_idx]))
+            lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_box[k][score_idx]))
+            if not isinf(self._stats.acc_var[k][score_idx]):
+                lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_var[k][score_idx]))
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)
@@ -427,29 +427,35 @@ cdef class TrackingEvalStats(DetectionEvalStats):
     # fragments: ground-truth trajectory matched to different tracked tracjetories
     cdef public unordered_map[int, vector[int]] id_switches, fragments
 
-    # gt_tracked: set of tracked ground-truth targets (represented by their IDs)
-    # gt_all: set of all ground-truth targets (represented by their IDs)
-    cdef public unordered_map[int, unordered_set[ull]] gt_all
-    cdef public unordered_map[int, vector[unordered_set[ull]]] gt_tracked, dt_all
+    # ngt_tracked: set of tracked ground-truth targets (represented by their IDs)
+    # ngt_ids: set of all ground-truth targets (represented by their IDs)
+    cdef public unordered_map[int, unordered_map[ull, int]] ngt_ids
+    cdef public unordered_map[int, vector[unordered_map[ull, int]]] ngt_tracked, ndt_ids
+
+    cdef void initialize(self, unordered_set[int] classes, int nsamples):
+        DetectionEvalStats.initialize(self, classes, nsamples)
+        for k in classes:
+            self.id_switches[k] = vector[int](nsamples, 0)
+            self.fragments[k] = vector[int](nsamples, 0)
+
+            self.ngt_ids[k] = unordered_map[ull, int]()
+            self.ngt_tracked[k] = vector[unordered_map[ull, int]](nsamples)
+            self.ndt_ids[k] = vector[unordered_map[ull, int]](nsamples)
 
     def as_object(self):
         ret = dict(ngt=self.ngt, tp=self.tp, fp=self.fp, fn=self.fn, ndt=self.ndt,
             acc_iou=self.acc_iou, acc_angular=self.acc_angular, acc_dist=self.acc_dist,
             acc_box=self.acc_box, acc_var=self.acc_var,
             id_switches=self.id_switches, fragments=self.fragments,
-            gt_all={i.first: list(i.second) for i in self.gt_all},
-            gt_tracked={i.first: [list(s) for s in i.second] for i in self.gt_tracked},
-            dt_all={i.first: [list(s) for s in i.second] for i in self.dt_all}
+            ngt_ids={i.first: list(i.second) for i in self.ngt_ids},
+            ngt_tracked={i.first: [list(s) for s in i.second] for i in self.ngt_tracked},
+            ndt_ids={i.first: [list(s) for s in i.second] for i in self.ndt_ids}
         )
 
 @cython.auto_pickle(True)
 cdef class TrackingEvaluator(DetectionEvaluator):
     '''Benchmark for object tracking'''
-
-    # statics member declarations
-    cdef unordered_map[int, vector[int]] _idsw, _frag
-    cdef unordered_map[int, unordered_map[ull, int]] _ngt_frames
-    cdef unordered_map[int, vector[unordered_map[ull, int]]] _ngt_tracked_frames, _ndt_frames
+    cdef TrackingEvalStats _tstats
 
     # temporary variables for tracking
     cdef vector[unordered_map[ull, ull]] _last_gt_assignment, _last_dt_assignment
@@ -474,20 +480,33 @@ cdef class TrackingEvaluator(DetectionEvaluator):
         self._last_gt_tags.resize(self._pr_nsamples)
         self._last_dt_tags.resize(self._pr_nsamples)
 
+        self._tstats = TrackingEvalStats()
+        self._tstats.initialize(self._classes, self._pr_nsamples)
+        self._stats = self._tstats
+
+    cpdef void reset(self):
+        DetectionEvaluator.reset(self)
+
         for k in self._classes:
-            self._idsw[k] = vector[int](self._pr_nsamples, 0)
-            self._frag[k] = vector[int](self._pr_nsamples, 0)
+            self._tstats.id_switches[k].assign(self._pr_nsamples, 0)
+            self._tstats.fragments[k].assign(self._pr_nsamples, 0)
 
-            self._ngt_frames[k] = unordered_map[ull, int]()
-            self._ngt_tracked_frames[k] = vector[unordered_map[ull, int]](self._pr_nsamples)
-            self._ndt_frames[k] = vector[unordered_map[ull, int]](self._pr_nsamples)
+            self._tstats.ngt_ids[k].clear()
+            for i in range(self._pr_nsamples):
+                self._tstats.ngt_tracked[k][i].clear()
 
-    cpdef TrackingEvalStats get_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes, TransformSet calib=None):
+        for i in range(self._pr_nsamples):
+            self._last_gt_assignment[i].clear()
+            self._last_dt_assignment[i].clear()
+            self._last_gt_tags[i].clear()
+            self._last_dt_tags[i].clear()
+
+    cpdef TrackingEvalStats calc_stats(self, Target3DArray gt_boxes, Target3DArray dt_boxes, TransformSet calib=None):
         # convert boxes to the same frame
         if gt_boxes.frame != dt_boxes.frame:
             if calib is None:
                 raise ValueError("Calibration is not provided when dt_boxes and gt_boxes are in different frames!")
-            gt_boxes = calib.transform_objects(gt_boxes, frame_to=dt_boxes.frame)      
+            dt_boxes = calib.transform_objects(dt_boxes, frame_to=gt_boxes.frame)
 
         # forward definitions
         cdef int gt_idx, gt_tag, dt_idx, dt_tag
@@ -502,19 +521,10 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
         # initialize statistics
         cdef TrackingEvalStats summary = TrackingEvalStats()
+        summary.initialize(self._classes, self._pr_nsamples)
+
         cdef vector[unordered_map[int, float]] iou_acc, angular_acc, dist_acc, box_acc, var_acc
         for k in self._classes:
-            summary.ngt[k] = 0
-            summary.ndt[k] = vector[int](self._pr_nsamples, 0)
-            summary.tp[k] = vector[int](self._pr_nsamples, 0)
-            summary.fp[k] = vector[int](self._pr_nsamples, 0)
-            summary.fn[k] = vector[int](self._pr_nsamples, 0)
-            summary.id_switches[k] = vector[int](self._pr_nsamples, 0)
-            summary.fragments[k] = vector[int](self._pr_nsamples, 0)
-            summary.gt_all[k] = unordered_set[ull]()
-            summary.gt_tracked[k] = vector[unordered_set[ull]](self._pr_nsamples)
-            summary.dt_all[k] = vector[unordered_set[ull]](self._pr_nsamples)
-
             iou_acc.resize(self._pr_nsamples)
             angular_acc.resize(self._pr_nsamples)
             dist_acc.resize(self._pr_nsamples)
@@ -531,7 +541,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
             gt_tid = gt_boxes.get(gt_idx).tid
             summary.ngt[gt_tag] += 1
-            summary.gt_all[gt_tag].insert(gt_tid)
+            summary.ngt_ids[gt_tag][gt_tid] = 1
             gt_tid_set.insert(gt_tid)
             gt_indices.push_back(gt_idx)
 
@@ -553,7 +563,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
                 assert dt_tid > 0, "Tracking id should be greater than 0 for a valid object!"
                 dt_tid_set.insert(dt_tid)
                 summary.ndt[dt_tag][score_idx] += 1
-                summary.dt_all[dt_tag][score_idx].insert(dt_tid)
+                summary.ndt_ids[dt_tag][score_idx][dt_tid] = 1
 
                 if self._last_dt_assignment[score_idx].find(dt_tid) == self._last_dt_assignment[score_idx].end():
                     dt_indices.push_back(dt_idx)  # match objects without previous assignment
@@ -595,7 +605,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
                     continue
                 dt_idx = gt_assignment_idx[gt_tid]
                 summary.tp[gt_tag][score_idx] += 1
-                summary.gt_tracked[gt_tag][score_idx].insert(gt_tid)
+                summary.ngt_tracked[gt_tag][score_idx][gt_tid] = 1
 
                 # caculate accuracy values for various criteria
                 iou_acc[score_idx][gt_idx] = 1 - matcher._distance_cache[dt_idx, gt_idx] # FIXME: not elegant here
@@ -680,56 +690,48 @@ cdef class TrackingEvaluator(DetectionEvaluator):
         cdef TrackingEvalStats tstats = <TrackingEvalStats> stats
 
         for k in self._classes:
-            for gt_tid in tstats.gt_all[k]:
-                if self._ngt_frames[k].find(gt_tid) == self._ngt_frames[k].end():
-                    self._ngt_frames[k][gt_tid] = 1
+            for giter in tstats.ngt_ids[k]:
+                gt_tid, gt_count = giter
+                if self._tstats.ngt_ids[k].find(gt_tid) == self._tstats.ngt_ids[k].end():
+                    self._tstats.ngt_ids[k][gt_tid] = gt_count
                 else:
-                    self._ngt_frames[k][gt_tid] += 1
+                    self._tstats.ngt_ids[k][gt_tid] += gt_count
 
             for i in range(self._pr_nsamples):
-                self._idsw[k][i] += tstats.id_switches[k][i]
-                self._frag[k][i] += tstats.fragments[k][i]
+                self._tstats.id_switches[k][i] += tstats.id_switches[k][i]
+                self._tstats.fragments[k][i] += tstats.fragments[k][i]
 
-                for gt_tid in tstats.gt_tracked[k][i]:
-                    if self._ngt_tracked_frames[k][i].find(gt_tid) == self._ngt_tracked_frames[k][i].end():
-                        self._ngt_tracked_frames[k][i][gt_tid] = 1
+                for giter in tstats.ngt_tracked[k][i]:
+                    gt_tid, gt_count = giter
+                    if self._tstats.ngt_tracked[k][i].find(gt_tid) == self._tstats.ngt_tracked[k][i].end():
+                        self._tstats.ngt_tracked[k][i][gt_tid] = gt_count
                     else:
-                        self._ngt_tracked_frames[k][i][gt_tid] += 1
+                        self._tstats.ngt_tracked[k][i][gt_tid] += gt_count
 
-                for dt_tid in tstats.dt_all[k][i]:
-                    if self._ndt_frames[k][i].find(dt_tid) == self._ndt_frames[k][i].end():
-                        self._ndt_frames[k][i][dt_tid] = 1
+                for diter in tstats.ndt_ids[k][i]:
+                    dt_tid, dt_count = diter
+                    if self._tstats.ndt_ids[k][i].find(dt_tid) == self._tstats.ndt_ids[k][i].end():
+                        self._tstats.ndt_ids[k][i][dt_tid] = dt_count
                     else:
-                        self._ndt_frames[k][i][dt_tid] += 1
+                        self._tstats.ndt_ids[k][i][dt_tid] += dt_count
 
-    cpdef void reset(self):
-        DetectionEvaluator.reset(self)
-
-        for k in self._classes:
-            self._idsw[k].assign(self._pr_nsamples, 0)
-            self._frag[k].assign(self._pr_nsamples, 0)
-
-            self._ngt_frames[k].clear()
-            for i in range(self._pr_nsamples):
-                self._ngt_tracked_frames[k][i].clear()
-
-        for i in range(self._pr_nsamples):
-            self._last_gt_assignment[i].clear()
-            self._last_dt_assignment[i].clear()
-            self._last_gt_tags[i].clear()
-            self._last_dt_tags[i].clear()
+    cpdef TrackingEvalStats get_stats(self):
+        '''
+        Summarize current state of the benchmark counters
+        '''
+        return self._tstats
 
     def id_switches(self, float score=NAN):
         '''Return ID switch count. If score is not specified, return the median value'''
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._idsw}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._tstats.id_switches}
     def fragments(self, float score=NAN):
         '''Return fragments count. If score is not specified, return the median value'''
         cdef int score_idx = self._get_score_idx(score)
-        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._frag}
+        return {self._class_type(diter.first): diter.second[score_idx] for diter in self._tstats.fragments}
     def gt_traj_count(self):
         '''Return total ground-truth trajectory count. gt() will return total bounding box count'''
-        return {self._class_type(diter.first): diter.second.size() for diter in self._ngt_frames}
+        return {self._class_type(diter.first): diter.second.size() for diter in self._tstats.ngt_ids}
 
     cdef dict _calc_frame_ratio(self, float score, float frame_ratio_threshold, bint high_pass, bint return_all):
         # helper function for tracked_ratio and lost_ratio
@@ -739,26 +741,26 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             r = {k: [0] * self._pr_nsamples for k in self._classes}
             for k in self._classes:
                 for i in range(self._pr_nsamples):
-                    for diter in self._ngt_tracked_frames[k][i]:
-                        frame_ratio = float(diter.second) / self._ngt_frames[k][diter.first]
+                    for diter in self._tstats.ngt_tracked[k][i]:
+                        frame_ratio = float(diter.second) / self._tstats.ngt_ids[k][diter.first]
                         if high_pass and frame_ratio > frame_ratio_threshold:
                             r[k][i] += 1
                         if not high_pass and frame_ratio < frame_ratio_threshold:
                             r[k][i] += 1
             r = {self._class_type(k): [
-                    float(v) / self._ngt_frames[k].size() for v in l
+                    float(v) / self._tstats.ngt_ids[k].size() for v in l
                 ] for k, l in r.items()}
         else:
             score_idx = self._get_score_idx(score)
             r = {k: 0 for k in self._classes}
             for k in self._classes:
-                for diter in self._ngt_tracked_frames[k][score_idx]:
-                    frame_ratio = float(diter.second) / self._ngt_frames[k][diter.first]
+                for diter in self._tstats.ngt_tracked[k][score_idx]:
+                    frame_ratio = float(diter.second) / self._tstats.ngt_ids[k][diter.first]
                     if high_pass and frame_ratio > frame_ratio_threshold:
                         r[k] += 1
                     if not high_pass and frame_ratio < frame_ratio_threshold:
                         r[k] += 1
-            r = {self._class_type(k): float(v) / self._ngt_frames[k].size() for k, v in r.items()}
+            r = {self._class_type(k): float(v) / self._tstats.ngt_ids[k].size() for k, v in r.items()}
         return r
 
     def tracked_ratio(self, float score=NAN, float frame_ratio_threshold=0.8, bint return_all=False):
@@ -781,13 +783,11 @@ cdef class TrackingEvaluator(DetectionEvaluator):
         '''Return the MOTA metric defined by the CLEAR MOT metrics. For MOTP equivalents, see acc_* properties'''
         # TODO: use idswitch is incorrect, we need to find best match among all hypothese
         cdef int score_idx = self._get_score_idx(score)
-        for k in self._classes:
-            print(self._fp[k][score_idx], self._fn[k][score_idx], self._idsw[k][score_idx], self._total_dt[k][score_idx])
-        ret = {self._class_type(k): 1 - float(self._fp[k][score_idx] + self._fn[k][score_idx] + self._idsw[k][score_idx])
-            / self._total_gt[k] for k in self._classes}
+        ret = {self._class_type(k): 1 - float(self._stats.fp[k][score_idx] + self._stats.fn[k][score_idx] + self._tstats.id_switches[k][score_idx])
+            / self._stats.ngt[k] for k in self._classes}
         return ret
 
-    def summary(self, float score_thres = 0.8, tracked_ratio_thres = 0.8, lost_ratio_thres = 0.2):
+    def summary(self, float score_thres = 0.8, float tracked_ratio_thres = 0.8, float lost_ratio_thres = 0.2, str note = None):
         '''
         Print default summary (into returned string)
         '''
@@ -801,35 +801,38 @@ cdef class TrackingEvaluator(DetectionEvaluator):
         mll = self.lost_ratio(score_thres, lost_ratio_thres)
         mota = self.mota(score_thres)
 
-        lines.append("========== Benchmark Summary ==========")
+        if note:
+            lines.append("========== Benchmark Summary (%s) ==========" % note)
+        else:
+            lines.append("========== Benchmark Summary ==========")
         for k in self._classes:
             typed_k = self._class_type(k)
             lines.append("Results for %s:" % typed_k.name)
             lines.append("\tTotal processed targets:\t%d gt boxes, %d dt boxes" % (
-                self._total_gt[k], max(self._total_dt[k])
+                self._stats.ngt[k], max(self._stats.ndt[k])
             ))
             lines.append("\tTotal processed trajectories:\t%d gt tracklets, %d dt tracklets" % (
-                self.gt_traj_count()[typed_k], max(len(self._ndt_frames[k][i]) for i in range(self._pr_nsamples))
+                self.gt_traj_count()[typed_k], max(len(self._tstats.ndt_ids[k][i]) for i in range(self._pr_nsamples))
             ))
             lines.append("\tPrecision (score > %.2f):\t%.3f" % (score_thres, precision[typed_k]))
             lines.append("\tRecall (score > %.2f):\t\t%.3f" % (score_thres, recall[typed_k]))
             lines.append("\tMax F1:\t\t\t\t%.3f" % max(fscore[typed_k]))
             lines.append("\tAP:\t\t\t\t%.3f" % ap[typed_k])
             lines.append("")
-            lines.append("\tID switches (score > %.2f):\t\t%d" % (score_thres, self._idsw[k][score_idx]))
-            lines.append("\tFragments (score > %.2f):\t\t%d" % (score_thres, self._frag[k][score_idx]))
-            lines.append("\tMOTA (score > %.2f):\t\t%d" % (score_thres, mota[typed_k]))
+            lines.append("\tID switches (score > %.2f):\t\t\t%d" % (score_thres, self._tstats.id_switches[k][score_idx]))
+            lines.append("\tFragments (score > %.2f):\t\t\t%d" % (score_thres, self._tstats.fragments[k][score_idx]))
+            lines.append("\tMOTA (score > %.2f):\t\t\t\t%.2f" % (score_thres, mota[typed_k]))
             lines.append("\tMostly tracked (score > %.2f, ratio > %.2f):\t%.3f" % (
                 score_thres, tracked_ratio_thres, mlt[typed_k]))
             lines.append("\tMostly lost (score > %.2f, ratio < %.2f):\t%.3f" % (
                 score_thres, lost_ratio_thres, mll[typed_k]))
             lines.append("")
-            lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, self._acc_iou[k][score_idx]))
-            lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._acc_angular[k][score_idx]))
-            lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._acc_dist[k][score_idx]))
-            lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._acc_box[k][score_idx]))
-            if not isinf(self._acc_var[k][score_idx]):
-                lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._acc_var[k][score_idx]))
+            lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_iou[k][score_idx]))
+            lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_angular[k][score_idx]))
+            lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_dist[k][score_idx]))
+            lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_box[k][score_idx]))
+            if not isinf(self._stats.acc_var[k][score_idx]):
+                lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_var[k][score_idx]))
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)

@@ -26,6 +26,9 @@ cdef class BaseMatcher:
         :param dst_boxes: fixed boxes (such as ground truth boxes)
         '''
         self.clear_match()
+
+        if src_boxes.frame != dst_boxes.frame:
+            raise ValueError("Make sure the two object arrays are in the same frame!")
         self._src_boxes = src_boxes
         self._dst_boxes = dst_boxes
 

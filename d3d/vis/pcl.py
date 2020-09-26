@@ -59,7 +59,7 @@ def visualize_detections(visualizer: Visualizer, visualizer_frame: str, targets:
         if len(aux_text) > 0:
             disp_text += " (" + ", ".join(aux_text) + ")"
 
-        disp_pos = target.position
+        disp_pos = np.copy(target.position)
         disp_pos[2] += lz / 2 # lift the text out of box
         if position_offset is not None: # apply offset
             disp_pos += position_offset
