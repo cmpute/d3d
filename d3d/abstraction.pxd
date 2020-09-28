@@ -28,6 +28,7 @@ cdef class Target3DArray(list):
 
     cdef ObjectTarget3D get(self, int index)
     cdef TrackingTarget3D tget(self, int index)
+    cdef Py_ssize_t size(self)
     cpdef np.ndarray to_numpy(self, str box_type=*)
 
 cdef class TransformSet:

@@ -143,9 +143,9 @@ cdef class DetectionEvaluator:
 
         # sort accuracies into categories
         for score_idx in range(self._pr_nsamples):
-            for iter in acc[score_idx]:
-                sorted_sum[gt_tags[iter.first]][score_idx] += iter.second
-                sorted_count[gt_tags[iter.first]][score_idx] += 1
+            for diter in acc[score_idx]:
+                sorted_sum[gt_tags[diter.first]][score_idx] += diter.second
+                sorted_count[gt_tags[diter.first]][score_idx] += 1
 
         # aggregate
         for k in self._classes:
@@ -191,7 +191,7 @@ cdef class DetectionEvaluator:
         
         # select ground-truth boxes to match
         cdef vector[int] gt_indices, dt_indices
-        for gt_idx in range(len(gt_boxes)):
+        for gt_idx in range(gt_boxes.size()):
             gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
             if self._classes.find(gt_tag) == self._classes.end():
                 continue  # skip objects within ignored category
@@ -205,7 +205,7 @@ cdef class DetectionEvaluator:
 
             # select detection boxes to match
             dt_indices.clear()
-            for dt_idx in range(len(dt_boxes)):
+            for dt_idx in range(dt_boxes.size()):
                 dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
                 if self._classes.find(dt_tag) == self._classes.end():
                     continue  # skip objects within ignored category
@@ -254,8 +254,8 @@ cdef class DetectionEvaluator:
 
         # aggregate accuracy metrics
         cdef vector[int] gt_tags
-        gt_tags.reserve(len(gt_boxes))
-        for gt_idx in range(len(gt_boxes)):
+        gt_tags.reserve(gt_boxes.size())
+        for gt_idx in range(gt_boxes.size()):
             gt_tags.push_back(gt_boxes.get(gt_idx).tag.labels[0])
 
         summary.acc_iou = self._aggregate_stats(iou_acc, gt_tags)
@@ -287,10 +287,10 @@ cdef class DetectionEvaluator:
                     self._stats.acc_var[k][i], otp, stats.acc_var[k][i], ntp)
 
                 # aggregate common stats
-                self._stats.ndt[k][i] += stats.ndt[k][i]
-                self._stats.tp[k][i] += stats.tp[k][i]
-                self._stats.fp[k][i] += stats.fp[k][i]
-                self._stats.fn[k][i] += stats.fn[k][i]
+                self._stats.ndt[k][i] = self._stats.ndt[k][i] + stats.ndt[k][i]
+                self._stats.tp[k][i] = self._stats.tp[k][i] + stats.tp[k][i]
+                self._stats.fp[k][i] = self._stats.fp[k][i] + stats.fp[k][i]
+                self._stats.fn[k][i] = self._stats.fn[k][i] + stats.fn[k][i]
 
     cpdef DetectionEvalStats get_stats(self):
         '''
@@ -427,8 +427,9 @@ cdef class TrackingEvalStats(DetectionEvalStats):
     # fragments: ground-truth trajectory matched to different tracked tracjetories
     cdef public unordered_map[int, vector[int]] id_switches, fragments
 
-    # ngt_tracked: set of tracked ground-truth targets (represented by their IDs)
-    # ngt_ids: set of all ground-truth targets (represented by their IDs)
+    # ngt_ids: frame count of all ground-truth targets (represented by their IDs)
+    # ndt_ids: frame count of all proposal targets (represented by their IDs)
+    # ngt_tracked: frame count of ground-truth targets being tracked
     cdef public unordered_map[int, unordered_map[ull, int]] ngt_ids
     cdef public unordered_map[int, vector[unordered_map[ull, int]]] ngt_tracked, ndt_ids
 
@@ -534,7 +535,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
         
         # select ground-truth boxes to match
         cdef vector[int] gt_indices, dt_indices
-        for gt_idx in range(len(gt_boxes)):
+        for gt_idx in range(gt_boxes.size()):
             gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
             if self._classes.find(gt_tag) == self._classes.end():
                 continue  # skip objects within ignored category
@@ -552,7 +553,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             # select detection boxes to match
             dt_indices.clear()
             dt_tid_set.clear()
-            for dt_idx in range(len(dt_boxes)):
+            for dt_idx in range(dt_boxes.size()):
                 dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
                 if self._classes.find(dt_tag) == self._classes.end():
                     continue  # skip objects within ignored category
@@ -570,7 +571,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
                 else:
                     # preserve previous assignments as many as possible
                     gt_tid = self._last_dt_assignment[score_idx][dt_tid]
-                    for gt_idx in range(len(gt_boxes)):
+                    for gt_idx in range(gt_boxes.size()):
                         if gt_tid == gt_boxes.get(gt_idx).tid:  # find the gt boxes with stored tid
                             if matcher._distance_cache[dt_idx, gt_idx] > self._max_distance[dt_tag]:
                                 dt_indices.push_back(dt_idx)  # also match objects that are apart from previous assignment
@@ -674,8 +675,8 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
         # aggregates accuracy metrics
         cdef vector[int] gt_tags
-        gt_tags.reserve(len(gt_boxes))
-        for gt_idx in range(len(gt_boxes)):
+        gt_tags.reserve(gt_boxes.size())
+        for gt_idx in range(gt_boxes.size()):
             gt_tags.push_back(gt_boxes.get(gt_idx).tag.labels[0])
 
         summary.acc_iou = self._aggregate_stats(iou_acc, gt_tags)
@@ -688,10 +689,12 @@ cdef class TrackingEvaluator(DetectionEvaluator):
     cpdef void add_stats(self, DetectionEvalStats stats):
         DetectionEvaluator.add_stats(self, stats)
         cdef TrackingEvalStats tstats = <TrackingEvalStats> stats
+        cdef ull gt_tid, dt_tid
+        cdef int gt_count, dt_count
 
         for k in self._classes:
             for giter in tstats.ngt_ids[k]:
-                gt_tid, gt_count = giter
+                gt_tid, gt_count = giter.first, giter.second
                 if self._tstats.ngt_ids[k].find(gt_tid) == self._tstats.ngt_ids[k].end():
                     self._tstats.ngt_ids[k][gt_tid] = gt_count
                 else:
@@ -702,14 +705,14 @@ cdef class TrackingEvaluator(DetectionEvaluator):
                 self._tstats.fragments[k][i] += tstats.fragments[k][i]
 
                 for giter in tstats.ngt_tracked[k][i]:
-                    gt_tid, gt_count = giter
+                    gt_tid, gt_count = giter.first, giter.second
                     if self._tstats.ngt_tracked[k][i].find(gt_tid) == self._tstats.ngt_tracked[k][i].end():
                         self._tstats.ngt_tracked[k][i][gt_tid] = gt_count
                     else:
                         self._tstats.ngt_tracked[k][i][gt_tid] += gt_count
 
                 for diter in tstats.ndt_ids[k][i]:
-                    dt_tid, dt_count = diter
+                    dt_tid, dt_count = diter.first, diter.second
                     if self._tstats.ndt_ids[k][i].find(dt_tid) == self._tstats.ndt_ids[k][i].end():
                         self._tstats.ndt_ids[k][i][dt_tid] = dt_count
                     else:
@@ -781,7 +784,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
     def mota(self, float score=NAN):
         '''Return the MOTA metric defined by the CLEAR MOT metrics. For MOTP equivalents, see acc_* properties'''
-        # TODO: use idswitch is incorrect, we need to find best match among all hypothese
+        # TODO: is this yielding negative value correct?
         cdef int score_idx = self._get_score_idx(score)
         ret = {self._class_type(k): 1 - float(self._stats.fp[k][score_idx] + self._stats.fn[k][score_idx] + self._tstats.id_switches[k][score_idx])
             / self._stats.ngt[k] for k in self._classes}

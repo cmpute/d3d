@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.spatial.transform import Rotation
+from cpython.list cimport PyList_GetItem, PyList_Size
 
 _logger = logging.getLogger("d3d")
 
@@ -324,10 +325,13 @@ cdef class Target3DArray(list):
             self.timestamp = iterable.timestamp
 
     cdef ObjectTarget3D get(self, int index):
-        return <ObjectTarget3D>(self[index])
+        return <ObjectTarget3D>(PyList_GetItem(self, index))
 
     cdef TrackingTarget3D tget(self, int index):
-        return <TrackingTarget3D>(self[index])
+        return <TrackingTarget3D>(PyList_GetItem(self, index))
+
+    cdef Py_ssize_t size(self):
+        return PyList_Size(self)
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
         '''
