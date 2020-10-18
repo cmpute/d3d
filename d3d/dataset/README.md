@@ -15,6 +15,7 @@
 - [ ] [MVSEC](https://daniilidis-group.github.io/mvsec/): To be added, no label
 - [ ] [BLVD](https://github.com/VCCIV/BLVD): To be added
 - [ ] [Pandaset](https://pandaset.org/): To be added
+- [ ] [KITTI-360](http://www.cvlibs.net/datasets/kitti-360/): To be added
 
 ## Datasets of other type
 - [ ] [CityScape](https://www.cityscapes-dataset.com/):
