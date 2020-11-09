@@ -1,10 +1,10 @@
 #include <vector>
 #include "d3d/box/utils.h"
-#include "d3d/geometry.hpp"
+#include "dgal/geometry.hpp"
 
 using namespace std;
 using namespace torch;
-using namespace d3d;
+using namespace dgal;
 
 py::list rbox_2d_crop(Tensor cloud, Tensor boxes)
 {

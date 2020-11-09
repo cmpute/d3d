@@ -4,3 +4,6 @@
 [submodule "thirdparty/robin-map"]
 	path = thirdparty/robin-map
 	url = https://github.com/Tessil/robin-map.git
+[submodule "thirdparty/dgal"]
+	path = thirdparty/dgal
+	url = https://github.com/cmpute/dgal.git

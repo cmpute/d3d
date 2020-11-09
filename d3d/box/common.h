@@ -1,5 +1,7 @@
 #pragma once
 
+#include "d3d/common.h"
+
 enum class IouType : int { NA=0,
     BOX=1, RBOX=2, // traditional iou for axis aligned box and rotated box
     GBOX=3, GRBOX=4, // Generalized iou

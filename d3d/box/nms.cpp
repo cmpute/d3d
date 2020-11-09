@@ -4,7 +4,7 @@
 
 using namespace std;
 using namespace torch;
-using namespace d3d;
+using namespace dgal;
 
 template <typename scalar_t, IouType Iou, SupressionType Supression>
 void nms2d_templated(
@@ -48,7 +48,7 @@ void nms2d_templated(
                 continue;
 
             BoxType bj = _BoxUtilCpu<scalar_t, BoxType>::make_box(boxes_[j]);
-            scalar_t iou = d3d::iou(bi, bj);
+            scalar_t iou = dgal::iou(bi, bj);
 
             if (iou > iou_threshold)
             {

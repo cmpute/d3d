@@ -4,7 +4,7 @@
 
 using namespace std;
 using namespace torch;
-using namespace d3d;
+using namespace dgal;
 
 template <typename scalar_t>
 __global__ void iou2d_forward_kernel(

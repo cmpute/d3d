@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
 project(D3D LANGUAGES C CXX VERSION 1.0)
 
 option(BUILD_WITH_CUDA "Build the library with CUDA support" ON)
@@ -46,5 +46,8 @@ find_package(PythonExtensions REQUIRED)
 find_package(Cython REQUIRED)
 find_package(NumPy REQUIRED)
 include_directories(${NumPy_INCLUDE_DIRS})
+
+# include thirdparty libraries
+include_directories(thirdparty)
 
 add_subdirectory(d3d)

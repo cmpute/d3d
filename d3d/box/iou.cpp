@@ -1,12 +1,12 @@
 
 #include "d3d/box/iou.h"
 #include "d3d/box/utils.h"
-#include "d3d/geometry.hpp"
-#include "d3d/geometry_grad.hpp"
+#include "dgal/geometry.hpp"
+#include "dgal/geometry_grad.hpp"
 
 using namespace std;
 using namespace torch;
-using namespace d3d;
+using namespace dgal;
 
 template <typename scalar_t>
 void iou2d_forward_templated(

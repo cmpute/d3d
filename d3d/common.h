@@ -1,5 +1,4 @@
-#ifndef D3D_COMMON_CUH
-#define D3D_COMMON_CUH
+#pragma once
 
 // CUDA function descriptors
 #ifdef __CUDACC__
@@ -45,5 +44,3 @@
         exit(EXIT_FAILURE);                                                  \
     }                                                                        \
     }
-
-#endif // D3D_COMMON_CUH
