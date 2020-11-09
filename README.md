@@ -1,11 +1,23 @@
 # D3D
-Devkit for 3D: Some utils for 3D object detection and tracking based on Numpy and Pytorch
+**Devkit for 3D: Some utils for 3D object detection and tracking based on Numpy and Pytorch**
+
+<hr/>
+Please consider siting my work if you find this library useful in your research :)
+
+```bibtex
+@article{zhong2020uncertainty,
+  title={Uncertainty-Aware Voxel based 3D Object Detection and Tracking with von-Mises Loss},
+  author={Zhong, Yuanxin and Zhu, Minghan and Peng, Huei},
+  journal={arXiv preprint arXiv:2011.02553},
+  year={2020}
+}
+```
 
 ## Features
-- Unified interface
+- Unified data representation
 - Support loading KITTI, Waymo, Nuscenes dataset
-- 2D IoU, NMS
-- Voxelization
+- Rotated 2D IoU, NMS with clear CUDA implementations
+- Point Cloud Voxelization
 - Visualization
 - Benchmarking
 
