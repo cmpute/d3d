@@ -23,10 +23,3 @@ add_library(benchmarks MODULE ${benchmarks})
 target_compile_definitions(benchmarks PRIVATE ${CYTHON_DEFINITIONS})
 python_extension_module(benchmarks)
 install(TARGETS benchmarks LIBRARY DESTINATION d3d)
-
-# compile geometry pybind11 module
-add_library(geometry MODULE geometry_binding.cpp)
-python_extension_module(geometry)
-target_include_directories(geometry PRIVATE ${TORCH_INCLUDE_DIRS})
-set_property(TARGET geometry PROPERTY CXX_STANDARD 17)
-install(TARGETS geometry DESTINATION d3d)
