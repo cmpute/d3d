@@ -25,3 +25,4 @@
   - https://github.com/mcordts/cityscapesScripts
 - [ ] [BDD](https://bdd-data.berkeley.edu/): To be added
 - [ ] [SemanticKITTI](http://www.semantic-kitti.org/): To be added
+- [ ] [vKITTI](https://github.com/VisualComputingInstitute/vkitti3D-dataset): To be added

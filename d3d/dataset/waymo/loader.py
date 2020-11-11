@@ -104,13 +104,13 @@ class WaymoObjectLoader(TrackingDatasetBase):
         The output would be a nested list of nframes * nfolders data
         '''
         if isinstance(idx, int):
-            seq_id, frame_id = self._locate_frame(idx)
+            seq_id, frame_idx = self._locate_frame(idx)
         else:
-            seq_id, frame_id = idx
+            seq_id, frame_idx = idx
 
         ar = zipfile.ZipFile(self.base_path / (seq_id + ".zip"))
         return [[ar.read("%s/%04d.%s" % (f, fidx, suffix)) for f in folders]
-            for fidx in range(frame_id - self.nframes, frame_id+1)]
+            for fidx in range(frame_idx - self.nframes, frame_idx+1)]
 
     def lidar_data(self, idx, names=None, concat=False):
         """
@@ -230,10 +230,10 @@ class WaymoObjectLoader(TrackingDatasetBase):
 
     def identity(self, idx):
         if isinstance(idx, int):
-            seq_id, frame_id = self._locate_frame(idx)
+            seq_id, frame_idx = self._locate_frame(idx)
         else:
-            seq_id, frame_id = idx
-        return self.phase, seq_id, frame_id
+            seq_id, frame_idx = idx
+        return self.phase, seq_id, frame_idx
 
     def timestamp(self, idx):
         result = [int(d[0].decode()) for d in self._load_files(idx, ["timestamp"], "txt")]

@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 import os
 import xml.etree.ElementTree as ET
 from collections import namedtuple
@@ -7,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy.spatial.transform import Rotation
+from d3d.abstraction import EgoPose
 
 # ====== Common classes ======
 
@@ -69,12 +71,14 @@ def load_timestamps(basepath, file, formatted=False):
     else:  # assume ZipFile object
         fin = basepath.open(str(file))
 
+    tz_offset = np.timedelta64(1,'h') # convert German time to UTC time
     with fin:
         if formatted:
             for line in fin.readlines():
-                timestamps.append(np.datetime64(line))
+                timestamps.append(np.datetime64(line) - tz_offset)
+            timestamps = np.asanyarray(timestamps)
         else:
-            timestamps = (np.loadtxt(fin) * 1e9).astype("M8[ns]")
+            timestamps = (np.loadtxt(fin) * 1e9).astype("M8[ns]") - tz_offset
 
     return timestamps
 
@@ -108,6 +112,34 @@ def load_calib_file(basepath, file):
                 pass
 
     return data
+
+
+def load_oxt_file(basepath, file):
+    data = []
+    if isinstance(basepath, (str, Path)):
+        fin = Path(basepath, file).open()
+    else:  # assume ZipFile object
+        fin = basepath.open(str(file))
+
+    with fin:
+        for line in fin.readlines():
+            if not line.strip():
+                continue
+            if not isinstance(line, str):
+                line = line.decode()
+
+            values = list(map(float, line.strip().split(' ')))
+            values[-5:] = list(map(int, values[-5:]))
+            data.append(OxtData(*values))
+
+    return data
+    
+def parse_pose_from_oxt(oxt: OxtData) -> EgoPose:
+    import utm
+    x, y, *_ = utm.from_latlon(oxt.lat, oxt.lon)
+    t = [x, y, oxt.alt]
+    r = Rotation.from_euler("xyz", [oxt.roll, oxt.pitch, oxt.yaw + np.pi/2])
+    return EgoPose(t, r, position_var=np.eye(3) * oxt.pos_accuracy)
 
 
 def load_image(basepath, file, gray=False):

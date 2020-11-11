@@ -70,7 +70,7 @@ def parse_label(label: list, raw_calib: dict):
 
 class KittiObjectLoader(DetectionDatasetBase):
     """
-    Loader for KITTI object detection dataset, please organize the filed into following structure
+    Loader for KITTI object detection dataset, please organize the files into following structure
     
     # Zip Files
     - data_object_calib.zip

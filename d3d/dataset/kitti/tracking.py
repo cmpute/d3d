@@ -43,12 +43,6 @@ def parse_label(label: list, raw_calib: dict) -> Target3DArray:
 
     return objects
 
-def parse_pose(oxt: OxtData) -> EgoPose:
-    import utm
-    x, y, *_ = utm.from_latlon(oxt.lat, oxt.lon)
-    t = [x, y, oxt.alt]
-    r = Rotation.from_euler("xyz", [oxt.roll, oxt.pitch, oxt.yaw + np.pi/2])
-    return EgoPose(t, r, position_var=np.eye(3) * oxt.pos_accuracy)
 
 class KittiTrackingLoader(TrackingDatasetBase):
     """
@@ -82,8 +76,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
     # TODO: add option to split trainval dataset by sequence instead of overall index
     def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8, trainval_random=False, nframes=1):
-        base_path = Path(base_path)
-        self.base_path = base_path
+        self.base_path = Path(base_path)
         self.inzip = inzip
         self.phase = phase
         self.phase_path = 'training' if phase == 'validation' else phase
@@ -96,7 +89,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
         frame_count = defaultdict(int)
         if self.inzip:
             for folder in ['image_2', 'image_3', 'velodyne']:
-                data_zip = base_path / ("data_tracking_%s.zip" % folder)
+                data_zip = self.base_path / ("data_tracking_%s.zip" % folder)
                 if data_zip.exists():
                     with ZipFile(data_zip) as data:
                         for name in data.namelist():
@@ -114,7 +107,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
                     break
         else:
             for folder in ['image_02', 'image_03', 'velodyne']:
-                fpath = base_path / self.phase_path / folder
+                fpath = self.base_path / self.phase_path / folder
                 if fpath.exists():
                     for seq_path in fpath.iterdir():
                         seq = int(seq_path.name)
@@ -123,9 +116,9 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         if not len(frame_count):
             raise ValueError("Cannot parse dataset, please check path, inzip option and file structure")
-        total_count = sum(frame_count.values()) - nframes * len(frame_count)
         self.frame_dict = OrderedDict(frame_count)
 
+        total_count = sum(frame_count.values()) - nframes * len(frame_count)
         self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
         self._image_size_cache = {} # used to store the image size (for each sequence)
         self._label_cache = {} # used to store parsed label data
@@ -186,7 +179,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
         else:
             self._calib_cache[seq_id] = utils.load_calib_file(self.base_path, file_name)
 
-    def _preload_pose(self, seq_id):
+    def _preload_oxts(self, seq_id):
         if seq_id in self._pose_cache:
             return
 
@@ -210,9 +203,9 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
     def camera_data(self, idx, names='cam2'):
         if isinstance(idx, int):
-            seq_id, frame_id = self._locate_frame(idx)
+            seq_id, frame_idx = self._locate_frame(idx)
         else:
-            seq_id, frame_id = idx
+            seq_id, frame_idx= idx
         unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
         
         outputs = []
@@ -227,7 +220,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
                     source = ZipFile(self.base_path / "data_tracking_image_3.zip")
 
             data_seq = []
-            for fidx in range(frame_id - self.nframes, frame_id+1):
+            for fidx in range(frame_idx - self.nframes, frame_idx+1):
                 file_name = Path(self.phase_path, folder_name, "%04d" % seq_id, '%06d.png' % fidx)
                 if self.inzip:
                     image = utils.load_image(source, file_name, gray=False)
@@ -249,9 +242,13 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
     def lidar_data(self, idx, names='velo', concat=True):
         if isinstance(idx, int):
-            seq_id, frame_id = self._locate_frame(idx)
+            seq_id, frame_idx = self._locate_frame(idx)
         else:
-            seq_id, frame_id = idx
+            seq_id, frame_idx = idx
+        
+        # This is the problem in KITTI dataset itself
+        if seq_id == 1 and frame_idx in range(177, 181):
+            raise ValueError("There is missing data in KITTI tracking dataset at seq 1, frame 177-180!")
 
         if isinstance(names, str):
             names = [names]
@@ -264,7 +261,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
         data_seq = []
         if self.inzip:
             source = ZipFile(self.base_path / "data_tracking_velodyne.zip")
-        for fidx in range(frame_id - self.nframes, frame_id+1):
+        for fidx in range(frame_idx - self.nframes, frame_idx+1):
             fname = Path(self.phase_path, 'velodyne', "%04d" % seq_id, '%06d.bin' % fidx)
             if self.inzip:
                 data_seq.append(utils.load_velo_scan(source, fname))
@@ -294,12 +291,12 @@ class KittiTrackingLoader(TrackingDatasetBase):
         if self.phase_path == "testing":
             raise ValueError("Testing dataset doesn't contain label data")
         if isinstance(idx, int):
-            seq_id, frame_id = self._locate_frame(idx)
+            seq_id, frame_idx = self._locate_frame(idx)
         else:
-            seq_id, frame_id = idx
+            seq_id, frame_idx = idx
 
         self._preload_label(seq_id)
-        labels = [self._label_cache[seq_id][fid] for fid in range(frame_id - self.nframes, frame_id+1)]
+        labels = [self._label_cache[seq_id][fid] for fid in range(frame_idx - self.nframes, frame_idx+1)]
 
         if self.nframes == 0:
             if raw: return labels[0]
@@ -354,19 +351,19 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
     def pose(self, idx, raw=False):
         if isinstance(idx, int):
-            seq_id, frame_id = self._locate_frame(idx)
+            seq_id, frame_idx = self._locate_frame(idx)
         else:
-            seq_id, frame_id = idx
+            seq_id, frame_idx = idx
 
-        self._preload_pose(seq_id)
+        self._preload_oxts(seq_id)
 
         if self.nframes == 0:
-            poses = self._pose_cache[seq_id][frame_id]
+            poses = self._pose_cache[seq_id][frame_idx]
 
             if raw: return poses
-            return parse_pose(poses)
+            return utils.parse_pose_from_oxt(poses)
         else:
-            poses = [self._pose_cache[seq_id][fid] for fid in range(frame_id - self.nframes, frame_id+1)]
+            poses = [self._pose_cache[seq_id][fid] for fid in range(frame_idx - self.nframes, frame_idx+1)]
 
             if raw: return poses
-            return [parse_pose(p) for p in poses]
+            return [utils.parse_pose_from_oxt(p) for p in poses]
