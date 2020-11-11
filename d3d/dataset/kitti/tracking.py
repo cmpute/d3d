@@ -252,9 +252,6 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         if isinstance(names, str):
             names = [names]
-            unpack_result = True
-        else:
-            unpack_result = False
         if names != self.VALID_LIDAR_NAMES:
             raise ValueError("There's only one lidar in KITTI dataset")
 
@@ -272,7 +269,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         if self.inzip:
             source.close()
-        return data_seq if unpack_result else [data_seq]
+        return data_seq
 
     def calibration_data(self, idx, raw=False):
         if isinstance(idx, int):

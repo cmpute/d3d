@@ -1,10 +1,9 @@
-"""This module which loads and parses raw KITTI data."""
-
 import numpy as np
 from zipfile import ZipFile
 from pathlib import Path
 from itertools import chain
 from collections import defaultdict, OrderedDict
+from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
@@ -53,6 +52,10 @@ class KittiRawDataset(TrackingDatasetBase):
 
     VALID_CAM_NAMES = ["cam0", "cam1", "cam2", "cam3"]
     VALID_LIDAR_NAMES = ["velo"]
+    FRAME2FOLDER = {
+        "cam0": "image_00", "cam1": "image_01", "cam2": "image_02", "cam3": "image_03",
+        "velo": "velodyne_points", "imu": "oxts"
+    }
 
     def __init__(self, base_path, datatype='sync',
         inzip=True, phase="training",
@@ -111,12 +114,7 @@ class KittiRawDataset(TrackingDatasetBase):
         self._timestamp_cache = {} # used to store parsed timestamp
         self._pose_cache = {} # used to store parsed pose data
         self._tracklet_cache = {} # used to store parsed tracklet data
-
-        # # Pre-load data that isn't returned as a generator
-        # self._load_calib()
-        # self._load_timestamps()
-        # self._load_oxts()
-        # if datatype == "sync": self._load_tracklets()
+        self._tracklet_mapping = {} # inverse mapping for tracklets
 
     def __len__(self):
         return len(self.frames)
@@ -198,22 +196,26 @@ class KittiRawDataset(TrackingDatasetBase):
 
         return data
 
+    def calibration_data(self, idx, raw=False):
+        if isinstance(idx, int):
+            seq_id, _ = self._locate_frame(idx)
+        else:
+            seq_id, _ = idx
+
+        return self._load_calib(seq, raw=raw)
+
     def _preload_timestamp(self, seq_id):
         date = self._get_date(seq_id)
         if seq_id in self._timestamp_cache:
             return
 
-        frame2folder = {
-            "cam0": "image_00", "cam1": "image_01", "cam2": "image_02", "cam3": "image_03",
-            "velo": "velodyne_points", "imu": "oxts"
-        }
         tsdict = {}
-        for frame, folder in frame2folder.items():
+        for frame, folder in self.FRAME2FOLDER.items():
             if self.inzip:
                 with ZipFile(self.base_path / f"{seq_id}.zip") as data:
                     tsdict[frame] = utils.load_timestamps(data, f"{date}/{seq_id}/{folder}/timestamps.txt", formatted=True)
             else:
-                tsdict[frame] = utils.load_timestamps(data, self.base_path / date / seq_id / folder, "timestamps.txt", formatted=True)
+                tsdict[frame] = utils.load_timestamps(self.base_path / date / seq_id / folder, "timestamps.txt", formatted=True)
         self._timestamp_cache[seq_id] = tsdict
 
     def timestamp(self, idx, frame="velo"):
@@ -228,13 +230,18 @@ class KittiRawDataset(TrackingDatasetBase):
         else:
             seq_id, frame_idx = idx
         self._preload_timestamp(seq_id)
-        return self._timestamp_cache[seq_id][frame][frame_idx].astype(int) // 1000
+        
+        if self.nframes == 0:
+            return self._timestamp_cache[seq_id][frame][frame_idx].astype(int) // 1000
+        else:
+            return self._timestamp_cache[seq_id][frame][
+                frame_idx - self.nframes:frame_idx+1].astype(int) // 1000
 
     def _preload_tracklets(self, seq_id):
-        date = self._get_date(seq_id)
         if seq_id in self._tracklet_cache:
             return
 
+        date = self._get_date(seq_id)
         if self.inzip:
             tracklet_fname = seq_id[:-len(self.datatype)] + "tracklets"
             with ZipFile(self.base_path / f"{tracklet_fname}.zip") as data:
@@ -242,25 +249,28 @@ class KittiRawDataset(TrackingDatasetBase):
         else:
             tracklets = utils.load_tracklets(data, self.base_path / date / seq_id / "tracklet_labels.xml")
 
-        print(tracklets)
-    #     tracklet_frames = [[] for i in range(len(self.velo_timestamps))] # Create array
-    #     for track in tracklets:
-    #         for idx, pose in enumerate(track.poses):
-    #             pose.objectType = track.objectType
-    #             pose.h = track.h
-    #             pose.w = track.w
-    #             pose.l = track.l
-    #             pose.id = idx
-    #             tracklet_frames[idx + int(track.first_frame)].append(pose)
-    #     self.tracklets = tracklet_frames
+        # inverse mapping
+        objs = defaultdict(list) # (frame -> list of objects)
+        for tid, tr in enumerate(tracklets):
+            dim = [tr.l, tr.w, tr.h]
+            tag = ObjectTag(tr.objectType, KittiObjectClass)
+            for pose_idx, pose in enumerate(tr.poses):
+                # TODO: convert from camera to lidar coordinate
+                pos = [pose.tx, pose.ty, pose.tz]
+                ori = Rotation.from_euler("ZYX", (pose.rz, pose.ry, pose.rx))
+                objs[pose_idx + tr.first_frame].append(ObjectTarget3D(pos, ori, dim, tag, tid=tid))
+
+        self._tracklet_cache[seq_id] = {k: Target3DArray(l, frame="velo") for k, l in objs.items()}
 
     def lidar_objects(self, idx):
         if isinstance(idx, int):
             seq_id, frame_idx = self._locate_frame(idx)
         else:
             seq_id, frame_idx = idx
+
         self._preload_tracklets(seq_id)
-        # return self._tracklet_cache[seq_id][frame_idx]
+        labels = [self._tracklet_cache[seq_id][fid] for fid in range(frame_idx - self.nframes, frame_idx+1)]
+        return labels[0] if self.nframes == 0 else labels
 
     def _preload_oxts(self, seq_id):
         if seq_id in self._pose_cache:
@@ -292,10 +302,10 @@ class KittiRawDataset(TrackingDatasetBase):
         else:
             seq_id, frame_idx = idx
 
+        date = self._get_date(seq_id)
         oxts = []
         for fid in range(frame_idx - self.nframes, frame_idx+1):
-            date = self._get_date(seq_id)
-            file_name = f"{date}/{seq_id}/oxts/data/" + "%010d.txt" % fid
+            file_name = Path(date, seq_id, "oxts", "data", "%010d.txt" % fid)
             if self.inzip:
                 with ZipFile(self.base_path / f"{seq_id}.zip") as data:
                     oxts.append(utils.load_oxt_file(data, file_name)[0])
@@ -309,10 +319,65 @@ class KittiRawDataset(TrackingDatasetBase):
             if raw: return oxts
             return [utils.parse_pose_from_oxt(p) for p in oxts]
 
-if __name__ == "__main__":
-    ds = KittiRawDataset("/mnt/storage8t/datasets/kitti")
-    # ds = KittiRawDataset("/mnt/storage8t/jacobz/kitti_raw_extracted", inzip=False)
-    print(ds._load_calib("2011_09_26_drive_0001_sync"))
-    print(ds.timestamp(1).astype(int) // 1000)
-    print(ds.lidar_objects(1))
-    print(ds.pose(1, raw=True))
+    def camera_data(self, idx, names='cam2'):
+        if isinstance(idx, int):
+            seq_id, frame_idx = self._locate_frame(idx)
+        else:
+            seq_id, frame_idx = idx
+        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
+        
+        date = self._get_date(seq_id)
+        outputs = []
+        source = ZipFile(self.base_path / f"{seq_id}.zip")
+        for name in names:
+            data_seq = []
+            for fidx in range(frame_idx - self.nframes, frame_idx+1):
+                file_name = Path(date, seq_id, self.FRAME2FOLDER[name], 'data', '%010d.png' % fidx)
+                gray = names in ['cam0', 'cam1']
+                if self.inzip:
+                    image = utils.load_image(source, file_name, gray=gray)
+                else:
+                    image = utils.load_image(self.base_path, file_name, gray=gray)
+                data_seq.append(image)
+            if self.nframes == 0: # unpack if only 1 frame
+                data_seq = data_seq[0]
+
+            outputs.append(data_seq)
+            if self.inzip:
+                source.close()
+
+        return outputs[0] if unpack_result else outputs
+
+    def lidar_data(self, idx, names='velo', concat=True):
+        if isinstance(idx, int):
+            seq_id, frame_idx = self._locate_frame(idx)
+        else:
+            seq_id, frame_idx = idx
+
+        if isinstance(names, str):
+            names = [names]
+        if names != self.VALID_LIDAR_NAMES:
+            raise ValueError("There's only one lidar in KITTI dataset")
+
+        date = self._get_date(seq_id)
+        data_seq = []
+        if self.inzip:
+            source = ZipFile(self.base_path / f"{seq_id}.zip")
+        for fidx in range(frame_idx - self.nframes, frame_idx+1):
+            fname = Path(date, seq_id, 'velodyne_points', 'data', '%010d.bin' % fidx)
+            if self.inzip:
+                data_seq.append(utils.load_velo_scan(source, fname))
+            else:
+                data_seq.append(utils.load_velo_scan(self.base_path, fname))
+        if self.nframes == 0: # unpack if only 1 frame
+            data_seq = data_seq[0]
+
+        if self.inzip:
+            source.close()
+        return data_seq
+
+    def identity(self, idx):
+        '''
+        For KITTI this method just return the phase and index
+        '''
+        return self._locate_frame(idx)

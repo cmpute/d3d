@@ -9,7 +9,7 @@ from tkinter import TclError
 
 from d3d.abstraction import EgoPose
 from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
-                                      dump_detection_output, KittiTrackingLoader)
+                                      dump_detection_output, KittiTrackingLoader, KittiRawDataset)
 from d3d.dataset.waymo.loader import WaymoObjectLoader
 from d3d.dataset.nuscenes.loader import NuscenesObjectClass, NuscenesObjectLoader, NuscenesDetectionClass
 from d3d.vis.pcl import visualize_detections as pcl_vis
@@ -268,6 +268,13 @@ class TestKittiTrackingDataset(unittest.TestCase):
         visualizer.setWindowName("Please check whether the gt boxes are aligned!")
         visualizer.spinOnce(time=5000)
         visualizer.close()
+
+class TestKittiRawDataset(unittest.TestCase):
+    def setUp(self):
+        self.loader = KittiRawDataset(kitti_location, inzip=inzip, nframes=1)
+
+    # TODO: add test for raw dataset
+    # TODO: add mixin test cases for ObjectDataset/TrackingDataset sanity checks (run every function once)
 
 if __name__ == "__main__":
     TestKittiObjectDataset().test_detection_output()
