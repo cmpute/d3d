@@ -2,7 +2,7 @@
 
 <!-- TODO: create a table for all the dataset, marking availability -->
 
-- [x] [KITTI](http://www.cvlibs.net/datasets/kitti/): Object only
+- [x] [KITTI](http://www.cvlibs.net/datasets/kitti/): Support object, tracking, raw
 - [x] [Waymo](https://waymo.com/open/data/): Added
 - [x] [NuScenes](https://www.nuscenes.org/): Added
 - [ ] [Lyft L5](https://level5.lyft.com/dataset/): To be added

@@ -9,6 +9,7 @@ from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
 from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
+from d3d.dataset.zip import PatchedZipFile
 
 def parse_label(label: list, raw_calib: dict) -> Target3DArray:
     '''
@@ -152,7 +153,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         file_name = Path(self.phase_path, "label_02", "%04d.txt" % seq_id)
         if self.inzip:
-            with ZipFile(self.base_path / "data_tracking_label_2.zip") as source:
+            with PatchedZipFile(self.base_path / "data_tracking_label_2.zip", to_extract=file_name) as source:
                 text = source.read(str(file_name)).decode().split('\n')
         else:
             with open(self.base_path / file_name, "r") as fin:
@@ -174,7 +175,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         file_name = Path(self.phase_path, 'calib', '%04d.txt' % seq_id)
         if self.inzip:
-            with ZipFile(self.base_path / "data_tracking_calib.zip") as source:    
+            with PatchedZipFile(self.base_path / "data_tracking_calib.zip", to_extract=file_name) as source:    
                 self._calib_cache[seq_id] = utils.load_calib_file(source, file_name)
         else:
             self._calib_cache[seq_id] = utils.load_calib_file(self.base_path, file_name)
@@ -185,7 +186,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         file_name = Path(self.phase_path, 'oxts', '%04d.txt' % seq_id)
         if self.inzip:
-            with ZipFile(self.base_path / "data_tracking_oxts.zip") as source:
+            with PatchedZipFile(self.base_path / "data_tracking_oxts.zip", to_extract=file_name) as source:
                 text = source.read(str(file_name)).decode().split('\n')
         else:
             with open(self.base_path / file_name, "r") as fin:

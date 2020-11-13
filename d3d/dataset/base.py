@@ -1,7 +1,6 @@
 import os.path as osp
 from multiprocessing import Manager, Pool
 from typing import Any, List, Optional, Union, Tuple, Dict
-from zipfile import ZipFile
 
 import numpy as np
 import numpy.random as npr
@@ -10,7 +9,6 @@ from PIL.Image import Image
 from tqdm import tqdm
 
 from d3d.abstraction import Target3DArray, TransformSet, EgoPose
-
 
 def split_trainval(phase, total_count, trainval_split, trainval_random):
     '''
@@ -62,6 +60,9 @@ def check_frames(names, valid):
 
 
 class DetectionDatasetBase:
+    """
+    This class defines basic interface for object detection
+    """
     VALID_CAM_NAMES: list
     VALID_LIDAR_NAMES: list
 
@@ -118,7 +119,7 @@ class DetectionDatasetBase:
         '''
         pass
 
-    def lidar_objects(self, idx: int, raw: Optional[bool] = None) -> Target3DArray:
+    def lidar_objects(self, idx: int, raw: Optional[bool] = None) -> Target3DArray: # TODO(v0.4): rename to annotation_3dobject (for 3d bounding boxes)
         '''
         Return list of converted ground truth targets in lidar frame.
 
@@ -137,6 +138,11 @@ class DetectionDatasetBase:
 
 
 class TrackingDatasetBase(DetectionDatasetBase):
+    """
+    Tracking dataset is similarly defined with detection dataset. The two major differences are
+    1. Tracking dataset use (sequence_id, frame_id) as identifier.
+    2. Tracking dataset provide unique object id across time frames.
+    """
     VALID_CAM_NAMES: list
     VALID_LIDAR_NAMES: list
 
@@ -154,6 +160,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
             If it's a number, then it's used as the seed for random shuffling
             If it's a string, then predefined order is used. {r: reverse}
         :param nframes: number of consecutive frames returned from the accessors
+            TODO(v0.4): we shouldn't separate this.. there's only one way to retrieve multiple frames
             If it's a positive number, then it returns past frames
             If it's a negative number, then it returns future frames
             If it's zero, then it act like object detection dataset, which means the methods will return unpacked data
@@ -178,7 +185,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         :param concat: whether to convert the point clouds to base frame and concat them.
                        If only one frame requested, the conversion to base frame will still be performed.
         '''
-        pass
+        pass # TODO(v0.4): should provide utility to extract frames based on single frame extractor to reduce coding complexity
 
     def camera_data(self,
                     idx: Union[int, Tuple[int, int]],
@@ -227,11 +234,11 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         pass
 
-    def timestamp(self, idx: Union[int, Tuple[int, int]]) -> Union[int, List[int]]:
+    def timestamp(self, idx: Union[int, Tuple[int, int]], names: Optional[Union[str, List[str]]] = None) -> Union[int, List[int]]:
         '''
         Return the timestamp of frames specified the index, represented by Unix timestamp in miliseconds
         '''
-        pass
+        pass # TODO(v0.4): we should add frame option into this as in KITTI raw dataset, following similar manner 
 
     @property
     def sequence_sizes(self) -> Dict[Any, int]:
@@ -246,27 +253,6 @@ class TrackingDatasetBase(DetectionDatasetBase):
         Return the list of sequence ids
         '''
         pass
-
-class ZipCache:
-    '''
-    This class is a utility for zip reading. It will retain the reference
-    to the last accessed zip file. It also handles the close of the object
-    '''
-
-    def __init__(self, size=1):
-        if size > 1:
-            raise NotImplementedError()
-        self._cache = None
-        self._cache_path = None
-
-    def open(self, path, **kvargs):
-        path = osp.abspath(path)
-        if path != self._cache_path:
-            if self._cache is not None:
-                self._cache.close()
-            self._cache = ZipFile(path, **kvargs)
-            self._cache_path = path
-        return self._cache
 
 
 def _wrap_func(func, args, pool, nlock, offset):

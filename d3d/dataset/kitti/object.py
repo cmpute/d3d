@@ -12,6 +12,7 @@ from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
 from d3d.dataset.base import DetectionDatasetBase, check_frames, split_trainval
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass
+from d3d.dataset.zip import PatchedZipFile
 
 def load_label(basepath, file):
     '''
@@ -140,12 +141,12 @@ class KittiObjectLoader(DetectionDatasetBase):
             elif name == "cam3":
                 folder_name = "image_3"
 
-            file_name = Path(self.phase_path, folder_name, '%06d.png' % self.frames[idx])
+            fname = Path(self.phase_path, folder_name, '%06d.png' % self.frames[idx])
             if self.inzip:
-                with ZipFile(self.base_path / ("data_object_%s.zip" % folder_name)) as source:
-                    image = utils.load_image(source, file_name, gray=False)
+                with PatchedZipFile(self.base_path / ("data_object_%s.zip" % folder_name), to_extract=fname) as source:
+                    image = utils.load_image(source, fname, gray=False)
             else:
-                image = utils.load_image(self.base_path, file_name, gray=False)
+                image = utils.load_image(self.base_path, fname, gray=False)
 
             outputs.append(image)
 
@@ -169,7 +170,7 @@ class KittiObjectLoader(DetectionDatasetBase):
 
         fname = Path(self.phase_path, 'velodyne', '%06d.bin' % self.frames[idx])
         if self.inzip:
-            with ZipFile(self.base_path / "data_object_velodyne.zip") as source:
+            with PatchedZipFile(self.base_path / "data_object_velodyne.zip", to_extract=fname) as source:
                 scan = utils.load_velo_scan(source, fname)
         else:
             scan = utils.load_velo_scan(self.base_path, fname)
@@ -180,11 +181,12 @@ class KittiObjectLoader(DetectionDatasetBase):
             return [scan]
 
     def calibration_data(self, idx, raw=False):
+        fname = Path(self.phase_path, 'calib', '%06d.txt' % self.frames[idx])
         if self.inzip:
-            with ZipFile(self.base_path / "data_object_calib.zip") as source:
-                return self._load_calib(source, idx, raw)
+            with PatchedZipFile(self.base_path / "data_object_calib.zip", to_extract=fname) as source:
+                return self._load_calib(source, fname, raw)
         else:
-            return self._load_calib(self.base_path, idx, raw)
+            return self._load_calib(self.base_path, fname, raw)
 
     def lidar_objects(self, idx, raw=False):
         '''
@@ -198,7 +200,7 @@ class KittiObjectLoader(DetectionDatasetBase):
 
         fname = Path(self.phase_path, 'label_2', '%06d.txt' % self.frames[idx])
         if self.inzip:
-            with ZipFile(self.base_path / "data_object_label_2.zip") as source:
+            with PatchedZipFile(self.base_path / "data_object_label_2.zip", to_extract=fname) as source:
                 label = load_label(source, fname)
         else:
             label = load_label(self.base_path, fname)
@@ -213,9 +215,8 @@ class KittiObjectLoader(DetectionDatasetBase):
         '''
         return self.phase_path, self.frames[idx]
 
-    def _load_calib(self, basepath, idx, raw=False):
+    def _load_calib(self, basepath, filename, raw=False):
         # load the calibration file
-        filename = Path(self.phase_path, 'calib', '%06d.txt' % self.frames[idx])
         filedata = utils.load_calib_file(basepath, filename)
 
         if raw:

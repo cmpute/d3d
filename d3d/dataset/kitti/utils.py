@@ -151,7 +151,7 @@ def load_image(basepath, file, gray=False):
 
 
 def load_velo_scan(basepath, file, binary=True):
-    """Load and parse a kitti file. Accept path or file object as basepath"""
+    """Load and parse a kitti point cloud file. Accept path or file object as basepath"""
     if binary:
         if isinstance(basepath, (str, Path)):
             scan = np.fromfile(Path(basepath, file), dtype=np.float32)

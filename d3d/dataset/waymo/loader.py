@@ -33,7 +33,7 @@ class WaymoObjectClass(Enum):
     Sign = 3
     Cyclist = 4
 
-class WaymoObjectLoader(TrackingDatasetBase):
+class WaymoObjectLoader(TrackingDatasetBase): # TODO(v0.4): rename to WaymoLoader
     """
     Load waymo dataset into a usable format.
     Please use the d3d_waymo_convert command to convert the dataset first into following formats

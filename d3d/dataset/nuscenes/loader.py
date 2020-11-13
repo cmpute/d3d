@@ -15,7 +15,8 @@ from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import DetectionDatasetBase, ZipCache, check_frames, split_trainval
+from d3d.dataset.base import DetectionDatasetBase, check_frames, split_trainval
+from d3d.dataset.zip import PatchedZipFile
 
 _logger = logging.getLogger("d3d")
 
@@ -139,7 +140,7 @@ class NuscenesDetectionClass(Enum):
     trailer = auto()
     truck = auto()
 
-class NuscenesObjectLoader(DetectionDatasetBase):
+class NuscenesObjectLoader(DetectionDatasetBase): # TODO(v0.4): rename to NuscenesLoader
     '''
     Load waymo dataset into a usable format.
     Please use the d3d_nuscenes_convert command (do not use --all-frames) to convert the dataset first into following formats
@@ -174,8 +175,6 @@ class NuscenesObjectLoader(DetectionDatasetBase):
         # split trainval
         total_count = sum(v.nbr_samples for v in self._metadata.values())
         self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
-
-        self._zip_cache = ZipCache()
 
     def _load_metadata(self):
         meta_path = self.base_path / "metadata.json"
@@ -215,11 +214,14 @@ class NuscenesObjectLoader(DetectionDatasetBase):
 
     def _locate_file(self, idx, folders, suffix):
         fname, fidx = self._locate_frame(idx)
-        ar = self._zip_cache.open(self.base_path / (fname + ".zip"))
         if isinstance(folders, list):
-            return [ar.open("%s/%03d.%s" % (f, fidx, suffix)) for f in folders]
+            names = ["%s/%03d.%s" % (f, fidx, suffix) for f in folders]
+            ar = PatchedZipFile(self.base_path / (fname + ".zip"), to_extract=names)
+            return [ar.open(n) for n in names]
         else:
-            return ar.open("%s/%03d.%s" % (folders, fidx, suffix))
+            name = "%s/%03d.%s" % (folders, fidx, suffix)
+            ar = PatchedZipFile(self.base_path / (fname + ".zip"), to_extract=name)
+            return ar.open(name)
 
     def map_data(self, idx):
         # XXX: see https://jdhao.github.io/2019/02/23/crop_rotated_rectangle_opencv/ for image cropping
@@ -291,7 +293,7 @@ class NuscenesObjectLoader(DetectionDatasetBase):
     def calibration_data(self, idx):
         fname, _ = self._locate_frame(idx)
         calib_params = TransformSet("ego")
-        ar = self._zip_cache.open(self.base_path / (fname + ".zip"))
+        ar = PatchedZipFile(self.base_path / (fname + ".zip"), to_extract="scene/calib.json")
 
         with ar.open("scene/calib.json") as fin:
             calib_data = json.loads(fin.read().decode())

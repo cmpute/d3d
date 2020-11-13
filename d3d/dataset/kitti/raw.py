@@ -10,6 +10,7 @@ from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
 from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
+from d3d.dataset.zip import PatchedZipFile
 
 class KittiRawDataset(TrackingDatasetBase):
     """
@@ -74,13 +75,15 @@ class KittiRawDataset(TrackingDatasetBase):
         self.datatype = datatype
         self.nframes = nframes
 
-        if phase not in ['training', 'validation']:
+        if phase == "testing":
             raise ValueError("There's no testing split for raw data!")
+        if phase not in ['training', 'validation']:
+            raise ValueError("Invalid phase tag")
         if datatype == "extract":
             raise NotImplementedError("Currently only synced raw data are supported!")
 
         # count total number of frames
-        frame_count = defaultdict(int)
+        frame_count = dict()
         _dates = ["2011_09_26", "2011_09_28", "2011_09_29", "2011_09_30", "2011_10_03"]
         if self.inzip:
             globs = [self.base_path.glob(f"{date}_drive_*_{datatype}.zip")
@@ -211,11 +214,12 @@ class KittiRawDataset(TrackingDatasetBase):
 
         tsdict = {}
         for frame, folder in self.FRAME2FOLDER.items():
+            fname = Path(date, seq_id, folder, "timestamps.txt")
             if self.inzip:
-                with ZipFile(self.base_path / f"{seq_id}.zip") as data:
-                    tsdict[frame] = utils.load_timestamps(data, f"{date}/{seq_id}/{folder}/timestamps.txt", formatted=True)
+                with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as data:
+                    tsdict[frame] = utils.load_timestamps(data, fname, formatted=True)
             else:
-                tsdict[frame] = utils.load_timestamps(self.base_path / date / seq_id / folder, "timestamps.txt", formatted=True)
+                tsdict[frame] = utils.load_timestamps(self.base_path, fname, formatted=True)
         self._timestamp_cache[seq_id] = tsdict
 
     def timestamp(self, idx, frame="velo"):
@@ -242,12 +246,13 @@ class KittiRawDataset(TrackingDatasetBase):
             return
 
         date = self._get_date(seq_id)
+        fname = Path(date, seq_id, "tracklet_labels.xml")
         if self.inzip:
-            tracklet_fname = seq_id[:-len(self.datatype)] + "tracklets"
-            with ZipFile(self.base_path / f"{tracklet_fname}.zip") as data:
-                tracklets = utils.load_tracklets(data, f"{date}/{seq_id}/tracklet_labels.xml")
+            zname = seq_id[:-len(self.datatype)] + "tracklets"
+            with ZipFile(self.base_path / f"{zname}.zip") as data:
+                tracklets = utils.load_tracklets(data, fname)
         else:
-            tracklets = utils.load_tracklets(data, self.base_path / date / seq_id / "tracklet_labels.xml")
+            tracklets = utils.load_tracklets(self.base_path, fname)
 
         # inverse mapping
         objs = defaultdict(list) # (frame -> list of objects)
@@ -272,30 +277,6 @@ class KittiRawDataset(TrackingDatasetBase):
         labels = [self._tracklet_cache[seq_id][fid] for fid in range(frame_idx - self.nframes, frame_idx+1)]
         return labels[0] if self.nframes == 0 else labels
 
-    def _preload_oxts(self, seq_id):
-        if seq_id in self._pose_cache:
-            return
-
-        file_name = Path(self.phase_path, 'oxts', '%04d.txt' % seq_id)
-        if self.inzip:
-            with ZipFile(self.base_path / f"{seq_id}.zip") as data:
-                with ZipFile(self.base_path / f"{seq_id}.zip") as data:
-                    oxts = utils.load_oxt_file(data, f"{date}/{seq_id}/oxts/data", formatted=True)
-                self._pose_cache[seq_id] = load_oxt_file(source, file_name)
-                text = source.read(str(file_name)).decode().split('\n')
-        else:
-            with open(self.base_path / file_name, "r") as fin:
-                text = fin.readlines()
-
-        for line in text:
-            line = line.strip()
-            if not line:
-                continue
-
-            values = list(map(float, line.strip().split(' ')))
-            values[-5:] = list(map(int, values[-5:]))
-            self._pose_cache[seq_id].append(OxtData(*values))
-
     def pose(self, idx, raw=False):
         if isinstance(idx, int):
             seq_id, frame_idx = self._locate_frame(idx)
@@ -307,7 +288,7 @@ class KittiRawDataset(TrackingDatasetBase):
         for fid in range(frame_idx - self.nframes, frame_idx+1):
             file_name = Path(date, seq_id, "oxts", "data", "%010d.txt" % fid)
             if self.inzip:
-                with ZipFile(self.base_path / f"{seq_id}.zip") as data:
+                with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=file_name) as data:
                     oxts.append(utils.load_oxt_file(data, file_name)[0])
             else:
                 oxts.append(utils.load_oxt_file(self.base_path, file_name)[0])
