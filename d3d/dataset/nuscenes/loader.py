@@ -216,7 +216,7 @@ class NuscenesLoader(DetectionDatasetBase): # TODO(v0.4): make this dataset also
         raise NotImplementedError()
 
     @expand_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='lidar_top', concat=False):
+    def lidar_data(self, idx, names='lidar_top'):
         seq_id, frame_idx = idx
         fname = "lidar_top/%03d.pcd" % frame_idx
         with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
@@ -224,11 +224,6 @@ class NuscenesLoader(DetectionDatasetBase): # TODO(v0.4): make this dataset also
 
         scan = np.frombuffer(buffer, dtype=np.float32)
         scan = np.copy(scan.reshape(-1, 5)) # (x, y, z, intensity, ring index)
-
-        if concat: # convert lidar to base frame
-            calib = self.calibration_data(idx)
-            rt = np.linalg.inv(calib.extrinsics[names[0]])
-            scan[:,:3] = scan[:,:3].dot(rt[:3,:3].T) + rt[:3, 3]
 
         return scan
 

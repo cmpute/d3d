@@ -171,7 +171,7 @@ class KITTI360Loader(TrackingDatasetBase):
     @expand_idx_name(['velo'])
     # TODO: sick data is not supported due to synchronization issue currently
     #       official way to accumulate SICK data is by linear interpolate between adjacent point clouds
-    def lidar_data(self, idx, names='velo', concat=False): # TODO(v0.4): implement concatenation
+    def lidar_data(self, idx, names='velo'):
         seq_id, frame_idx = idx
         
         if names == "velo":

@@ -222,7 +222,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
         return image
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='velo', concat=True):
+    def lidar_data(self, idx, names='velo'):
         seq_id, frame_idx = idx
         
         # This is the problem in KITTI dataset itself

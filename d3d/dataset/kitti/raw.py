@@ -288,13 +288,13 @@ class KittiRawDataset(TrackingDatasetBase):
             return utils.load_image(self.base_path, fname, gray=gray)
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='velo', concat=True):
+    def lidar_data(self, idx, names='velo'):
         seq_id, frame_idx = idx
         date = self._get_date(seq_id)
 
         fname = Path(date, seq_id, 'velodyne_points', 'data', '%010d.bin' % frame_idx)
         if self.inzip:
-            with PatchedZipFile(self.base_path / f"{seq_id}.zip") as source as source:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip") as source:
                 return utils.load_velo_scan(source, fname)
         else:
             return utils.load_velo_scan(self.base_path, fname)

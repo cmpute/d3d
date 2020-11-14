@@ -20,6 +20,9 @@
 - [ ] [CADC](http://cadcd.uwaterloo.ca/) ([github](https://github.com/mpitropov/cadc_devkit)): To be added
 - [ ] [KITTI-360](http://www.cvlibs.net/datasets/kitti-360/): To be added
 
+# Indoor datasets
+- [ ] [Objectron](https://github.com/google-research-datasets/Objectron): To be added
+
 ## Datasets of other type
 - [ ] [CityScape](https://www.cityscapes-dataset.com/):
   - https://github.com/mcordts/cityscapesScripts

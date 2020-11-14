@@ -615,7 +615,15 @@ cdef class TransformSet:
                 raise ValueError("Unsupported target type!")
         return new_objs
 
-    cpdef tuple project_points_to_camera(self, points, str frame_to, str frame_from=None, remove_outlier=True, return_dmask=False):
+    cpdef np.ndarray transform_lidar(self, np.ndarray points, str frame_to, str frame_from=None):
+        '''
+        Convert point cloud from `frame_from` to `frame_to`
+        '''
+        rt = self.get_extrinsic(frame_to, frame_from)
+        xyz = points[:, :3].dot(rt[:3, :3].T) + rt[:3, 3]
+        return np.concatenate((xyz, points[:, 3:]), axis=1)
+
+    cpdef tuple project_points_to_camera(self, np.ndarray points, str frame_to, str frame_from=None, remove_outlier=True, return_dmask=False):
         '''
         :param remove_outlier: If set to True, the mask will be applied, i.e. only points
             that fall into image view will be returned

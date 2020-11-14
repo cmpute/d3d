@@ -147,7 +147,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         return image
 
     @expand_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='velo', concat=True):
+    def lidar_data(self, idx, names='velo'):
         assert names == 'velo'
 
         fname = Path(self.phase_path, 'velodyne', '%06d.bin' % self.frames[idx])

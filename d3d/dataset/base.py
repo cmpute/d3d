@@ -98,16 +98,13 @@ class DetectionDatasetBase:
 
     def lidar_data(self,
                    idx: int,
-                   names: Optional[Union[str, List[str]]] = None,
-                   concat: bool = False
+                   names: Optional[Union[str, List[str]]] = None
                    ) -> Union[NdArray, List[NdArray]]:
         '''
         Return the lidar point cloud data
 
         :param names: name of requested lidar frames
         :param idx: index of requested lidar frames
-        :param concat: whether to convert the point clouds to base frame and concat them.
-                       If only one frame requested, the conversion to base frame will still be performed.
         '''
         raise NotImplementedError("abstract function")
 
@@ -195,8 +192,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
 
     def lidar_data(self,
                    idx: Union[int, Tuple[int, int]],
-                   names: Optional[Union[str, List[str]]] = None,
-                   concat: bool = False
+                   names: Optional[Union[str, List[str]]] = None
                    ) -> Union[NdArray, List[NdArray], List[List[NdArray]]]:
         '''
         If multiple frames are requested, the results will be a list of list. Outer list corresponds to frame names and inner
@@ -207,8 +203,6 @@ class TrackingDatasetBase(DetectionDatasetBase):
                     if single index is given, then the frame indexing is done on the whole dataset with trainval split
                     if tuple of two integers is given, then first is the sequence index and the second is the frame index,
                     trainval split is ignored in this way and nframes offset is not added
-        :param concat: whether to convert the point clouds to base frame and concat them.
-                       If only one frame requested, the conversion to base frame will still be performed.
         '''
         raise NotImplementedError("_locate_frame is not implemented!")
 
