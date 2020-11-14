@@ -161,7 +161,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
                  phase: str = "training",
                  trainval_split: float = 1.,
                  trainval_random: bool = False,
-                 nframes: int = 1):
+                 nframes: int = 0):
         """
         :param base_path: directory containing the zip files, or the required data
         :param inzip: whether the dataset is store in original zip archives or unzipped

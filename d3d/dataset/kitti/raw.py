@@ -61,7 +61,7 @@ class KittiRawDataset(TrackingDatasetBase):
     def __init__(self, base_path, datatype='sync',
         inzip=True, phase="training",
         trainval_split=1, trainval_random=False,
-        nframes=1
+        nframes=0
     ):
         """
         Set the path and pre-load calibration data and timestamps.
