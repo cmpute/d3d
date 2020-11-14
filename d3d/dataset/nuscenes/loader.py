@@ -14,8 +14,8 @@ from enum import Enum, IntFlag, auto
 from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
-                             TransformSet)
-from d3d.dataset.base import DetectionDatasetBase, check_frames, split_trainval
+                             TransformSet, EgoPose)
+from d3d.dataset.base import DetectionDatasetBase, check_frames, split_trainval, expand_name
 from d3d.dataset.zip import PatchedZipFile
 
 _logger = logging.getLogger("d3d")
@@ -25,10 +25,11 @@ class NuscenesObjectClass(IntFlag):
     Categories and attributes of an annotation in nuscenes
 
     Encoded into 4bytes integer
-    XXXF: level0 category
-    XXFX: level1 category
-    XFXX: level2 category
-    FXXX: attribute
+    0xFFFF
+      │││└: level0 category
+      ││└─: level1 category
+      │└──: level2 category
+      └───: attribute
     '''
     unknown = 0x0000
 
@@ -140,7 +141,7 @@ class NuscenesDetectionClass(Enum):
     trailer = auto()
     truck = auto()
 
-class NuscenesObjectLoader(DetectionDatasetBase): # TODO(v0.4): rename to NuscenesLoader
+class NuscenesLoader(DetectionDatasetBase): # TODO(v0.4): make this dataset also a tracking dataset
     '''
     Load waymo dataset into a usable format.
     Please use the d3d_nuscenes_convert command (do not use --all-frames) to convert the dataset first into following formats
@@ -162,14 +163,12 @@ class NuscenesObjectLoader(DetectionDatasetBase): # TODO(v0.4): rename to Nuscen
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders
         """
-
+        super().__init__(base_path, inzip=inzip, phase=phase,
+                         trainval_split=trainval_split, trainval_random=trainval_random)
         if not inzip:
             raise NotImplementedError("Currently only support load from zip files in Nuscenes dataset")
-        if phase not in ['training', 'validation', 'testing']:
-            raise ValueError("Invalid phase tag")
-
         self.base_path = Path(base_path) / ("trainval" if phase in ["training", "validation"] else "test")
-        self.phase = phase
+
         self._load_metadata()
 
         # split trainval
@@ -212,29 +211,17 @@ class NuscenesObjectLoader(DetectionDatasetBase): # TODO(v0.4): rename to Nuscen
             idx -= v.nbr_samples
         raise ValueError("Index larger than dataset size")
 
-    def _locate_file(self, idx, folders, suffix):
-        fname, fidx = self._locate_frame(idx)
-        if isinstance(folders, list):
-            names = ["%s/%03d.%s" % (f, fidx, suffix) for f in folders]
-            ar = PatchedZipFile(self.base_path / (fname + ".zip"), to_extract=names)
-            return [ar.open(n) for n in names]
-        else:
-            name = "%s/%03d.%s" % (folders, fidx, suffix)
-            ar = PatchedZipFile(self.base_path / (fname + ".zip"), to_extract=name)
-            return ar.open(name)
-
     def map_data(self, idx):
         # XXX: see https://jdhao.github.io/2019/02/23/crop_rotated_rectangle_opencv/ for image cropping
         raise NotImplementedError()
 
+    @expand_name(VALID_LIDAR_NAMES)
     def lidar_data(self, idx, names='lidar_top', concat=False):
-        if isinstance(names, str):
-            names = [names]
-        if names != self.VALID_LIDAR_NAMES:
-            raise ValueError("There's only one lidar in Nuscenes dataset")
+        seq_id, frame_idx = idx
+        fname = "lidar_top/%03d.pcd" % frame_idx
+        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+            buffer = ar.read(fname)
 
-        with self._locate_file(idx, "lidar_top", "pcd") as fin:
-            buffer = fin.read()
         scan = np.frombuffer(buffer, dtype=np.float32)
         scan = np.copy(scan.reshape(-1, 5)) # (x, y, z, intensity, ring index)
 
@@ -245,22 +232,18 @@ class NuscenesObjectLoader(DetectionDatasetBase): # TODO(v0.4): rename to Nuscen
 
         return scan
 
+    @expand_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names=None):
-        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
+        seq_id, frame_idx = idx
+        fname = "%s/%03d.jpg" % (names, frame_idx)
+        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+            return Image.open(ar.open(fname)).convert('RGB')
 
-        handles = self._locate_file(idx, names, "jpg")
-        outputs = [Image.open(h).convert('RGB') for h in handles]
-        map(lambda h: h.close(), handles)
-
-        if unpack_result:
-            return outputs[0]
-        else:
-            return outputs
-
-    def lidar_objects(self, idx, raw=False, convert_tag=False):        
-        with self._locate_file(idx, "annotation", "json") as fin:
-            labels = list(map(edict, json.loads(fin.read().decode())))
-
+    def annotation_3dobject(self, idx, raw=False, convert_tag=False):
+        seq_id, frame_idx = idx
+        fname = "annotation/%03d.json" % frame_idx
+        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+            labels = list(map(edict, json.loads(ar.read(fname).decode())))
         if raw:
             return labels
 
@@ -325,15 +308,19 @@ class NuscenesObjectLoader(DetectionDatasetBase): # TODO(v0.4): rename to Nuscen
         return self.phase, scene, fidx
 
     def timestamp(self, idx):
-        with self._locate_file(idx, "timestamp", "txt") as fin:
-            return int(fin.read())
+        seq_id, frame_idx = idx
+        fname = "timestamp/%03d.txt" % frame_idx
+        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+            return int(ar.read(fname))
 
     def pose(self, idx):
         '''
         Return (rotation, translation)
         '''
-        with self._locate_file(idx, "pose", "json") as fin:
-            data = json.loads(fin.read().decode())
+        seq_id, frame_idx = idx
+        fname = "pose/%03d.json" % frame_idx
+        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+            data = json.loads(ar.read(fname).decode())
         r = Rotation.from_quat(data['rotation'][1:] + [data['rotation'][0]])
         t = np.array(data['translation'])
-        return r, t
+        return EgoPose(t, r)

@@ -1,13 +1,18 @@
-import numpy as np
-from zipfile import ZipFile
-from pathlib import Path
-from itertools import chain
 from collections import OrderedDict
-from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
+from itertools import chain
+from pathlib import Path
+from zipfile import ZipFile
+
+import numpy as np
+from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval
+from d3d.dataset.base import (TrackingDatasetBase, check_frames, expand_idx,
+                              expand_idx_name, split_trainval)
 from d3d.dataset.kitti.utils import load_image, load_velo_scan
+from d3d.dataset.zip import PatchedZipFile
 from PIL import Image
+from scipy.spatial.transform import Rotation
+
 
 def load_sick_scan(basepath, file):
     if isinstance(basepath, (str, Path)):
@@ -120,6 +125,8 @@ class KITTI360Loader(TrackingDatasetBase):
 
         total_count = sum(frame_count.values()) - nframes * len(frame_count)
         self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
+        self._poses_idx = {} # store loaded poses array
+        self._poses_matrix = {}
 
     def __len__(self):
         return len(self.frames)
@@ -132,80 +139,51 @@ class KITTI360Loader(TrackingDatasetBase):
     def sequence_sizes(self):
         return dict(self.frame_dict)
 
-    def _locate_frame(self, idx): # TODO(v0.4): this function is duplicated for multiple times
+    def _locate_frame(self, idx):
         # use underlying frame index
         idx = self.frames[idx]
 
         for k, v in self.frame_dict.items():
-            if (idx + self.nframes) < v:
-                return k, (idx + self.nframes)
+            if idx < (v - self.nframes):
+                return k, idx
             idx -= (v - self.nframes)
         raise ValueError("Index larger than dataset size")
 
+    @expand_idx_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names='cam1'):
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
-        else:
-            seq_id, frame_idx= idx
-        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
-        
-        outputs = []
+        seq_id, frame_idx = idx
+
         _folders = {
             "cam1": ("image_00", "data_rect"),
             "cam2": ("image_01", "data_rect"),
             "cam3": ("image_02", "data_rgb"),
             "cam4": ("image_03", "data_rgb")
         }
-        for name in names:
-            folder_name, dname = _folders[name]
-            if self.inzip:
-                source = ZipFile(self.base_path / f"{seq_id}_image_{folder_name}.zip")
 
-            data_seq = []
-            for fidx in range(frame_idx - self.nframes, frame_idx+1):
-                file_name = Path(seq_id, folder_name, dname, '%010d.png' % fidx)
-                if self.inzip:
-                    image = utils.load_image(source, file_name, gray=False)
-                else:
-                    image = load_image(self.base_path / "data_2d_raw", file_name, gray=False)
-                data_seq.append(image)
-            if self.nframes == 0: # unpack if only 1 frame
-                data_seq = data_seq[0]
-
-            outputs.append(data_seq)
-            if self.inzip:
-                source.close()
-
-        return outputs[0] if unpack_result else outputs
-
-    def lidar_data(self, idx, names='velo', concat=False): # TODO(v4.0): implement concatenation
-        if isinstance(idx, int): # this snippet has also been duplicate for many times
-            seq_id, frame_idx = self._locate_frame(idx)
+        folder_name, dname = _folders[names]
+        fname = Path(seq_id, folder_name, dname, '%010d.png' % frame_idx)
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}_{folder_name}.zip", to_extract=fname) as source:
+                return load_image(source, fname, gray=False)
         else:
-            seq_id, frame_idx = idx
-        # TODO: sick data is not supported due to synchronization issue currently
-        #       official way to accumulate SICK data is by linear interpolate between adjacent point clouds
-        # unpack_result, names = check_frames(names, self.VALID_LIDAR_NAMES)
-        unpack_result, names = check_frames(names, ["velo"])
+            return load_image(self.base_path / "data_2d_raw", fname, gray=False)
 
-        # load velodyne points
-        data_seq = []
-        if self.inzip:
-            source = ZipFile(self.base_path / f"{seq_id}_velodyne.zip")
-        for fidx in range(frame_idx - self.nframes, frame_idx+1):
-            fname = Path(seq_id, "velodyne_points", "data", '%010d.bin' % fidx)
+    @expand_idx_name(['velo'])
+    # TODO: sick data is not supported due to synchronization issue currently
+    #       official way to accumulate SICK data is by linear interpolate between adjacent point clouds
+    def lidar_data(self, idx, names='velo', concat=False): # TODO(v0.4): implement concatenation
+        seq_id, frame_idx = idx
+        
+        if names == "velo":
+            # load velodyne points
+            fname = Path(seq_id, "velodyne_points", "data", '%010d.bin' % frame_idx)
             if self.inzip:
-                data_seq.append(load_velo_scan(source, fname))
+                with PatchedZipFile(self.base_path / f"{seq_id}_velodyne.zip", to_extract=fname) as source:
+                    return load_velo_scan(source, fname)
             else:
-                data_seq.append(load_velo_scan(self.base_path / "data_3d_raw", fname))
-        if self.nframes == 0: # unpack if only 1 frame
-            data_seq = data_seq[0]
+                return load_velo_scan(self.base_path / "data_3d_raw", fname)
 
-        if self.inzip:
-            source.close()
-        return data_seq
-
-    def lidar_objects(self, idx):
+    def annotation_3dobject(self, idx):
         pass
 
     def calibration_data(self, idx):
@@ -217,18 +195,48 @@ class KITTI360Loader(TrackingDatasetBase):
     def annotation_2dsemantic(self, idx):
         pass
 
-    def timestamp(self, idx, frame="velo"):
+    def timestamp(self, idx, name="velo"):
         pass
 
+    def _preload_poses(self, seq):
+        if seq in self._poses_idx:
+            return
+
+        fname = Path("data_poses", seq, "poses.txt")
+        if self.inzip:
+            with PatchedZipFile(self.base_path / "data_poses.zip", to_extract=fname) as data:
+            # with ZipFile(self.base_path / "data_poses.zip") as data:
+                plist = np.loadtxt(data.open(str(fname)))
+        else:
+            plist = np.loadtxt(self.base_path / fname)
+
+        self._poses_idx[seq] = plist[:, 0].astype(int)
+        self._poses_matrix[seq] = plist[:, 1:].reshape(-1, 3, 4)
+
+    @expand_idx
     def pose(self, idx, interpolate=False):
         """
         :param interpolate: Not all frames contain pose data in KITTI-360. The loader
             returns interpolated pose if this param is set as True, otherwise returns None
         """
-        pass
+        seq_id, frame_idx = idx
+
+        self._preload_poses(seq_id)
+        pidx = np.searchsorted(self._poses_idx[seq_id], frame_idx)
+        if frame_idx != self._poses_idx[seq_id][pidx]:
+            if interpolate:
+                raise NotImplementedError() # TODO: add interpolation ability
+            else:
+                return None
+
+        rt = self._poses_matrix[seq_id][pidx]
+        t = rt[:3, 3]
+        r = Rotation.from_matrix(rt[:3, :3])
+        return EgoPose(t, r)
 
 if __name__ == "__main__":
-    # loader = KITTI360Loader("/mnt/storage8t/datasets/KITTI-360/", inzip=True)
-    loader = KITTI360Loader("/mnt/storage8t/jacobz/kitti360_extracted", inzip=False, nframes=0)
+    loader = KITTI360Loader("/mnt/storage8t/datasets/KITTI-360/", inzip=True)
+    # loader = KITTI360Loader("/mnt/storage8t/jacobz/kitti360_extracted", inzip=False, nframes=0)
     print(loader.camera_data(0))
     print(loader.lidar_data(0))
+    print(loader.pose(1))

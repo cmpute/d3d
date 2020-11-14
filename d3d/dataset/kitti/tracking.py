@@ -1,15 +1,17 @@
-import numpy as np
-from zipfile import ZipFile
+from collections import OrderedDict, defaultdict
 from pathlib import Path
-from collections import defaultdict, OrderedDict
-from scipy.spatial.transform import Rotation
+from zipfile import ZipFile
 
-from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
-                             TransformSet, EgoPose)
-from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval
+import numpy as np
+from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
+                             TransformSet)
+from d3d.dataset.base import (TrackingDatasetBase, check_frames, expand_idx,
+                              expand_idx_name, split_trainval)
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
 from d3d.dataset.zip import PatchedZipFile
+from scipy.spatial.transform import Rotation
+
 
 def parse_label(label: list, raw_calib: dict) -> Target3DArray:
     '''
@@ -77,14 +79,9 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
     # TODO: add option to split trainval dataset by sequence instead of overall index
     def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8, trainval_random=False, nframes=1):
-        self.base_path = Path(base_path)
-        self.inzip = inzip
-        self.phase = phase
+        super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
+                         trainval_split=trainval_split, trainval_random=trainval_random)
         self.phase_path = 'training' if phase == 'validation' else phase
-        self.nframes = nframes
-
-        if phase not in ['training', 'validation', 'testing']:
-            raise ValueError("Invalid phase tag")
 
         # count total number of frames
         frame_count = defaultdict(int)
@@ -138,14 +135,13 @@ class KittiTrackingLoader(TrackingDatasetBase):
         return dict(self.frame_dict)
 
     def _locate_frame(self, idx):
-        # use underlying frame index
-        idx = self.frames[idx]
+        idx = self.frames[idx] # use underlying frame index
 
         for k, v in self.frame_dict.items():
-            if (idx + self.nframes) < v:
-                return k, (idx + self.nframes)
+            if idx < (v - self.nframes):
+                return k, idx
             idx -= (v - self.nframes)
-        raise ValueError("Index larger than dataset size")
+        raise KeyError("Index larger than dataset size")
 
     def _preload_label(self, seq_id):
         if seq_id in self._label_cache:
@@ -202,117 +198,44 @@ class KittiTrackingLoader(TrackingDatasetBase):
             values[-5:] = list(map(int, values[-5:]))
             self._pose_cache[seq_id].append(OxtData(*values))
 
+    @expand_idx_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names='cam2'):
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
+        seq_id, frame_idx = idx
+
+        _folders = {
+            "cam2": ("image_02", "data_tracking_image_2.zip"),
+            "cam3": ("image_03", "data_tracking_image_3.zip")
+        }
+        folder_name, zip_name = _folders[names]
+
+        fname = Path(self.phase_path, folder_name, "%04d" % seq_id, '%06d.png' % frame_idx)
+        if self.inzip:
+            with PatchedZipFile(self.base_path / zip_name, to_extract=fname) as source:
+                image = utils.load_image(source, fname, gray=False)
         else:
-            seq_id, frame_idx= idx
-        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
-        
-        outputs = []
-        for name in names:
-            if name == "cam2":
-                folder_name = "image_02"
-                if self.inzip:
-                    source = ZipFile(self.base_path / "data_tracking_image_2.zip")
-            elif name == "cam3":
-                folder_name = "image_03"
-                if self.inzip:
-                    source = ZipFile(self.base_path / "data_tracking_image_3.zip")
-
-            data_seq = []
-            for fidx in range(frame_idx - self.nframes, frame_idx+1):
-                file_name = Path(self.phase_path, folder_name, "%04d" % seq_id, '%06d.png' % fidx)
-                if self.inzip:
-                    image = utils.load_image(source, file_name, gray=False)
-                else:
-                    image = utils.load_image(self.base_path, file_name, gray=False)
-                data_seq.append(image)
-            if self.nframes == 0: # unpack if only 1 frame
-                data_seq = data_seq[0]
-
-            outputs.append(data_seq)
-            if self.inzip:
-                source.close()
+            image = utils.load_image(self.base_path, fname, gray=False)
 
         # save image size for calibration
         if seq_id not in self._image_size_cache:
             self._image_size_cache[seq_id] = image.size
 
-        return outputs[0] if unpack_result else outputs
+        return image
 
+    @expand_idx_name(VALID_LIDAR_NAMES)
     def lidar_data(self, idx, names='velo', concat=True):
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
-        else:
-            seq_id, frame_idx = idx
+        seq_id, frame_idx = idx
         
         # This is the problem in KITTI dataset itself
         if seq_id == 1 and frame_idx in range(177, 181):
             raise ValueError("There is missing data in KITTI tracking dataset at seq 1, frame 177-180!")
+        assert names == 'velo'
 
-        if isinstance(names, str):
-            names = [names]
-        if names != self.VALID_LIDAR_NAMES:
-            raise ValueError("There's only one lidar in KITTI dataset")
-
-        data_seq = []
+        fname = Path(self.phase_path, 'velodyne', "%04d" % seq_id, '%06d.bin' % frame_idx)
         if self.inzip:
-            source = ZipFile(self.base_path / "data_tracking_velodyne.zip")
-        for fidx in range(frame_idx - self.nframes, frame_idx+1):
-            fname = Path(self.phase_path, 'velodyne', "%04d" % seq_id, '%06d.bin' % fidx)
-            if self.inzip:
-                data_seq.append(utils.load_velo_scan(source, fname))
-            else:
-                data_seq.append(utils.load_velo_scan(self.base_path, fname))
-        if self.nframes == 0: # unpack if only 1 frame
-            data_seq = data_seq[0]
-
-        if self.inzip:
-            source.close()
-        return data_seq
-
-    def calibration_data(self, idx, raw=False):
-        if isinstance(idx, int):
-            seq_id, _ = self._locate_frame(idx)
+            with PatchedZipFile(self.base_path / "data_tracking_velodyne.zip", to_extract=fname) as source:
+                return utils.load_velo_scan(source, fname)
         else:
-            seq_id, _ = idx
-
-        return self._load_calib(seq_id, raw)
-
-    def lidar_objects(self, idx, raw=False):
-        '''
-        Return list of converted ground truth targets in lidar frame.
-
-        Note that objects labelled as `DontCare` are removed
-        '''
-        if self.phase_path == "testing":
-            raise ValueError("Testing dataset doesn't contain label data")
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
-        else:
-            seq_id, frame_idx = idx
-
-        self._preload_label(seq_id)
-        labels = [self._label_cache[seq_id][fid] for fid in range(frame_idx - self.nframes, frame_idx+1)]
-
-        if self.nframes == 0:
-            if raw: return labels[0]
-
-            self._preload_calib(seq_id)
-            return parse_label(labels[0], self._calib_cache[seq_id])
-        else:
-            if raw: return labels
-
-            self._preload_calib(seq_id)
-            return [parse_label(l, self._calib_cache[seq_id]) for l in labels]
-
-    def identity(self, idx):
-        '''
-        For KITTI this method just return the phase and index
-        '''
-        seq, frame = self._locate_frame(idx)
-        return self.phase_path, seq, frame
+            return utils.load_velo_scan(self.base_path, fname)
 
     def _load_calib(self, seq, raw=False):
         # load the calibration file data
@@ -347,21 +270,47 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         return data
 
-    def pose(self, idx, raw=False):
+    def calibration_data(self, idx, raw=False):
         if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
+            seq_id, _ = self._locate_frame(idx)
         else:
-            seq_id, frame_idx = idx
+            seq_id, _ = idx
+
+        return self._load_calib(seq_id, raw)
+
+    @expand_idx
+    def annotation_3dobject(self, idx, raw=False):
+        '''
+        Return list of converted ground truth targets in lidar frame.
+
+        Note that objects labelled as `DontCare` are removed
+        '''
+        assert self.phase_path != "testing", "Testing dataset doesn't contain label data"
+        seq_id, frame_idx = idx
+
+        self._preload_label(seq_id)
+        label_data = self._label_cache[seq_id][frame_idx]
+        if raw:
+            return label_data
+
+        self._preload_calib(seq_id)
+        raw_calib = self._calib_cache[seq_id]
+        return parse_label(label_data, raw_calib)
+
+    @expand_idx
+    def identity(self, idx):
+        '''
+        For KITTI this method just return the phase and index
+        '''
+        seq_id, frame_idx = idx
+        return self.phase_path, seq_id, frame_idx
+
+    @expand_idx
+    def pose(self, idx, raw=False):
+        seq_id, frame_idx = idx
 
         self._preload_oxts(seq_id)
-
-        if self.nframes == 0:
-            poses = self._pose_cache[seq_id][frame_idx]
-
-            if raw: return poses
-            return utils.parse_pose_from_oxt(poses)
-        else:
-            poses = [self._pose_cache[seq_id][fid] for fid in range(frame_idx - self.nframes, frame_idx+1)]
-
-            if raw: return poses
-            return [utils.parse_pose_from_oxt(p) for p in poses]
+        raw_pose = self._pose_cache[seq_id][frame_idx]
+        if raw:
+            return raw_pose
+        return utils.parse_pose_from_oxt(raw_pose)

@@ -10,8 +10,8 @@ from tkinter import TclError
 from d3d.abstraction import EgoPose
 from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
                                       dump_detection_output, KittiTrackingLoader, KittiRawDataset)
-from d3d.dataset.waymo.loader import WaymoObjectLoader
-from d3d.dataset.nuscenes.loader import NuscenesObjectClass, NuscenesObjectLoader, NuscenesDetectionClass
+from d3d.dataset.waymo.loader import WaymoLoader
+from d3d.dataset.nuscenes.loader import NuscenesObjectClass, NuscenesLoader, NuscenesDetectionClass
 from d3d.vis.pcl import visualize_detections as pcl_vis
 from d3d.vis.image import visualize_detections as img_vis
 
@@ -59,7 +59,7 @@ class CommonObjectDSMixin:
 
         cloud = self.loader.lidar_data(idx, lidar)
         cloud = pcl.create_xyzi(cloud[:, :4])
-        targets = self.loader.lidar_objects(idx)
+        targets = self.loader.annotation_3dobject(idx)
         calib = self.loader.calibration_data(idx)
 
         visualizer = pcl.Visualizer()
@@ -75,7 +75,7 @@ class CommonObjectDSMixin:
         cam = random.choice(self.loader.VALID_CAM_NAMES)
 
         image = np.array(self.loader.camera_data(idx, cam))
-        targets = self.loader.lidar_objects(idx)
+        targets = self.loader.annotation_3dobject(idx)
         calib = self.loader.calibration_data(idx)
         
         fig, ax = plt.subplots(num="Please check whether the bounding boxes are aligned")
@@ -87,6 +87,12 @@ class CommonObjectDSMixin:
         except TclError: # skip error if manually closed
             pass
 
+class CommonTrackingDSMixin:
+    def test_pose_and_timestamp(self):
+        idx = selection or random.randint(0, len(self.loader))
+        assert isinstance(self.loader.pose(idx), EgoPose)
+        assert isinstance(self.loader.timestamp(idx), int) 
+
 @unittest.skipIf(not kitti_location, "Path to kitti not set")
 class TestKittiObjectDataset(unittest.TestCase, CommonObjectDSMixin):
     def setUp(self):
@@ -95,8 +101,8 @@ class TestKittiObjectDataset(unittest.TestCase, CommonObjectDSMixin):
     def test_detection_output(self):
         idx = selection or random.randint(0, len(self.loader))
         print("index: ", idx) # for debug
-        targets = self.loader.lidar_objects(idx)
-        label = self.loader.lidar_objects(idx, raw=True)
+        targets = self.loader.annotation_3dobject(idx)
+        label = self.loader.annotation_3dobject(idx, raw=True)
         output = dump_detection_output(targets,
             self.loader.calibration_data(idx), self.loader.calibration_data(idx, raw=True))
 
@@ -128,9 +134,9 @@ class TestKittiObjectDataset(unittest.TestCase, CommonObjectDSMixin):
                     assert v == 0
 
 @unittest.skipIf(not waymo_location, "Path to waymo not set")
-class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin):
+class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.loader = WaymoObjectLoader(waymo_location, inzip=inzip)
+        self.loader = WaymoLoader(waymo_location, inzip=inzip)
 
     def test_point_cloud_projection_all(self):
         idx = selection or random.randint(0, len(self.loader))
@@ -156,7 +162,7 @@ class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin):
 
         cloud = self.loader.lidar_data(idx, concat=True)
         cloud = pcl.create_xyzi(cloud[:, :4])
-        targets = self.loader.lidar_objects(idx)
+        targets = self.loader.annotation_3dobject(idx)
         calib = self.loader.calibration_data(idx)
 
         visualizer = pcl.Visualizer()
@@ -167,15 +173,11 @@ class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin):
         visualizer.spinOnce(time=5000)
         visualizer.close()
 
-    def test_pose_and_timestamp(self):
-        idx = selection or random.randint(0, len(self.loader))
-        assert isinstance(self.loader.pose(idx), EgoPose)
-        assert isinstance(self.loader.timestamp(idx), float) 
 
 @unittest.skipIf(not nuscenes_location, "Path to nuscenes not set")
 class TestNuscenesObjectDataset(unittest.TestCase, CommonObjectDSMixin):
     def setUp(self):
-        self.loader = NuscenesObjectLoader(nuscenes_location, inzip=inzip)
+        self.loader = NuscenesLoader(nuscenes_location, inzip=inzip)
     
     def test_class_parsing(self):
         # test class conversion consistency
@@ -245,7 +247,7 @@ class TestKittiTrackingDataset(unittest.TestCase):
         # load data
         cloud1, cloud2 = self.loader.lidar_data(idx, lidar)
         pose1, pose2 = self.loader.pose(idx)
-        targets1, targets2 = self.loader.lidar_objects(idx)
+        targets1, targets2 = self.loader.annotation_3dobject(idx)
         calib = self.loader.calibration_data(idx)
 
         # transform the second frame

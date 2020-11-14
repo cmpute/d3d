@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import DetectionDatasetBase, check_frames, split_trainval
+from d3d.dataset.base import DetectionDatasetBase, check_frames, split_trainval, expand_name
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass
 from d3d.dataset.zip import PatchedZipFile
@@ -97,20 +97,15 @@ class KittiObjectLoader(DetectionDatasetBase):
     VALID_LIDAR_NAMES = ["velo"]
 
     def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8, trainval_random=False):
-        base_path = Path(base_path)
-        self.base_path = base_path
-        self.inzip = inzip
-        self.phase = phase
+        super().__init__(base_path, inzip=inzip, phase=phase,
+                         trainval_split=trainval_split, trainval_random=trainval_random)
         self.phase_path = 'training' if phase == 'validation' else phase
-
-        if phase not in ['training', 'validation', 'testing']:
-            raise ValueError("Invalid phase tag")
 
         # count total number of frames
         total_count = None
         if self.inzip:
             for folder in ['image_2', 'image_3', 'velodyne', 'label_2']:
-                data_zip = base_path / ("data_object_%s.zip" % folder)
+                data_zip = self.base_path / ("data_object_%s.zip" % folder)
                 if data_zip.exists():
                     with ZipFile(data_zip) as data:
                         total_count = total_count or sum(1 for name in data.namelist() \
@@ -118,7 +113,7 @@ class KittiObjectLoader(DetectionDatasetBase):
                     break
         else:
             for folder in ['image_2', 'image_3', 'velodyne', 'label_2']:
-                fpath = base_path / self.phase_path / folder
+                fpath = self.base_path / self.phase_path / folder
                 if fpath.exists():
                     total_count = sum(1 for _ in fpath.iterdir())
                     break
@@ -131,72 +126,52 @@ class KittiObjectLoader(DetectionDatasetBase):
     def __len__(self):
         return len(self.frames)
 
+    @expand_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names='cam2'):
-        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
-        
-        outputs = []
-        for name in names:
-            if name == "cam2":
-                folder_name = "image_2"
-            elif name == "cam3":
-                folder_name = "image_3"
+        if names == "cam2":
+            folder_name = "image_2"
+        elif names == "cam3":
+            folder_name = "image_3"
 
-            fname = Path(self.phase_path, folder_name, '%06d.png' % self.frames[idx])
-            if self.inzip:
-                with PatchedZipFile(self.base_path / ("data_object_%s.zip" % folder_name), to_extract=fname) as source:
-                    image = utils.load_image(source, fname, gray=False)
-            else:
-                image = utils.load_image(self.base_path, fname, gray=False)
-
-            outputs.append(image)
+        fname = Path(self.phase_path, folder_name, '%06d.png' % self.frames[idx])
+        if self.inzip:
+            with PatchedZipFile(self.base_path / ("data_object_%s.zip" % folder_name), to_extract=fname) as source:
+                image = utils.load_image(source, fname, gray=False)
+        else:
+            image = utils.load_image(self.base_path, fname, gray=False)
 
         # save image size for calibration
         if idx not in self._image_size_cache:
             self._image_size_cache[idx] = image.size
 
-        if unpack_result:
-            return outputs[0]
-        else:
-            return outputs
+        return image
 
+    @expand_name(VALID_LIDAR_NAMES)
     def lidar_data(self, idx, names='velo', concat=True):
-        if isinstance(names, str):
-            names = [names]
-            unpack_result = True
-        else:
-            unpack_result = False
-        if names != self.VALID_LIDAR_NAMES:
-            raise ValueError("There's only one lidar in KITTI dataset")
+        assert names == 'velo'
 
         fname = Path(self.phase_path, 'velodyne', '%06d.bin' % self.frames[idx])
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_object_velodyne.zip", to_extract=fname) as source:
-                scan = utils.load_velo_scan(source, fname)
+                return utils.load_velo_scan(source, fname)
         else:
-            scan = utils.load_velo_scan(self.base_path, fname)
-
-        if unpack_result:
-            return scan
-        else:
-            return [scan]
+            return utils.load_velo_scan(self.base_path, fname)
 
     def calibration_data(self, idx, raw=False):
         fname = Path(self.phase_path, 'calib', '%06d.txt' % self.frames[idx])
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_object_calib.zip", to_extract=fname) as source:
-                return self._load_calib(source, fname, raw)
+                return self._load_calib(source, idx, raw)
         else:
-            return self._load_calib(self.base_path, fname, raw)
+            return self._load_calib(self.base_path, idx, raw)
 
-    def lidar_objects(self, idx, raw=False):
+    def annotation_3dobject(self, idx, raw=False):
         '''
         Return list of converted ground truth targets in lidar frame.
 
         Note that objects labelled as `DontCare` are removed
         '''
-
-        if self.phase_path == "testing":
-            raise ValueError("Testing dataset doesn't contain label data")
+        assert self.phase_path != "testing", "Testing dataset doesn't contain label data"
 
         fname = Path(self.phase_path, 'label_2', '%06d.txt' % self.frames[idx])
         if self.inzip:
@@ -215,9 +190,10 @@ class KittiObjectLoader(DetectionDatasetBase):
         '''
         return self.phase_path, self.frames[idx]
 
-    def _load_calib(self, basepath, filename, raw=False):
+    def _load_calib(self, basepath, idx, raw=False):
         # load the calibration file
-        filedata = utils.load_calib_file(basepath, filename)
+        fname = Path(self.phase_path, 'calib', '%06d.txt' % self.frames[idx])
+        filedata = utils.load_calib_file(basepath, fname)
 
         if raw:
             return filedata

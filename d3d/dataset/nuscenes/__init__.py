@@ -1,1 +1,1 @@
-from .loader import NuscenesObjectLoader, NuscenesObjectClass, NuscenesDetectionClass
+from .loader import NuscenesLoader, NuscenesObjectClass, NuscenesDetectionClass

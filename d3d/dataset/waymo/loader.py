@@ -22,7 +22,7 @@ from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet, EgoPose)
-from d3d.dataset.base import TrackingDatasetBase, check_frames
+from d3d.dataset.base import TrackingDatasetBase, check_frames, expand_idx, expand_idx_name
 
 _logger = logging.getLogger("d3d")
 
@@ -33,7 +33,7 @@ class WaymoObjectClass(Enum):
     Sign = 3
     Cyclist = 4
 
-class WaymoObjectLoader(TrackingDatasetBase): # TODO(v0.4): rename to WaymoLoader
+class WaymoLoader(TrackingDatasetBase):
     """
     Load waymo dataset into a usable format.
     Please use the d3d_waymo_convert command to convert the dataset first into following formats
@@ -55,15 +55,13 @@ class WaymoObjectLoader(TrackingDatasetBase): # TODO(v0.4): rename to WaymoLoade
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders
         """
+        super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
+                         trainval_split=trainval_split, trainval_random=trainval_random)
 
         if not inzip:
             raise NotImplementedError("Currently only support load from zip files in Waymo dataset")
-        if phase not in ['training', 'validation', 'testing']:
-            raise ValueError("Invalid phase tag")
 
         self.base_path = Path(base_path) / phase
-        self.phase = phase
-        self.nframes = nframes
         self._load_metadata()
 
     def _load_metadata(self):
@@ -171,7 +169,7 @@ class WaymoObjectLoader(TrackingDatasetBase): # TODO(v0.4): rename to WaymoLoade
             outputs = [d[0] for d in outputs]
         return outputs[0] if unpack_result else outputs
 
-    def lidar_objects(self, idx, raw=False):
+    def annotation_3dobject(self, idx, raw=False):
         buffers = self._load_files(idx, ["label_lidars"], "json")
 
         outputs = []
@@ -370,5 +368,3 @@ def create_submission(exec_path, result_path, output_path, meta_path, model_name
 
     # clean
     shutil.rmtree(temp_path)
-
-WaymoTrackingLoader = WaymoObjectLoader # Alias for tracking dataset

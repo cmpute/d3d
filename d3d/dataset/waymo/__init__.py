@@ -1,1 +1,1 @@
-from .loader import WaymoObjectLoader, WaymoObjectClass
+from .loader import WaymoLoader, WaymoObjectClass

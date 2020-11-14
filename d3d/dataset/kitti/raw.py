@@ -7,7 +7,7 @@ from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval
+from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval, expand_idx, expand_idx_name
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
 from d3d.dataset.zip import PatchedZipFile
@@ -69,17 +69,13 @@ class KittiRawDataset(TrackingDatasetBase):
         # Parameters
         :param datatype: 'sync' (synced) / 'extract' (unsynced)
         """
-        self.base_path = Path(base_path)
-        self.inzip = inzip
-        self.phase = phase
+        super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
+                         trainval_split=trainval_split, trainval_random=trainval_random)
         self.datatype = datatype
-        self.nframes = nframes
 
         if phase == "testing":
             raise ValueError("There's no testing split for raw data!")
-        if phase not in ['training', 'validation']:
-            raise ValueError("Invalid phase tag")
-        if datatype == "extract":
+        if datatype != "sync":
             raise NotImplementedError("Currently only synced raw data are supported!")
 
         # count total number of frames
@@ -138,8 +134,8 @@ class KittiRawDataset(TrackingDatasetBase):
         idx = self.frames[idx]
 
         for k, v in self.frame_dict.items():
-            if (idx + self.nframes) < v:
-                return k, (idx + self.nframes)
+            if idx < (v - self.nframes):
+                return k, idx
             idx -= (v - self.nframes)
         raise ValueError("Index larger than dataset size")
 
@@ -205,7 +201,7 @@ class KittiRawDataset(TrackingDatasetBase):
         else:
             seq_id, _ = idx
 
-        return self._load_calib(seq, raw=raw)
+        return self._load_calib(seq_id, raw=raw)
 
     def _preload_timestamp(self, seq_id):
         date = self._get_date(seq_id)
@@ -222,24 +218,16 @@ class KittiRawDataset(TrackingDatasetBase):
                 tsdict[frame] = utils.load_timestamps(self.base_path, fname, formatted=True)
         self._timestamp_cache[seq_id] = tsdict
 
-    def timestamp(self, idx, frame="velo"):
+    @expand_idx_name(VALID_CAM_NAMES + VALID_LIDAR_NAMES)
+    def timestamp(self, idx, names="velo"):
         '''
         Get the timestamp of the data.
 
-        :param frame: specify the data source of timestamp. Options include {cam0-3, velo, imu}
+        :param names: specify the data source of timestamp. Options include {cam0-3, velo, imu}
         '''
-
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
-        else:
-            seq_id, frame_idx = idx
+        seq_id, frame_idx = idx
         self._preload_timestamp(seq_id)
-        
-        if self.nframes == 0:
-            return self._timestamp_cache[seq_id][frame][frame_idx].astype(int) // 1000
-        else:
-            return self._timestamp_cache[seq_id][frame][
-                frame_idx - self.nframes:frame_idx+1].astype(int) // 1000
+        return self._timestamp_cache[seq_id][names][frame_idx].astype(int) // 1000
 
     def _preload_tracklets(self, seq_id):
         if seq_id in self._tracklet_cache:
@@ -267,98 +255,50 @@ class KittiRawDataset(TrackingDatasetBase):
 
         self._tracklet_cache[seq_id] = {k: Target3DArray(l, frame="velo") for k, l in objs.items()}
 
-    def lidar_objects(self, idx):
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
-        else:
-            seq_id, frame_idx = idx
-
+    @expand_idx
+    def annotation_3dobject(self, idx):
+        seq_id, frame_idx = idx
         self._preload_tracklets(seq_id)
-        labels = [self._tracklet_cache[seq_id][fid] for fid in range(frame_idx - self.nframes, frame_idx+1)]
-        return labels[0] if self.nframes == 0 else labels
+        return self._tracklet_cache[seq_id][frame_idx]
 
+    @expand_idx
     def pose(self, idx, raw=False):
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
-        else:
-            seq_id, frame_idx = idx
-
+        seq_id, frame_idx = idx
         date = self._get_date(seq_id)
-        oxts = []
-        for fid in range(frame_idx - self.nframes, frame_idx+1):
-            file_name = Path(date, seq_id, "oxts", "data", "%010d.txt" % fid)
-            if self.inzip:
-                with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=file_name) as data:
-                    oxts.append(utils.load_oxt_file(data, file_name)[0])
-            else:
-                oxts.append(utils.load_oxt_file(self.base_path, file_name)[0])
 
-        if self.nframes == 0:
-            if raw: return oxts[0]
-            return utils.parse_pose_from_oxt(oxts[0])
+        file_name = Path(date, seq_id, "oxts", "data", "%010d.txt" % frame_idx)
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=file_name) as data:
+                oxt = utils.load_oxt_file(data, file_name)[0]
         else:
-            if raw: return oxts
-            return [utils.parse_pose_from_oxt(p) for p in oxts]
+            oxt = utils.load_oxt_file(self.base_path, file_name)[0]
+        return utils.parse_pose_from_oxt(oxt)
 
+    @expand_idx_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names='cam2'):
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
-        else:
-            seq_id, frame_idx = idx
-        unpack_result, names = check_frames(names, self.VALID_CAM_NAMES)
-        
+        seq_id, frame_idx = idx
         date = self._get_date(seq_id)
-        outputs = []
-        source = ZipFile(self.base_path / f"{seq_id}.zip")
-        for name in names:
-            data_seq = []
-            for fidx in range(frame_idx - self.nframes, frame_idx+1):
-                file_name = Path(date, seq_id, self.FRAME2FOLDER[name], 'data', '%010d.png' % fidx)
-                gray = names in ['cam0', 'cam1']
-                if self.inzip:
-                    image = utils.load_image(source, file_name, gray=gray)
-                else:
-                    image = utils.load_image(self.base_path, file_name, gray=gray)
-                data_seq.append(image)
-            if self.nframes == 0: # unpack if only 1 frame
-                data_seq = data_seq[0]
 
-            outputs.append(data_seq)
-            if self.inzip:
-                source.close()
+        fname = Path(date, seq_id, self.FRAME2FOLDER[names], 'data', '%010d.png' % frame_idx)
+        gray = names in ['cam0', 'cam1']
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as source:
+                return utils.load_image(source, fname, gray=gray)
+        else:
+            return utils.load_image(self.base_path, fname, gray=gray)
 
-        return outputs[0] if unpack_result else outputs
-
+    @expand_idx_name(VALID_LIDAR_NAMES)
     def lidar_data(self, idx, names='velo', concat=True):
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
-        else:
-            seq_id, frame_idx = idx
-
-        if isinstance(names, str):
-            names = [names]
-        if names != self.VALID_LIDAR_NAMES:
-            raise ValueError("There's only one lidar in KITTI dataset")
-
+        seq_id, frame_idx = idx
         date = self._get_date(seq_id)
-        data_seq = []
-        if self.inzip:
-            source = ZipFile(self.base_path / f"{seq_id}.zip")
-        for fidx in range(frame_idx - self.nframes, frame_idx+1):
-            fname = Path(date, seq_id, 'velodyne_points', 'data', '%010d.bin' % fidx)
-            if self.inzip:
-                data_seq.append(utils.load_velo_scan(source, fname))
-            else:
-                data_seq.append(utils.load_velo_scan(self.base_path, fname))
-        if self.nframes == 0: # unpack if only 1 frame
-            data_seq = data_seq[0]
 
+        fname = Path(date, seq_id, 'velodyne_points', 'data', '%010d.bin' % frame_idx)
         if self.inzip:
-            source.close()
-        return data_seq
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip") as source as source:
+                return utils.load_velo_scan(source, fname)
+        else:
+            return utils.load_velo_scan(self.base_path, fname)
 
+    @expand_idx
     def identity(self, idx):
-        '''
-        For KITTI this method just return the phase and index
-        '''
-        return self._locate_frame(idx)
+        return idx
