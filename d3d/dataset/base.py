@@ -248,7 +248,8 @@ class TrackingDatasetBase(DetectionDatasetBase):
 
     def pose(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> EgoPose:
         '''
-        Return (relative) pose of the vehicle for the frame.
+        Return (relative) pose of the vehicle for the frame. The base frame should be ground attached
+            which means the base frame will follow a East-North-Up axis order.
 
         :param idx: index of requested frame
         '''
@@ -283,15 +284,17 @@ def expand_idx(func):
     '''
     This decorator wraps TrackingDatasetBase member functions with index input. It will delegates the situation
         where self.nframe > 0 to the original function so that the original function can support only one index.
+
+    The parameter `bypass` is used to call the original underlying method without expansion.
     '''
     @functools.wraps(func)
-    def wrapper(self: TrackingDatasetBase, idx, **kwargs):
+    def wrapper(self: TrackingDatasetBase, idx, bypass=False, **kwargs):
         if isinstance(idx, int):
             seq_id, frame_idx = self._locate_frame(idx)
         else:
             seq_id, frame_idx = idx
 
-        if self.nframes == 0:
+        if self.nframes == 0 or bypass:
             return func(self, (seq_id, frame_idx), **kwargs)
         else:
             return [func(self, (seq_id, idx), **kwargs)
@@ -326,6 +329,8 @@ def expand_idx_name(valid_names):
     '''
     This decorator works similar to expand_idx with support to distribute both indices and frame names.
     Note that this function acts as a decorator factory instead of decorator
+
+    The parameter `bypass` is used to call the original underlying method without expansion.
     '''
     def decorator(func):
         default_names = inspect.signature(func).parameters["names"].default
@@ -333,7 +338,7 @@ def expand_idx_name(valid_names):
                "The decorated function should have default names value"
 
         @functools.wraps(func)
-        def wrapper(self: TrackingDatasetBase, idx, names=default_names, **kwargs):
+        def wrapper(self: TrackingDatasetBase, idx, names=default_names, bypass=False, **kwargs):
             if isinstance(idx, int):
                 seq_id, frame_idx = self._locate_frame(idx)
             else:
@@ -342,7 +347,7 @@ def expand_idx_name(valid_names):
 
             results = []
             for name in names:
-                if self.nframes == 0:
+                if self.nframes == 0 or bypass:
                     results.append(func(self, (seq_id, frame_idx), name, **kwargs))
                 else:
                     results.append([func(self, (seq_id, idx), name, **kwargs)

@@ -53,6 +53,7 @@ Optional requirements:
 - `waymo_open_dataset`: support converting Waymo Dataset
 - `msgpack`: support serialization/deserialization
 - `filterpy`: support KF tracking
+- `intervaltree`: support indexing in some datasets
 
 # Build
 

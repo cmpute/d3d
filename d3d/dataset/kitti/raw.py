@@ -213,9 +213,9 @@ class KittiRawDataset(TrackingDatasetBase):
             fname = Path(date, seq_id, folder, "timestamps.txt")
             if self.inzip:
                 with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as data:
-                    tsdict[frame] = utils.load_timestamps(data, fname, formatted=True)
+                    tsdict[frame] = utils.load_timestamps(data, fname, formatted=True).astype(int) // 1000
             else:
-                tsdict[frame] = utils.load_timestamps(self.base_path, fname, formatted=True)
+                tsdict[frame] = utils.load_timestamps(self.base_path, fname, formatted=True).astype(int) // 1000
         self._timestamp_cache[seq_id] = tsdict
 
     @expand_idx_name(VALID_CAM_NAMES + VALID_LIDAR_NAMES)
@@ -227,7 +227,7 @@ class KittiRawDataset(TrackingDatasetBase):
         '''
         seq_id, frame_idx = idx
         self._preload_timestamp(seq_id)
-        return self._timestamp_cache[seq_id][names][frame_idx].astype(int) // 1000
+        return self._timestamp_cache[seq_id][names][frame_idx]
 
     def _preload_tracklets(self, seq_id):
         if seq_id in self._tracklet_cache:

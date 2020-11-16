@@ -141,9 +141,9 @@ class NuscenesDetectionClass(Enum):
     trailer = auto()
     truck = auto()
 
-class NuscenesLoader(TrackingDatasetBase):
+class NuscenesLoader(TrackingDatasetBase): # TODO(v0.4): add support for nuscenes-lidarseg
     '''
-    Load waymo dataset into a usable format.
+    Load Nuscenes dataset into a usable format.
     Please use the d3d_nuscenes_convert command (do not use --all-frames) to convert the dataset first into following formats
 
     # Directory Structure
@@ -211,7 +211,7 @@ class NuscenesLoader(TrackingDatasetBase):
         raise ValueError("Index larger than dataset size")
 
     def map_data(self, idx):
-        # XXX: see https://jdhao.github.io/2019/02/23/crop_rotated_rectangle_opencv/ for image cropping
+        # TODO(v0.5): see https://jdhao.github.io/2019/02/23/crop_rotated_rectangle_opencv/ for image cropping
         raise NotImplementedError()
 
     @expand_idx_name(VALID_LIDAR_NAMES)
@@ -242,7 +242,8 @@ class NuscenesLoader(TrackingDatasetBase):
         if raw:
             return labels
 
-        ego_r, ego_t = self.pose(idx)
+        ego_pose = self.pose(idx, bypass=True)
+        ego_r, ego_t = ego_pose.orientation, ego_pose.position
         outputs = Target3DArray(frame="ego")
         for label in labels:
             # convert tags

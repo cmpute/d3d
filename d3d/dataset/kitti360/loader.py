@@ -1,3 +1,4 @@
+
 from collections import OrderedDict
 from itertools import chain
 from pathlib import Path
@@ -8,20 +9,13 @@ from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
 from d3d.dataset.base import (TrackingDatasetBase, check_frames, expand_idx,
                               expand_idx_name, split_trainval)
-from d3d.dataset.kitti.utils import load_image, load_velo_scan
+from d3d.dataset.kitti.utils import load_image, load_velo_scan, load_timestamps
 from d3d.dataset.zip import PatchedZipFile
+from d3d.dataset.kitti360.utils import Kitti360Class, load_bboxes, load_sick_scan, kittiId2label
 from PIL import Image
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation, Slerp
+from scipy.interpolate import interp1d
 
-
-def load_sick_scan(basepath, file):
-    if isinstance(basepath, (str, Path)):
-        scan = np.fromfile(Path(basepath, file), dtype=np.float32)
-    else:
-        with basepath.open(str(file)) as fin:
-            buffer = fin.read()
-        scan = np.frombuffer(buffer, dtype=np.float32)
-    return scan.reshape((-1, 2))
 
 class KITTI360Loader(TrackingDatasetBase):
     """
@@ -58,10 +52,21 @@ class KITTI360Loader(TrackingDatasetBase):
     VALID_CAM_NAMES = ['cam1', 'cam2', 'cam3', 'cam4'] # cam 1,2 are persective
     VALID_LIDAR_NAMES = ['velo', 'sick'] # velo stands for velodyne
 
-    def __init__(self, base_path, phase="training", inzip=False, trainval_split=1, trainval_random=False, nframes=0):
+    FRAME_PATH_MAP = dict(
+        sick=("data_3d_raw", "sick_points"    , "data"     , "data_timestamps_perspective.zip"),
+        velo=("data_3d_raw", "velodyne_points", "data"     , "data_timestamps_velodyne_points.zip"),
+        cam1=("data_2d_raw", "image_00"       , "data_rect", "data_timestamps_perspective.zip"),
+        cam2=("data_2d_raw", "image_01"       , "data_rect", "data_timestamps_perspective.zip"),
+        cam3=("data_2d_raw", "image_02"       , "data_rgb" , "data_timestamps_perspective.zip"),
+        cam4=("data_2d_raw", "image_03"       , "data_rgb" , "data_timestamps_perspective.zip"),
+    )
+
+    def __init__(self, base_path, phase="training", inzip=False,
+                 trainval_split=1, trainval_random=False, nframes=0):
         """
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders
+        :param visible_range: range for visible objects. Objects beyond that distance will be removed when reporting
         """
 
         if phase not in ['training', 'validation', 'testing']:
@@ -125,8 +130,12 @@ class KITTI360Loader(TrackingDatasetBase):
 
         total_count = sum(frame_count.values()) - nframes * len(frame_count)
         self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
-        self._poses_idx = {} # store loaded poses array
-        self._poses_matrix = {}
+        self._poses_idx = {} # store loaded poses indices
+        self._poses_t = {} # pose translation
+        self._poses_r = {} # pose rotation
+        self._3dobjects_cache = {} # store loaded object labels
+        self._3dobjects_mapping =  {} # store frame to objects mapping
+        self._timestamp_cache = {} # store timestamps
 
     def __len__(self):
         return len(self.frames)
@@ -153,14 +162,7 @@ class KITTI360Loader(TrackingDatasetBase):
     def camera_data(self, idx, names='cam1'):
         seq_id, frame_idx = idx
 
-        _folders = {
-            "cam1": ("image_00", "data_rect"),
-            "cam2": ("image_01", "data_rect"),
-            "cam3": ("image_02", "data_rgb"),
-            "cam4": ("image_03", "data_rgb")
-        }
-
-        folder_name, dname = _folders[names]
+        _, folder_name, dname, _ = self.FRAME_PATH_MAP[names]
         fname = Path(seq_id, folder_name, dname, '%010d.png' % frame_idx)
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}_{folder_name}.zip", to_extract=fname) as source:
@@ -169,8 +171,6 @@ class KITTI360Loader(TrackingDatasetBase):
             return load_image(self.base_path / "data_2d_raw", fname, gray=False)
 
     @expand_idx_name(['velo'])
-    # TODO: sick data is not supported due to synchronization issue currently
-    #       official way to accumulate SICK data is by linear interpolate between adjacent point clouds
     def lidar_data(self, idx, names='velo'):
         seq_id, frame_idx = idx
         
@@ -183,8 +183,53 @@ class KITTI360Loader(TrackingDatasetBase):
             else:
                 return load_velo_scan(self.base_path / "data_3d_raw", fname)
 
-    def annotation_3dobject(self, idx):
-        pass
+        elif names == "sick":
+            # TODO: sick data is not supported due to synchronization issue currently
+            #       official way to accumulate SICK data is by linear interpolate between adjacent point clouds
+            fname = Path(seq_id, "sick_points", "data", '%010d.bin' % frame_idx)
+            if self.inzip:
+                with PatchedZipFile(self.base_path / f"{seq_id}_sick.zip", to_extract=fname) as source:
+                    return load_sick_scan(source, fname)
+            else:
+                return load_sick_scan(self.base_path / "data_3d_raw", fname)
+            
+    def _preload_3dobjects(self, seq_id):
+        assert self.phase in ["training", "validation"], "Testing set doesn't contains label"
+        if seq_id in self._3dobjects_mapping:
+            return
+
+        # load poses first to filter out far boxes
+        self._preload_poses(seq_id)
+
+        fname = Path("data_3d_bboxes", "train", f"{seq_id}.xml")
+        if self.inzip:
+            with PatchedZipFile(self.base_path / "data_3d_bboxes.zip", to_extract=fname) as source:
+                objlist, fmap = load_bboxes(source, fname)
+        else:
+            objlist, fmap = load_bboxes(self.base_path, fname)
+            
+        self._3dobjects_cache[seq_id] = objlist
+        self._3dobjects_mapping[seq_id] = fmap
+
+    @expand_idx
+    def annotation_3dobject(self, idx, raw=False):
+        seq_id, frame_idx = idx
+        self._preload_3dobjects(seq_id)
+        objects = [self._3dobjects_cache[seq_id][i.data]
+                    for i in self._3dobjects_mapping[seq_id][frame_idx]]
+        if raw:
+            return objects
+
+        boxes = Target3DArray(frame="velo")
+        # TODO: filter out boxes beyond range
+        for box in objects:
+            tag = ObjectTag(kittiId2label[box.semanticId].name, Kitti360Class)
+            pos = box.transform[:3, 3]
+            ori = Rotation.from_matrix(box.transform[:3, :3])
+            tid = box.index
+            dim = np.ones(3) # TODO: this is not provided by KITTI360 ??
+            boxes.append(ObjectTarget3D(pos, ori, dim, tag, tid=tid))
+        return boxes
 
     def calibration_data(self, idx):
         pass
@@ -195,8 +240,29 @@ class KITTI360Loader(TrackingDatasetBase):
     def annotation_2dsemantic(self, idx):
         pass
 
-    def timestamp(self, idx, name="velo"):
-        pass
+    def _preload_timestamps(self, seq, name):
+        if (seq, name) in self._timestamp_cache:
+            return
+
+        folder, subfolder, _, archive = self.FRAME_PATH_MAP[name]
+        fname = Path(folder, seq, subfolder, "timestamps.txt")
+        if self.inzip:
+            with PatchedZipFile(self.base_path / archive, to_extract=fname) as data:
+                ts = load_timestamps(data, fname, formatted=True)
+        else:
+            ts = load_timestamps(self.base_path, fname, formatted=True)
+
+        self._timestamp_cache[(seq, name)] = ts.astype(int) // 1000
+
+    @expand_idx
+    def timestamp(self, idx, names="velo"):
+        if names == "sick":
+            raise NotImplementedError("Indexing for sick points are unavailable yet!")
+
+        seq_id, frame_idx = idx
+        self._preload_timestamps(seq_id, names)
+
+        return self._timestamp_cache[(seq_id, names)][frame_idx]
 
     def _preload_poses(self, seq):
         if seq in self._poses_idx:
@@ -205,16 +271,31 @@ class KITTI360Loader(TrackingDatasetBase):
         fname = Path("data_poses", seq, "poses.txt")
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_poses.zip", to_extract=fname) as data:
-            # with ZipFile(self.base_path / "data_poses.zip") as data:
                 plist = np.loadtxt(data.open(str(fname)))
         else:
             plist = np.loadtxt(self.base_path / fname)
 
-        self._poses_idx[seq] = plist[:, 0].astype(int)
-        self._poses_matrix[seq] = plist[:, 1:].reshape(-1, 3, 4)
+        # do interpolation
+        pose_indices = plist[:, 0].astype(int)
+        pose_matrices = plist[:, 1:].reshape(-1, 3, 4)
+        positions = pose_matrices[:, :, 3]
+        rotations = Rotation.from_matrix(pose_matrices[:, :, :3])
+        
+        ts_frame = "velo" # the frame used for timestamp extraction
+        self._preload_timestamps(seq, ts_frame)
+        timestamps = self._timestamp_cache[(seq, ts_frame)]
+
+        fpos = interp1d(timestamps[pose_indices], positions, axis=0, fill_value="extrapolate")
+        positions = fpos(timestamps)
+        frot = interp1d(timestamps[pose_indices], rotations.as_rotvec(), axis=0, fill_value="extrapolate")
+        rotations = frot(timestamps)
+        
+        self._poses_idx[seq] = set(pose_indices)
+        self._poses_t[seq] = positions
+        self._poses_r[seq] = Rotation.from_rotvec(rotations)
 
     @expand_idx
-    def pose(self, idx, interpolate=False):
+    def pose(self, idx, interpolate=True):
         """
         :param interpolate: Not all frames contain pose data in KITTI-360. The loader
             returns interpolated pose if this param is set as True, otherwise returns None
@@ -222,21 +303,20 @@ class KITTI360Loader(TrackingDatasetBase):
         seq_id, frame_idx = idx
 
         self._preload_poses(seq_id)
-        pidx = np.searchsorted(self._poses_idx[seq_id], frame_idx)
-        if frame_idx != self._poses_idx[seq_id][pidx]:
-            if interpolate:
-                raise NotImplementedError() # TODO: add interpolation ability
-            else:
-                return None
+        if frame_idx not in self._poses_idx[seq_id] and not interpolate:
+            return None
 
-        rt = self._poses_matrix[seq_id][pidx]
-        t = rt[:3, 3]
-        r = Rotation.from_matrix(rt[:3, :3])
-        return EgoPose(t, r)
+        return EgoPose(self._poses_t[seq_id][frame_idx], self._poses_r[seq_id][frame_idx])
 
 if __name__ == "__main__":
-    loader = KITTI360Loader("/mnt/storage8t/datasets/KITTI-360/", inzip=True)
-    # loader = KITTI360Loader("/mnt/storage8t/jacobz/kitti360_extracted", inzip=False, nframes=0)
-    print(loader.camera_data(0))
-    print(loader.lidar_data(0))
-    print(loader.pose(1))
+    # loader = KITTI360Loader("/mnt/storage8t/datasets/KITTI-360/", inzip=True)
+    loader = KITTI360Loader("/media/jacob/Storage/Datasets/kitti360", inzip=False, nframes=0)
+    # print(loader.camera_data(0))
+    # print(loader.lidar_data(0))
+    for i in range(50):
+        print(loader.pose(i))
+        print(loader.annotation_3dobject(i))
+    # print(loader.timestamp(1))
+    # for obj in loader.annotation_3dobject(174, raw=True):
+    #     print(obj.vertices)
+    # print(loader.annotation_3dobject(174))

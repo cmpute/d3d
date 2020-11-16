@@ -136,7 +136,7 @@ def load_oxt_file(basepath, file):
     
 def parse_pose_from_oxt(oxt: OxtData) -> EgoPose:
     import utm
-    x, y, *_ = utm.from_latlon(oxt.lat, oxt.lon)
+    y, x, *_ = utm.from_latlon(oxt.lat, oxt.lon)
     t = [x, y, oxt.alt]
     r = Rotation.from_euler("xyz", [oxt.roll, oxt.pitch, oxt.yaw + np.pi/2])
     return EgoPose(t, r, position_var=np.eye(3) * oxt.pos_accuracy)

@@ -420,6 +420,27 @@ class EgoPose:
 
         self.position_var = np.zeros((3, 3)) if position_var is None else position_var
         self.orientation_var = np.zeros((3, 3)) if orientation_var is None else orientation_var
+
+    def homo(self):
+        '''
+        Convert the pose to a homogeneous matrix representation
+
+        Note that the pose is represented by position and orientation. The rotation operation is
+        performed after translation `R(x+T)`, which is different from homogeneous transform
+        matrix`Rx+T`.
+        '''
+        arr = np.eye(4)
+        arr[:3, :3] = self.orientation.as_matrix()
+        arr[:3, 3] = self.orientation.as_matrix().dot(self.position)
+        return arr
+
+    def __repr__(self):
+        return "<EgoPose %s>" % str(self)
+
+    def __str__(self):
+        ypr = tuple(self.orientation.as_euler("ZYX").tolist())
+        return "position: [x=%.2f, y=%.2f, z=%.2f], orientation: [r=%.2f, p=%.2f, y=%.2f]" % \
+            (tuple(self.position.tolist()) + ypr[::-1])
  
 CameraMetadata = namedtuple('CameraMetadata', [
     'width', 'height',
@@ -584,7 +605,7 @@ cdef class TransformSet:
         Change the representing frame of a object array
         '''
         if self._is_same(objects.frame, frame_to):
-            return
+            return objects
 
         rt = self.get_extrinsic(frame_from=objects.frame, frame_to=frame_to)
         r, t = Rotation.from_matrix(rt[:3, :3]), rt[:3, 3]
@@ -615,7 +636,7 @@ cdef class TransformSet:
                 raise ValueError("Unsupported target type!")
         return new_objs
 
-    cpdef np.ndarray transform_lidar(self, np.ndarray points, str frame_to, str frame_from=None):
+    cpdef np.ndarray transform_points(self, np.ndarray points, str frame_to, str frame_from=None):
         '''
         Convert point cloud from `frame_from` to `frame_to`
         '''

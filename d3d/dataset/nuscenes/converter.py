@@ -22,7 +22,8 @@ def _load_dict(item):
     value = {
         k: (((v and int(v, 16) or None) if isinstance(v, str) # convert token to integer
             else [int(lv, 16) for lv in v]) # convert list of tokens
-            if ('token' in k or k in ['prev', 'next']) else v) # otherwise copy
+            if ('token' in k or k in ['prev', 'next']) # if the field is for token
+            else v) # otherwise copy
         for k, v in item.items()
     }
     return token, value
@@ -141,6 +142,8 @@ class KeyFrameConverter:
                 self.scene_sensor_table[scene].add(ctoken)
 
     def _save_calibrations(self):
+        # TODO: add motion compensation, ref: https://github.com/waymo-research/waymo-open-dataset/issues/146
+        # https://github.com/waymo-research/waymo-open-dataset/issues/79
         for stoken, calib_tokens in self.scene_sensor_table.items():
             if stoken not in self.oscenes:
                 continue
@@ -259,6 +262,7 @@ class KeyFrameConverter:
                 with self.ohandles[scene].open("%s/%03d.%s" % (sensor, order, ext), "w") as fout:
                     shutil.copyfileobj(blob_file.extractfile(tinfo), fout)
                 if sensor == "lidar_top": # here we choose the pose of lidar as the pose of the key frame
+                # TODO: save pose and timestamp for each sensor
                     ptoken = self.sample_data_table[token]["ego_pose_token"]
                     pose = self.ego_pose_table[ptoken]
                     with self.ohandles[scene].open("pose/%03d.json" % order, "w") as fout:

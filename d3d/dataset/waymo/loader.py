@@ -36,7 +36,7 @@ class WaymoObjectClass(Enum):
 
 class WaymoLoader(TrackingDatasetBase):
     """
-    Load waymo dataset into a usable format.
+    Load Waymo dataset into a usable format.
     Please use the d3d_waymo_convert command to convert the dataset first into following formats
 
     # Directory Structure
@@ -121,9 +121,9 @@ class WaymoLoader(TrackingDatasetBase):
         """
         seq_id, frame_idx = idx
 
-        fname = "%s/%04d.npy" % (names, seq_id)
+        fname = "%s/%04d.npy" % (names, frame_idx)
         with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-            cloud = np.load(ar.open(fname))
+            cloud = np.load(BytesIO(ar.read(fname)))
 
         # point cloud is represented in base frame in Waymo dataset
         calib = self.calibration_data(idx)
@@ -226,11 +226,11 @@ class WaymoLoader(TrackingDatasetBase):
         seq_id, frame_idx = idx
         fname = "pose/%04d.npy" % frame_idx
         with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-            rt = np.load(ar.open(fname))
+            rt = np.load(BytesIO(ar.read(fname)))
 
         if raw:
             return rt
-        return EgoPose(rt[:3, 3], Rotation.from_matrix(rt[:3, :3]))
+        return EgoPose(-rt[:3, 3], Rotation.from_matrix(rt[:3, :3]))
 
     @property
     def sequence_ids(self):

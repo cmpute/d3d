@@ -4,10 +4,11 @@ import unittest
 
 import numpy as np
 import pcl
+from PIL.Image import Image
 from matplotlib import pyplot as plt
 from tkinter import TclError
 
-from d3d.abstraction import EgoPose
+from d3d.abstraction import EgoPose, Target3DArray, TransformSet
 from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
                                       dump_detection_output, KittiTrackingLoader, KittiRawDataset)
 from d3d.dataset.waymo.loader import WaymoLoader
@@ -34,14 +35,26 @@ else:
     inzip = True
 
 class CommonObjectDSMixin:
-    def test_point_cloud_projection(self):
-        idx = selection or random.randint(0, len(self.loader))
-        cam = random.choice(self.loader.VALID_CAM_NAMES)
-        lidar = random.choice(self.loader.VALID_LIDAR_NAMES)
+    # Dataset tester need to define self.oloader as object dataset loader
+    def test_accessors(self):
+        idx = selection or random.randint(0, len(self.oloader))
+        cam = random.choice(self.oloader.VALID_CAM_NAMES)
+        lidar = random.choice(self.oloader.VALID_LIDAR_NAMES)
 
-        cloud = self.loader.lidar_data(idx, lidar)
-        image = self.loader.camera_data(idx, cam)
-        calib = self.loader.calibration_data(idx)
+        assert isinstance(self.oloader.lidar_data(idx, lidar), np.ndarray)
+        assert isinstance(self.oloader.camera_data(idx, cam), Image)
+        assert isinstance(self.oloader.calibration_data(idx), TransformSet)
+        assert isinstance(self.oloader.annotation_3dobject(idx), Target3DArray)
+        self.oloader.identity(idx)
+
+    def test_point_cloud_projection(self):
+        idx = selection or random.randint(0, len(self.oloader))
+        cam = random.choice(self.oloader.VALID_CAM_NAMES)
+        lidar = random.choice(self.oloader.VALID_LIDAR_NAMES)
+
+        cloud = self.oloader.lidar_data(idx, lidar)
+        image = self.oloader.camera_data(idx, cam)
+        calib = self.oloader.calibration_data(idx)
 
         uv, mask = calib.project_points_to_camera(cloud, cam, lidar)
         plt.figure(num="Please check whether the lidar points are aligned")
@@ -54,13 +67,13 @@ class CommonObjectDSMixin:
             pass
 
     def test_ground_truth_visualizer_pcl(self):
-        idx = selection or random.randint(0, len(self.loader))
-        lidar = random.choice(self.loader.VALID_LIDAR_NAMES)
+        idx = selection or random.randint(0, len(self.oloader))
+        lidar = random.choice(self.oloader.VALID_LIDAR_NAMES)
 
-        cloud = self.loader.lidar_data(idx, lidar)
+        cloud = self.oloader.lidar_data(idx, lidar)
         cloud = pcl.create_xyzi(cloud[:, :4])
-        targets = self.loader.annotation_3dobject(idx)
-        calib = self.loader.calibration_data(idx)
+        targets = self.oloader.annotation_3dobject(idx)
+        calib = self.oloader.calibration_data(idx)
 
         visualizer = pcl.Visualizer()
         visualizer.addPointCloud(cloud, field="intensity")
@@ -71,12 +84,12 @@ class CommonObjectDSMixin:
         visualizer.close()
 
     def test_ground_truth_visualizer_img(self):
-        idx = selection or random.randint(0, len(self.loader))
-        cam = random.choice(self.loader.VALID_CAM_NAMES)
+        idx = selection or random.randint(0, len(self.oloader))
+        cam = random.choice(self.oloader.VALID_CAM_NAMES)
 
-        image = np.array(self.loader.camera_data(idx, cam))
-        targets = self.loader.annotation_3dobject(idx)
-        calib = self.loader.calibration_data(idx)
+        image = np.array(self.oloader.camera_data(idx, cam))
+        targets = self.oloader.annotation_3dobject(idx)
+        calib = self.oloader.calibration_data(idx)
         
         fig, ax = plt.subplots(num="Please check whether the bounding boxes are aligned")
         plt.imshow(image)
@@ -88,23 +101,76 @@ class CommonObjectDSMixin:
             pass
 
 class CommonTrackingDSMixin:
-    def test_pose_and_timestamp(self):
-        idx = selection or random.randint(0, len(self.loader))
-        assert isinstance(self.loader.pose(idx), EgoPose)
-        assert isinstance(self.loader.timestamp(idx), int) 
+    # Dataset tester need to define self.tloader as object dataset loader
+    def test_accessors(self):
+        idx = selection or random.randint(0, len(self.tloader))
+        cam = random.choice(self.tloader.VALID_CAM_NAMES)
+        lidar = random.choice(self.tloader.VALID_LIDAR_NAMES)
+
+        assert isinstance(self.tloader.lidar_data(idx, lidar)[self.tloader.nframes], np.ndarray)
+        assert isinstance(self.tloader.camera_data(idx, cam)[self.tloader.nframes], Image)
+        assert isinstance(self.tloader.calibration_data(idx), TransformSet)
+        assert isinstance(self.tloader.annotation_3dobject(idx)[self.tloader.nframes], Target3DArray)
+        assert isinstance(self.tloader.pose(idx)[self.tloader.nframes], EgoPose)
+        assert isinstance(self.tloader.timestamp(idx)[self.tloader.nframes], int)
+        self.tloader.identity(idx)
+
+    def test_point_cloud_temporal_fusion(self):
+        idx = selection or random.randint(0, len(self.tloader))
+        lidar = self.tloader.VALID_LIDAR_NAMES[0]
+
+        # load data
+        clouds = self.tloader.lidar_data(idx, lidar)
+        poses = self.tloader.pose(idx)
+        targets = self.tloader.annotation_3dobject(idx)
+        calib = self.oloader.calibration_data(idx)
+
+        cloud1, cloud2 = clouds[0][:, :4], clouds[-1][:, :4]
+        pose1, pose2 = poses[0], poses[-1]
+        targets1, targets2 = targets[0], targets[-1]
+        
+        # create transforms
+        tf = TransformSet("global")
+        fname1, fname2 = "pose1", "pose2"
+        tf.set_intrinsic_map_pin(fname1)
+        tf.set_intrinsic_map_pin(fname2)
+        tf.set_extrinsic(pose1.homo(), fname1)
+        tf.set_extrinsic(pose2.homo(), fname2)
+
+        # make coordinate unified in frame
+        targets1 = calib.transform_objects(targets1, lidar)
+        targets2 = calib.transform_objects(targets2, lidar)
+        targets1.frame = fname1
+        targets2.frame = fname2
+
+        # visualize both point cloud in frame2
+        visualizer = pcl.Visualizer()
+        visualizer.addPointCloud(
+            pcl.create_xyzi(tf.transform_points(cloud1, frame_from=fname1, frame_to=fname2)),
+            field="intensity", id="cloud1"
+        )
+        visualizer.addPointCloud(pcl.create_xyzi(cloud2), field="intensity", id="cloud2")
+        pcl_vis(visualizer, fname2, targets1, tf, box_color=(1, 1, 0), id_prefix="frame1")
+        pcl_vis(visualizer, fname2, targets2, tf, box_color=(0, 1, 1), id_prefix="frame2")
+        visualizer.setRepresentationToWireframeForAllActors()
+        visualizer.addCoordinateSystem()
+        visualizer.setWindowName("Please check whether the gt boxes are aligned!")
+        # visualizer.spinOnce(time=5000)
+        # visualizer.close()
+        visualizer.spin()
 
 @unittest.skipIf(not kitti_location, "Path to kitti not set")
 class TestKittiObjectDataset(unittest.TestCase, CommonObjectDSMixin):
     def setUp(self):
-        self.loader = KittiObjectLoader(kitti_location, inzip=inzip)
+        self.oloader = KittiObjectLoader(kitti_location, inzip=inzip)
 
     def test_detection_output(self):
-        idx = selection or random.randint(0, len(self.loader))
+        idx = selection or random.randint(0, len(self.oloader))
         print("index: ", idx) # for debug
-        targets = self.loader.annotation_3dobject(idx)
-        label = self.loader.annotation_3dobject(idx, raw=True)
+        targets = self.oloader.annotation_3dobject(idx)
+        label = self.oloader.annotation_3dobject(idx, raw=True)
         output = dump_detection_output(targets,
-            self.loader.calibration_data(idx), self.loader.calibration_data(idx, raw=True))
+            self.oloader.calibration_data(idx), self.oloader.calibration_data(idx, raw=True))
 
         # These are for debug. Actually there are some labels in KITTI (usually pedestrian)
         #     whose 2D coordinates are not calculated from 3D box...
@@ -134,17 +200,24 @@ class TestKittiObjectDataset(unittest.TestCase, CommonObjectDSMixin):
                     assert v == 0
 
 @unittest.skipIf(not waymo_location, "Path to waymo not set")
-class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
+class TestWaymoDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.loader = WaymoLoader(waymo_location, inzip=inzip)
+        self.oloader = WaymoLoader(waymo_location, inzip=inzip, nframes=0)
+        self.tloader = WaymoLoader(waymo_location, inzip=inzip, nframes=2)
 
     def test_point_cloud_projection_all(self):
-        idx = selection or random.randint(0, len(self.loader))
-        cam = random.choice(self.loader.VALID_CAM_NAMES)
+        idx = selection or random.randint(0, len(self.oloader))
+        cam = random.choice(self.oloader.VALID_CAM_NAMES)
 
-        cloud = self.loader.lidar_data(idx, concat=True)
-        image = self.loader.camera_data(idx, cam)
-        calib = self.loader.calibration_data(idx)
+        clouds = self.oloader.lidar_data(idx)
+        image = self.oloader.camera_data(idx, cam)
+        calib = self.oloader.calibration_data(idx)
+
+        # merge multiple point clouds
+        clist = []
+        for cloud, frame in zip(clouds, self.oloader.VALID_LIDAR_NAMES):
+            clist.append(calib.transform_points(cloud, frame_from=frame, frame_to=None))
+        cloud = np.concatenate(clist)
 
         uv, mask = calib.project_points_to_camera(cloud, cam)
         plt.figure(num="Please check whether the lidar points are aligned")
@@ -158,12 +231,12 @@ class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrack
 
     def test_ground_truth_visualizer_pcl(self):
         # this function is overrided since point cloud return from waymo is in vehicle frame
-        idx = selection or random.randint(0, len(self.loader))
+        idx = selection or random.randint(0, len(self.oloader))
 
-        cloud = self.loader.lidar_data(idx, concat=True)
+        cloud = self.oloader.lidar_data(idx, "lidar_top")
         cloud = pcl.create_xyzi(cloud[:, :4])
-        targets = self.loader.annotation_3dobject(idx)
-        calib = self.loader.calibration_data(idx)
+        targets = self.oloader.annotation_3dobject(idx)
+        calib = self.oloader.calibration_data(idx)
 
         visualizer = pcl.Visualizer()
         visualizer.addPointCloud(cloud, field="intensity")
@@ -175,9 +248,10 @@ class TestWaymoObjectDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrack
 
 
 @unittest.skipIf(not nuscenes_location, "Path to nuscenes not set")
-class TestNuscenesObjectDataset(unittest.TestCase, CommonObjectDSMixin):
+class TestNuscenesDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.loader = NuscenesLoader(nuscenes_location, inzip=inzip)
+        self.oloader = NuscenesLoader(nuscenes_location, inzip=inzip, nframes=0)
+        self.tloader = NuscenesLoader(nuscenes_location, inzip=inzip, nframes=2)
     
     def test_class_parsing(self):
         # test class conversion consistency
@@ -207,76 +281,20 @@ class TestNuscenesObjectDataset(unittest.TestCase, CommonObjectDSMixin):
         assert NuscenesObjectClass.movable_object_trafficcone.to_detection() == NuscenesDetectionClass.traffic_cone
         assert NuscenesObjectClass.animal.to_detection() == NuscenesDetectionClass.ignore
 
+
 @unittest.skipIf(not kitti_location, "Path to kitti not set")
-class TestKittiTrackingDataset(unittest.TestCase):
+class TestKittiTrackingDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.loader = KittiTrackingLoader(kitti_location, inzip=inzip, nframes=1)
-
-    def test_point_cloud_projection(self):
-        idx = selection or random.randint(0, len(self.loader))
-        cam = random.choice(self.loader.VALID_CAM_NAMES)
-        lidar = random.choice(self.loader.VALID_LIDAR_NAMES)
-
-        cloud1, cloud2 = self.loader.lidar_data(idx, lidar)
-        image1, image2 = self.loader.camera_data(idx, cam)
-        calib = self.loader.calibration_data(idx)
-
-        fig, (ax1, ax2) = plt.subplots(2, 1, num="Please check whether the lidar points are aligned")
-        uv1, mask1 = calib.project_points_to_camera(cloud1, cam, lidar)
-        ax1.imshow(image1)
-        ax1.scatter(uv1[:,0], uv1[:,1], s=2, c=cloud1[mask1, 3])
-        ax1.set_xlim([0, 1242])
-        ax1.set_ylim([375, 0])
+        self.oloader = KittiTrackingLoader(kitti_location, inzip=inzip, nframes=0)
+        self.tloader = KittiTrackingLoader(kitti_location, inzip=inzip, nframes=2)
         
-        uv2, mask2 = calib.project_points_to_camera(cloud2, cam, lidar)
-        ax2.imshow(image2)
-        ax2.scatter(uv2[:,0], uv2[:,1], s=2, c=cloud2[mask2, 3])
-        ax2.set_xlim([0, 1242])
-        ax2.set_ylim([375, 0])
-        
-        fig.canvas.draw_idle()
-        try:
-            plt.pause(5)
-        except TclError: # skip error if manually closed
-            pass
 
-    def test_ground_truth_visualizer_pcl(self):
-        idx = selection or random.randint(0, len(self.loader))
-        lidar = random.choice(self.loader.VALID_LIDAR_NAMES)
-
-        # load data
-        cloud1, cloud2 = self.loader.lidar_data(idx, lidar)
-        pose1, pose2 = self.loader.pose(idx)
-        targets1, targets2 = self.loader.annotation_3dobject(idx)
-        calib = self.loader.calibration_data(idx)
-
-        # transform the second frame
-        # TODO: haven't tested for very large offset
-        trans = pose2.position - pose1.position
-        rot = pose2.orientation * pose1.orientation.inv()
-        rot_mt = rot.as_matrix().T
-        cloud = np.concatenate([np.dot(cloud1[:,:3] + trans, rot_mt), cloud2[:,:3]])
-        cloud = np.concatenate([cloud, np.concatenate([cloud1[:,[3]], cloud2[:,[3]]])], axis=1)
-        cloud = pcl.create_xyzi(cloud)
-        for target in targets1:
-            target.position = np.dot(target.position + trans, rot_mt)
-            target.orientation = rot * target.orientation
-
-        visualizer = pcl.Visualizer()
-        visualizer.addPointCloud(cloud, field="intensity")
-        pcl_vis(visualizer, lidar, targets1, calib)
-        pcl_vis(visualizer, lidar, targets2, calib, id_prefix="frame2")
-        visualizer.setRepresentationToWireframeForAllActors()
-        visualizer.setWindowName("Please check whether the gt boxes are aligned!")
-        visualizer.spinOnce(time=5000)
-        visualizer.close()
-
-class TestKittiRawDataset(unittest.TestCase):
+@unittest.skipIf(not kitti_location, "Path to kitti not set")
+class TestKittiRawDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.loader = KittiRawDataset(kitti_location, inzip=inzip, nframes=1)
+        self.oloader = KittiRawDataset(kitti_location, inzip=inzip, nframes=0)
+        self.tloader = KittiRawDataset(kitti_location, inzip=inzip, nframes=2)
 
-    # TODO: add test for raw dataset
-    # TODO: add mixin test cases for ObjectDataset/TrackingDataset sanity checks (run every function once)
 
 if __name__ == "__main__":
     TestKittiObjectDataset().test_detection_output()
