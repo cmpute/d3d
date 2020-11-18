@@ -116,6 +116,7 @@ class CommonTrackingDSMixin:
         self.tloader.identity(idx)
 
     def test_point_cloud_temporal_fusion(self):
+        # TODO: this fail for nuscenes and waymo
         idx = selection or random.randint(0, len(self.tloader))
         lidar = self.tloader.VALID_LIDAR_NAMES[0]
 
