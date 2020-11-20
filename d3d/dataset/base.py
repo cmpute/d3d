@@ -370,6 +370,15 @@ class NumberPool:
         self._nlock = Manager().Lock()
         self._offset = offset
 
+    @staticmethod
+    def _wrap_func(func, args, pool, nlock, offset):
+        n = -1
+        with nlock:
+            n = next(i for i, v in enumerate(pool) if v == 0)
+            pool[n] = 1
+        ret = func(n + offset, *args)
+        return (n, ret)
+
     def apply_async(self, func, args=(), callback=None):
         def _wrap_cb(ret):
             n, oret = ret
@@ -378,15 +387,7 @@ class NumberPool:
             if callback is not None:
                 callback(oret)
 
-        def _wrap_func(func, args, pool, nlock, offset):
-            n = -1
-            with nlock:
-                n = next(i for i, v in enumerate(pool) if v == 0)
-                pool[n] = 1
-            ret = func(n + offset, *args)
-            return (n, ret)
-
-        self._ppool.apply_async(_wrap_func,
+        self._ppool.apply_async(NumberPool._wrap_func,
                                 (func, args, self._npool,
                                  self._nlock, self._offset),
                                 callback=_wrap_cb,

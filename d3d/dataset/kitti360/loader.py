@@ -1,21 +1,25 @@
 import logging
+import shutil
+import tempfile
+import time
 from collections import OrderedDict
+from io import BytesIO
 from itertools import chain
 from pathlib import Path
 from zipfile import ZipFile
-import tempfile
-import shutil
-import tqdm
 
 import numpy as np
+import tqdm
 from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import (TrackingDatasetBase, check_frames, expand_idx,
-                              expand_idx_name, split_trainval, NumberPool)
-from d3d.dataset.kitti360.utils import (Kitti360Class, kittiId2label, id2label,
+from d3d.dataset.base import (NumberPool, TrackingDatasetBase, check_frames,
+                              expand_idx, expand_idx_name, split_trainval)
+from d3d.dataset.kitti360.utils import (Kitti360Class, id2label, kittiId2label,
                                         load_bboxes, load_sick_scan)
-from d3d.dataset.kitti.utils import load_image, load_timestamps, load_velo_scan, load_calib_file
+from d3d.dataset.kitti.utils import (load_calib_file, load_image,
+                                     load_timestamps, load_velo_scan)
 from d3d.dataset.zip import PatchedZipFile
+from filelock import FileLock
 from PIL import Image
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation, Slerp
@@ -282,7 +286,7 @@ class KITTI360Loader(TrackingDatasetBase):
         def parse_mei_camera(intri):
             size = [intri['image_width'], intri['image_height']]
             distorts = intri['distortion_parameters']
-            distorts = [distorts['k1'], distorts['k2'], distorts['p1'], distorts['p2']]
+            distorts = np.array([distorts['k1'], distorts['k2'], distorts['p1'], distorts['p2']])
             projection = intri['projection_parameters']
             pmatrix = np.diag([projection["gamma1"], projection["gamma2"], 1])
             pmatrix[0, 2] = projection["u0"]
@@ -305,9 +309,81 @@ class KITTI360Loader(TrackingDatasetBase):
     def calibration_data(self, idx):
         return self._calibration
 
-    def _preload_3dsemantics(self, seq, nworkers=8):
+    # TODO: fix the points (with large distance?) with bounding box
+    # TODO: support sick points
+    def _parse_semantic_ply(self, ntqdm, seq: str, fname: Path, dynamic: bool, result_path: Path, expand_frames: int):
+        # match point cloud in aggregated semantic point clouds
+        import pcl
+        from sklearn.neighbors import KDTree
+
+        fstart, fend = fname.stem.split('_')
+        fstart, fend = int(fstart), int(fend)
+        fstart, fend = max(fstart - expand_frames, 0), min(fend + expand_frames, self.sequence_sizes[seq])
+        frame_desc = "%s frames %d-%d" % ("dynamic" if dynamic else "static", fstart, fend)
+
+        _logger.debug("loading semantics for " + frame_desc)
+        semantics = pcl.io.load_ply(str(fname))
+        if len(semantics) == 0:
+            return
+
+        # create fast semantic id to Kitti360Class id mapping
+        idmap = np.zeros(max(id2label.keys()) + 1, dtype='u1')
+        for i in range(len(idmap)):
+            idmap[i] = id2label[i].name.value
+        
+        if dynamic:
+            timestamps = semantics.to_ndarray()['timestamp'].flatten()
+        else:
+            tree = KDTree(semantics.xyz)
+
+        for i in tqdm.trange(fstart, fend, desc=frame_desc, position=ntqdm):
+            cloud = self.lidar_data((seq, i), names="velo", bypass=True)
+            cloud = self._calibration.transform_points(cloud[:, :3], frame_to="pose", frame_from="velo")
+            cloud = cloud.dot(self._poses_r[seq][i].as_matrix().T) + self._poses_t[seq][i]
+
+            if dynamic:
+                cur_semantics = semantics[timestamps == i]
+                if len(cur_semantics) == 0:
+                    continue
+                tree = KDTree(cur_semantics.xyz)
+                distance, sidx = tree.query(cloud[:, :3], return_distance=True)
+                selected = cur_semantics.to_ndarray()[sidx]
+            else:
+                distance, sidx = tree.query(cloud[:, :3], return_distance=True)
+                selected = semantics.to_ndarray()[sidx]
+            distance = distance.flatten()
+
+            rgb = selected["rgb"].flatten()
+            slabels = selected["semantic"].flatten()
+            slabels = idmap[slabels]
+            ilabels = selected["instance"].flatten().astype('u2')
+            visible = selected["visible"].flatten().astype(bool)
+
+            label_path = result_path / ("%010d.npz" % i)
+            dist_path = result_path / ("%010d.dist.npy" % i)
+            lock_path = FileLock(result_path / ("%010d.lock" % i))
+            
+            with lock_path:
+                if dist_path.exists():
+                    old_distance = np.load(dist_path)
+                    update_mask = (distance < old_distance)
+                    distance = np.where(update_mask, distance, old_distance)
+
+                    old_labels = np.load(label_path)
+                    rgb = np.where(update_mask, rgb, old_labels['rgb'])
+                    slabels = np.where(update_mask, slabels, old_labels["semantic"])
+                    ilabels = np.where(update_mask, ilabels, old_labels["instance"])
+                    visible = np.where(update_mask, visible, old_labels["visible"])
+
+                np.savez(label_path, rgb=rgb, semantic=slabels, instance=ilabels, visible=visible)
+                np.save(dist_path, distance)
+
+    def _preload_3dsemantics(self, seq, nworkers=7, expand_frames=150):
         """
         This method will convert the combined semantic point cloud back in to frames
+
+        expand_frames: number of expanded frames to be considered based on original sequence split
+            Better painting results will be generated with larger expansion, but it will be slower
         """
         if self.inzip:
             if (self.base_path / "data_3d_semantics_indexed.zip").exists():
@@ -322,75 +398,36 @@ class KITTI360Loader(TrackingDatasetBase):
             result_path.mkdir()
 
         _logger.info("Converting 3d semantic labels for sequence %s...", seq)
+        tstart = time.time()
+
+        # load poses for aligning point cloud
         self._preload_poses(seq)
 
-        # create fast semantic id to Kitti360Class id mapping
-        idmap = np.zeros(max(id2label.keys()) + 1, dtype='u1')
-        for i in range(len(idmap)):
-            idmap[i] = id2label[i].name.value
-
-        import pcl
-        from sklearn.neighbors import KDTree
-
-        def parse_semantic_ply(fname: Path, dynamic): # match point cloud in aggregated semantic point clouds
-            fstart, fend = fname.stem.split('_')
-            fstart, fend = int(fstart), int(fend)
-            _logger.info("loading semantics for %s frames %d-%d",
-                "dynamic" if dynamic else "static", fstart, fend)
-            semantics = pcl.io.load_ply(str(fname))
-
-            if len(semantics) == 0:
-                return
-            
-            if dynamic:
-                timestamps = semantics.to_ndarray()['timestamp'].flatten()
-            else:
-                tree = KDTree(semantics.xyz)
-
-            for i in tqdm.trange(fstart, fend+1, desc="%d-%d" % (fstart, fend), leave=True):
-                cloud = self.lidar_data((seq, i), names="velo", bypass=True)
-                cloud = self._calibration.transform_points(cloud[:, :3], frame_to="pose", frame_from="velo")
-                cloud = cloud.dot(self._poses_r[seq][i].as_matrix().T) + self._poses_t[seq][i]
-
-                if dynamic:
-                    cur_semantics = semantics[timestamps == i]
-                    if not len(cur_semantics):
-                        continue
-                    tree = KDTree(cur_semantics.xyz)
-                    distance, sidx = tree.query(cloud[:, :3])
-                    selected = cur_semantics.to_ndarray()[sidx]
-                else:
-                    distance, sidx = tree.query(cloud[:, :3], return_distance=True)
-                    selected = semantics.to_ndarray()[sidx]
-
-                color = selected["rgb"].flatten()
-                slabels = selected["semantic"].flatten()
-                slabels = idmap[slabels]
-                ids = selected["instance"].astype('u2')
-                ids[ids % 1000 == 0] = 0 # make all points without instanceID marked 0
-                visible = selected["visible"].astype(bool)
-
-                label_path = result_path / ("%010d.npz" % i)
-                dist_path = result_path / ("%010d.dist.npy" % i)
-                
-                if dist_path.exists():
-                    update_mask = (distance < np.load(dist_path)).flatten()
-                    update_labels = np.load(label_path)
-                    color[update_mask] = update_labels['rgb'][update_mask]
-                    slabels[update_mask] = update_labels["semantic"][update_mask]
-                    ids[update_mask] = update_labels["tid"][update_mask]
-                    visible[update_mask] = update_labels["visible"][update_mask]
-
-                np.savez(label_path, rgb=color, semantic=slabels, tid=ids, visible=visible)
-                np.save(dist_path, distance)
-
+        pool = NumberPool(nworkers)
         for fspan in (data_path / "data_3d_semantics" / seq / "static").iterdir():
-            parse_semantic_ply(fspan, False)
-            break
+            if fspan.suffix != ".ply":
+                continue
+            pool.apply_async(self._parse_semantic_ply, (seq, fspan, False, result_path, expand_frames))
         for fspan in (data_path / "data_3d_semantics" / seq / "dynamic").iterdir():
-            parse_semantic_ply(fspan, True)
-            break
+            if fspan.suffix != ".ply":
+                continue
+            pool.apply_async(self._parse_semantic_ply, (seq, fspan, True, result_path, expand_frames))
+        pool.close()
+        pool.join()
+        tend = time.time()
+        _logger.info("Conversion finished, consumed time: %.4fs", tend - tstart)
 
+        # statistics on distance error
+        total_points = 0
+        unmatched_points = 0
+        for f in result_path.iterdir():
+            if f.suffix == ".npy":
+                d = np.load(f)
+                total_points += len(d)
+                unmatched_points += np.sum(d > 5)
+        _logger.debug("Unmatched ratio (distance > 5): %.2f%", unmatched_points / total_points * 100)
+
+        # clean up
         if self.inzip:
             _logger.info("Saving indexed semantic labels...")
             with ZipFile(self.base_path / "data_3d_semantics_indexed.zip", "w") as archive:
@@ -406,17 +443,26 @@ class KITTI360Loader(TrackingDatasetBase):
         else:
             # remove distance files
             for f in list(result_path.iterdir()):
-                if f.suffix == ".npy":
+                if f.suffix == ".npy" or f.suffix == ".lock":
                     f.unlink()
+        _logger.debug("Conversion clean up finished!")
 
 
     @expand_idx
-    def annotation_3dsemantic(self, idx):
+    def annotation_3dpoints(self, idx):
         seq_id, frame_idx = idx
         self._preload_3dsemantics(seq_id)
+        
+        fname = Path("data_3d_semantics", seq_id, "indexed", "%010d.npz" % frame_idx)
+        if self.inzip:
+            fname = str(fname)
+            with PatchedZipFile("data_3d_semantics_indexed.zip", to_extract=fname) as ar:
+                return dict(np.load(BytesIO(ar.read(fname))))
+        else:
+            return dict(np.load(self.base_path / fname))
 
-    def annotation_2dsemantic(self, idx):
-        pass
+    def annotation_2dpoints(self, idx):
+        raise NotImplementedError()
 
     def _preload_timestamps(self, seq, name):
         if (seq, name) in self._timestamp_cache:
@@ -498,8 +544,18 @@ if __name__ == "__main__":
     # for obj in loader.annotation_3dobject(174):
     #     print(obj.dimension, obj.tag)
     # print(loader.annotation_3dobject(174))
-    import sys, warnings
-    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+    import sys
+    import warnings
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(name)s][%(levelname)s] %(message)s')
+    handler.setFormatter(formatter)
+    _logger.addHandler(handler)
+    _logger.setLevel(logging.INFO)
     warnings.simplefilter("ignore")
 
-    print(loader.annotation_3dsemantic(0))
+    sem = loader.annotation_3dpoints(0)
+    print(np.sum(sem['semantic'] - sem['instance'] // 1000 > 0)/len(sem['semantic']))

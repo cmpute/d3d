@@ -304,8 +304,15 @@ class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTracking
         self.tloader = KITTI360Loader(kitti360_location, inzip=inzip, nframes=2)
 
     def test_3d_semantic(self):
-        cloud = self.oloader.lidar_data(("2013_05_28_drive_0000_sync", 11400), names="velo", bypass=True)
-        labels = np.load(os.path.join(kitti360_location, "data_3d_semantics", "2013_05_28_drive_0000_sync", "indexed", "%010d.npz" % 11400))
+        seq = "2013_05_28_drive_0000_sync"
+        idx = selection or random.randint(0, len(self.oloader))
+        cloud = self.oloader.lidar_data((seq, idx), names="velo", bypass=True)
+        pose = self.oloader.pose((seq, idx), bypass=True)
+        calib = self.oloader.calibration_data((seq, idx))
+        cloud = calib.transform_points(cloud[:, :3], frame_to="pose", frame_from="velo")
+        cloud = cloud.dot(pose.orientation.as_matrix().T) + pose.position
+
+        labels = np.load(os.path.join(kitti360_location, "data_3d_semantics", seq, "indexed", "%010d.npz" % idx))
         color_cloud = pcl.create_xyzrgb(np.concatenate([cloud[:, :3], labels["rgb"].view('4u1')[:,:3]], axis=1))
 
         def create_xyzl(data):
@@ -318,11 +325,24 @@ class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTracking
             arr['x'], arr['y'], arr['z'], arr['label'] = data[:,0], data[:,1], data[:,2], data[:,3]
             return pcl.PointCloud(arr, 'XYZL')
 
-        label_cloud = create_xyzl(np.concatenate([cloud[:, :3], labels["semantic"].reshape(-1,1)], axis=1))
+        semantic_cloud = create_xyzl(np.concatenate([cloud[:, :3], labels["semantic"].reshape(-1,1)], axis=1))
+        instance_cloud = create_xyzl(np.concatenate([cloud[:, :3], labels["instance"].reshape(-1,1)], axis=1))
+        distance = os.path.join(kitti360_location, "data_3d_semantics", seq, "indexed", "%010d.dist.npy" % idx)
+        distance = np.load(distance)
+        print("Index:", idx, ", MAX distance", np.max(distance))
+        distance_cloud = pcl.create_xyzi(np.concatenate([cloud[:, :3], distance.reshape(-1,1)], axis=1))
 
-        vis = pcl.Visualizer()
-        vis.addPointCloud(label_cloud, field="label")
-        vis.spin()
+        # gt = pcl.io.load_ply("/media/jacob/Storage/Datasets/kitti360/data_3d_semantics/2013_05_28_drive_0000_sync/static/000834_001286.ply")
+        # semantic_cloud = create_xyzl(np.concatenate([gt.xyz, gt.to_ndarray()['semantic'].reshape(-1, 1)], axis=1))
+        # instance_cloud = create_xyzl(np.concatenate([gt.xyz, gt.to_ndarray()['instance'].reshape(-1, 1)], axis=1))
+
+        pcl.io.save_pcd("instance.pcd", instance_cloud, binary=True)
+        pcl.io.save_pcd("semantic.pcd", semantic_cloud, binary=True)
+        pcl.io.save_pcd("distance.pcd", distance_cloud, binary=True)
+
+        # vis = pcl.Visualizer()
+        # vis.addPointCloud(semantic_cloud, field="label")
+        # vis.spin()
         
 
 if __name__ == "__main__":

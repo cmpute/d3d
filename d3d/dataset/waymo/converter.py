@@ -237,7 +237,7 @@ def convert_tfrecord(ntqdm, input_file, output_path, delele_input=True):
 
     disp = os.path.split(input_file)[1]
     disp = "Converting %s..." % disp[8:disp.find("_")]
-    for idx, data in tqdm(enumerate(dataset), desc=disp, position=ntqdm, unit="frames"):
+    for idx, data in tqdm(enumerate(dataset), desc=disp, position=ntqdm, unit="frames", dynamic_ncols=True):
         if idx > 9999:
             raise RuntimeError("Frame index is larger than file name capacity!")
 
@@ -270,7 +270,7 @@ def convert_dataset_inpath(input_path, output_path, nworkers=8, debug=False):
     print("Extracting tfrecords from tarballs to %s..." % temp_dir)
 
     try:
-        for tar_name in tqdm(os.listdir(input_path), desc="Extract tfrecords", position=0, unit="tars", leave=False):
+        for tar_name in tqdm(os.listdir(input_path), desc="Extract tfrecords", position=0, unit="tars", leave=False, dynamic_ncols=True):
             if os.path.splitext(tar_name)[1] != ".tar":
                 continue
 

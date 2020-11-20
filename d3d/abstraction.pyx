@@ -441,16 +441,28 @@ class EgoPose:
         ypr = tuple(self.orientation.as_euler("ZYX").tolist())
         return "position: [x=%.2f, y=%.2f, z=%.2f], orientation: [r=%.2f, p=%.2f, y=%.2f]" % \
             (tuple(self.position.tolist()) + ypr[::-1])
- 
-CameraMetadata = namedtuple('CameraMetadata', [
-    'width', 'height',
-    'distort_coeffs', # coefficients of camera distortion model, follow OpenCV format
-    'intri_matrix', # original intrinsic matrix used for cv2.undistortPoints
-    'mirror_coeff' # coefficient of mirror equation (used in MEI camera model)
-])
-LidarMetadata = namedtuple('LidarMetadata', [])
-RadarMetadata = namedtuple('RadarMetadata', [])
-PinMetadata = namedtuple('PinMetadata', ['lon', 'lat']) # represent a ground-fixed coordinate
+
+cdef class CameraMetadata:
+    def __init__(self, int width, int height, np.ndarray distort_coeffs, np.ndarray intri_matrix, float mirror_coeff):
+        self.width = width
+        self.height = height
+        self.distort_coeffs = distort_coeffs
+        self.intri_matrix = intri_matrix
+        self.mirror_coeff = mirror_coeff
+
+cdef class LidarMetadata:
+    def __init__(self):
+        pass
+
+cdef class RadarMetadata:
+    def __init__(self):
+        pass
+
+cdef class PinMetadata:
+    def __init__(self, float lon, float lat):
+        self.lon = lon
+        self.lat = lat
+
 cdef class TransformSet:
     '''
     This object load a collection of intrinsic and extrinsic parameters
@@ -492,8 +504,8 @@ cdef class TransformSet:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = metadata
 
-    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, rotate=True,
-        distort_coeffs=[], intri_matrix=None, mirror_coeff=None):
+    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, bint rotate=True,
+        np.ndarray distort_coeffs=None, np.ndarray intri_matrix=None, mirror_coeff=float('nan')):
         '''
         Set camera intrinsics
         :param size: (width, height)
@@ -511,7 +523,8 @@ cdef class TransformSet:
             ]))
 
         self.intrinsics[frame_id] = transform
-        self.intrinsics_meta[frame_id] = CameraMetadata(width, height, distort_coeffs, intri_matrix, mirror_coeff)
+        self.intrinsics_meta[frame_id] = CameraMetadata(width, height,
+            distort_coeffs, intri_matrix, mirror_coeff)
 
     cpdef void set_intrinsic_lidar(self, str frame_id):
         self.intrinsics[frame_id] = None

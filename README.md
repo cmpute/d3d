@@ -55,6 +55,7 @@ Optional requirements:
 - `filterpy`: support KF tracking
 - `intervaltree`: support indexing in some datasets
 - `pyyaml`: support calibration loading in some datasets
+- `filelock`: support indexing in some datasets
 
 # Build
 

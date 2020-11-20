@@ -31,6 +31,21 @@ cdef class Target3DArray(list):
     cdef Py_ssize_t size(self)
     cpdef np.ndarray to_numpy(self, str box_type=*)
 
+cdef class CameraMetadata:
+    cdef public int width, height
+    cdef public np.ndarray distort_coeffs # coefficients of camera distortion model, follow OpenCV format
+    cdef public np.ndarray intri_matrix # original intrinsic matrix used for cv2.undistortPoints
+    cdef public float mirror_coeff # coefficient of mirror equation (used in MEI camera model)
+
+cdef class LidarMetadata:
+    pass
+
+cdef class RadarMetadata:
+    pass
+
+cdef class PinMetadata: # represent a ground-fixed coordinate
+    cdef public float lon, lat
+
 cdef class TransformSet:
     cdef public str base_frame
     cdef public dict intrinsics
@@ -42,7 +57,7 @@ cdef class TransformSet:
     cdef void _assert_exist(self, str frame_id, bint extrinsic=*)
 
     cpdef void set_intrinsic_general(self, str frame_id, object metadata=*)
-    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, rotate=*, distort_coeffs=*, intri_matrix=*, mirror_coeff=*)
+    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, bint rotate=*, np.ndarray distort_coeffs=*, np.ndarray intri_matrix=*, mirror_coeff=*)
     cpdef void set_intrinsic_lidar(self, str frame_id)
     cpdef void set_intrinsic_radar(self, str frame_id)
     cpdef void set_intrinsic_pinhole(self, str frame_id, size, cx, cy, fx, fy, s=*, distort_coeffs=*)
