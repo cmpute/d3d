@@ -122,7 +122,7 @@ _Label = namedtuple( 'Label' , [
     ] )
 
 _labels = [
-    #        name                                  id    kittiId,    trainId    category                         catId     hasInstances   ignoreInEval   color
+    #        name                                  id    kittiId,    trainId    category             catId     hasInstances   ignoreInEval   color
     _Label(  Kitti360Class.unlabeled             ,  0 ,       -1 ,       255 ,  "void"             , 0       , False        , True         , (  0,  0,  0) ),
     _Label(  Kitti360Class.ego_vehicle           ,  1 ,       -1 ,       255 ,  "void"             , 0       , False        , True         , (  0,  0,  0) ),
     _Label(  Kitti360Class.rectification_border  ,  2 ,       -1 ,       255 ,  "void"             , 0       , False        , True         , (  0,  0,  0) ),
@@ -171,7 +171,8 @@ _labels = [
     _Label(  Kitti360Class.license_plate         , -1 ,        -1,        -1 ,  "vehicle"          , 7       , False        , True         , (  0,  0,142) ),
 ]
 
-kittiId2label = { label.kittiId : label for label in _labels          }
+kittiId2label = { label.kittiId : label for label in _labels }
+id2label =      { label.id      : label for label in _labels }
 
 
 def load_sick_scan(basepath, file):
@@ -191,9 +192,9 @@ def load_bboxes(basepath, file):
     """
     if isinstance(basepath, (str, Path)):
         tree = ET.parse(Path(basepath, file))
+        root = tree.getroot()
     else:  # assume ZipFile object
-        tree = ET.parse(basepath.read(file))
-    root = tree.getroot()
+        root = ET.fromstring(basepath.read(str(file)))
 
     frame_mapping = []
     object_list = []

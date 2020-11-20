@@ -1,21 +1,26 @@
-
+import logging
 from collections import OrderedDict
 from itertools import chain
 from pathlib import Path
 from zipfile import ZipFile
+import tempfile
+import shutil
+import tqdm
 
 import numpy as np
 from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
 from d3d.dataset.base import (TrackingDatasetBase, check_frames, expand_idx,
-                              expand_idx_name, split_trainval)
-from d3d.dataset.kitti.utils import load_image, load_velo_scan, load_timestamps
+                              expand_idx_name, split_trainval, NumberPool)
+from d3d.dataset.kitti360.utils import (Kitti360Class, kittiId2label, id2label,
+                                        load_bboxes, load_sick_scan)
+from d3d.dataset.kitti.utils import load_image, load_timestamps, load_velo_scan, load_calib_file
 from d3d.dataset.zip import PatchedZipFile
-from d3d.dataset.kitti360.utils import Kitti360Class, load_bboxes, load_sick_scan, kittiId2label
 from PIL import Image
-from scipy.spatial.transform import Rotation, Slerp
 from scipy.interpolate import interp1d
+from scipy.spatial.transform import Rotation, Slerp
 
+_logger = logging.getLogger("d3d")
 
 class KITTI360Loader(TrackingDatasetBase):
     """
@@ -50,15 +55,16 @@ class KITTI360Loader(TrackingDatasetBase):
             - ...
     """
     VALID_CAM_NAMES = ['cam1', 'cam2', 'cam3', 'cam4'] # cam 1,2 are persective
-    VALID_LIDAR_NAMES = ['velo', 'sick'] # velo stands for velodyne
+    VALID_LIDAR_NAMES = ['velo'] # velo stands for velodyne
+    # TODO: add 'sick' frame to the list after the loader for sick points is completed
 
     FRAME_PATH_MAP = dict(
-        sick=("data_3d_raw", "sick_points"    , "data"     , "data_timestamps_perspective.zip"),
-        velo=("data_3d_raw", "velodyne_points", "data"     , "data_timestamps_velodyne_points.zip"),
+        sick=("data_3d_raw", "sick_points"    , "data"     , "data_timestamps_sick.zip"),
+        velo=("data_3d_raw", "velodyne_points", "data"     , "data_timestamps_velodyne.zip"),
         cam1=("data_2d_raw", "image_00"       , "data_rect", "data_timestamps_perspective.zip"),
         cam2=("data_2d_raw", "image_01"       , "data_rect", "data_timestamps_perspective.zip"),
-        cam3=("data_2d_raw", "image_02"       , "data_rgb" , "data_timestamps_perspective.zip"),
-        cam4=("data_2d_raw", "image_03"       , "data_rgb" , "data_timestamps_perspective.zip"),
+        cam3=("data_2d_raw", "image_02"       , "data_rgb" , "data_timestamps_fisheye.zip"),
+        cam4=("data_2d_raw", "image_03"       , "data_rgb" , "data_timestamps_fisheye.zip"),
     )
 
     def __init__(self, base_path, phase="training", inzip=False,
@@ -82,7 +88,8 @@ class KITTI360Loader(TrackingDatasetBase):
         _dates = ["2013_05_28"]
         if self.inzip:
             _archives = [
-                ("sick", ".bin"), ("velodyne", ".bin"),
+                # ("sick", ".bin"), # SICK points are out of synchronization
+                ("velodyne", ".bin"),
                 ("image_00", ".png"), ("image_01", ".png"),
                 ("image_02", ".png"), ("image_03", ".png")
             ]
@@ -136,6 +143,10 @@ class KITTI360Loader(TrackingDatasetBase):
         self._3dobjects_cache = {} # store loaded object labels
         self._3dobjects_mapping =  {} # store frame to objects mapping
         self._timestamp_cache = {} # store timestamps
+
+        # load calibration
+        self._calibration = None
+        self._preload_calib()
 
     def __len__(self):
         return len(self.frames)
@@ -198,9 +209,6 @@ class KITTI360Loader(TrackingDatasetBase):
         if seq_id in self._3dobjects_mapping:
             return
 
-        # load poses first to filter out far boxes
-        self._preload_poses(seq_id)
-
         fname = Path("data_3d_bboxes", "train", f"{seq_id}.xml")
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_3d_bboxes.zip", to_extract=fname) as source:
@@ -212,7 +220,7 @@ class KITTI360Loader(TrackingDatasetBase):
         self._3dobjects_mapping[seq_id] = fmap
 
     @expand_idx
-    def annotation_3dobject(self, idx, raw=False):
+    def annotation_3dobject(self, idx, raw=False, visible_range=80): # TODO: it seems that dynamic objects need interpolation
         seq_id, frame_idx = idx
         self._preload_3dobjects(seq_id)
         objects = [self._3dobjects_cache[seq_id][i.data]
@@ -220,22 +228,192 @@ class KITTI360Loader(TrackingDatasetBase):
         if raw:
             return objects
 
-        boxes = Target3DArray(frame="velo")
-        # TODO: filter out boxes beyond range
+        self._preload_poses(seq_id)
+        pr, pt = self._poses_r[seq_id][frame_idx], self._poses_t[seq_id][frame_idx]
+
+        boxes = Target3DArray(frame="pose")
         for box in objects:
+            RS, T = box.transform[:3, :3], box.transform[:3, 3]
+            S = np.linalg.norm(RS, axis=0) # scale
+            R = Rotation.from_matrix(RS / S) # rotation
+            R = pr.inv() * R # relative rotation
+            T = pr.inv().as_matrix().dot(T - pt) # relative translation
+
+            # skip static objects beyond vision
+            if np.linalg.norm(T) > visible_range:
+                continue
+
+            global_id = box.semanticID * 1000 + box.instanceID
             tag = ObjectTag(kittiId2label[box.semanticId].name, Kitti360Class)
-            pos = box.transform[:3, 3]
-            ori = Rotation.from_matrix(box.transform[:3, :3])
-            tid = box.index
-            dim = np.ones(3) # TODO: this is not provided by KITTI360 ??
-            boxes.append(ObjectTarget3D(pos, ori, dim, tag, tid=tid))
+            boxes.append(ObjectTarget3D(T, R, S, tag, tid=global_id))
         return boxes
 
-    def calibration_data(self, idx):
-        pass
+    def _preload_calib(self):
+        # load data
+        import yaml
+        if self.inzip:
+            source = ZipFile(self.base_path / "calibration.zip")
+        else:
+            source = self.base_path
 
+        cam2pose = load_calib_file(source, "calibration/calib_cam_to_pose.txt")
+        perspective = load_calib_file(source, "calibration/perspective.txt")
+        if self.inzip:
+            cam2velo = np.fromstring(source.read("calibration/calib_cam_to_velo.txt"), sep=" ")
+            sick2velo = np.fromstring(source.read("calibration/calib_sick_to_velo.txt"), sep=" ")
+            intri2 = yaml.safe_load(source.read("calibration/image_02.yaml")[10:]) # skip header
+            intri3 = yaml.safe_load(source.read("calibration/image_03.yaml")[10:])
+        else:
+            cam2velo = np.loadtxt(source / "calibration/calib_cam_to_velo.txt")
+            sick2velo = np.loadtxt(source / "calibration/calib_sick_to_velo.txt")
+            intri2 = yaml.safe_load((source / "calibration/image_02.yaml").read_text()[10:])
+            intri3 = yaml.safe_load((source / "calibration/image_03.yaml").read_text()[10:])
+
+        if self.inzip:
+            source.close()
+
+        # parse calibration
+        calib = TransformSet("pose")
+        calib.set_intrinsic_lidar("velo")
+        calib.set_intrinsic_lidar("sick")
+        calib.set_intrinsic_camera("cam1", perspective["P_rect_00"].reshape(3, 4), perspective["S_rect_00"], rotate=False)
+        calib.set_intrinsic_camera("cam2", perspective["P_rect_01"].reshape(3, 4), perspective["S_rect_01"], rotate=False)
+
+        def parse_mei_camera(intri):
+            size = [intri['image_width'], intri['image_height']]
+            distorts = intri['distortion_parameters']
+            distorts = [distorts['k1'], distorts['k2'], distorts['p1'], distorts['p2']]
+            projection = intri['projection_parameters']
+            pmatrix = np.diag([projection["gamma1"], projection["gamma2"], 1])
+            pmatrix[0, 2] = projection["u0"]
+            pmatrix[1, 2] = projection["v0"]
+            return size, pmatrix, distorts, intri['mirror_parameters']['xi']            
+
+        S, P, D, xi = parse_mei_camera(intri2)
+        calib.set_intrinsic_camera("cam3", P, S, distort_coeffs=D, intri_matrix=P, mirror_coeff=xi)
+        S, P, D, xi = parse_mei_camera(intri3)
+        calib.set_intrinsic_camera("cam4", P, S, distort_coeffs=D, intri_matrix=P, mirror_coeff=xi)
+        
+        calib.set_extrinsic(cam2pose["image_00"].reshape(3, 4), frame_from="cam1")
+        calib.set_extrinsic(cam2pose["image_01"].reshape(3, 4), frame_from="cam2")
+        calib.set_extrinsic(cam2pose["image_02"].reshape(3, 4), frame_from="cam3")
+        calib.set_extrinsic(cam2pose["image_03"].reshape(3, 4), frame_from="cam4")
+        calib.set_extrinsic(cam2velo.reshape(3, 4), frame_from="cam1", frame_to="velo")
+        calib.set_extrinsic(sick2velo.reshape(3, 4), frame_from="sick", frame_to="velo")
+        self._calibration = calib
+
+    def calibration_data(self, idx):
+        return self._calibration
+
+    def _preload_3dsemantics(self, seq, nworkers=8):
+        """
+        This method will convert the combined semantic point cloud back in to frames
+        """
+        if self.inzip:
+            if (self.base_path / "data_3d_semantics_indexed.zip").exists():
+                return
+            result_path = Path(tempfile.mkdtemp())
+            data_path = Path(tempfile.mkdtemp())
+        else:
+            result_path = self.base_path / "data_3d_semantics" / seq / "indexed"
+            data_path = self.base_path
+            if result_path.exists():
+                return
+            result_path.mkdir()
+
+        _logger.info("Converting 3d semantic labels for sequence %s...", seq)
+        self._preload_poses(seq)
+
+        # create fast semantic id to Kitti360Class id mapping
+        idmap = np.zeros(max(id2label.keys()) + 1, dtype='u1')
+        for i in range(len(idmap)):
+            idmap[i] = id2label[i].name.value
+
+        import pcl
+        from sklearn.neighbors import KDTree
+
+        def parse_semantic_ply(fname: Path, dynamic): # match point cloud in aggregated semantic point clouds
+            fstart, fend = fname.stem.split('_')
+            fstart, fend = int(fstart), int(fend)
+            _logger.info("loading semantics for %s frames %d-%d",
+                "dynamic" if dynamic else "static", fstart, fend)
+            semantics = pcl.io.load_ply(str(fname))
+
+            if len(semantics) == 0:
+                return
+            
+            if dynamic:
+                timestamps = semantics.to_ndarray()['timestamp'].flatten()
+            else:
+                tree = KDTree(semantics.xyz)
+
+            for i in tqdm.trange(fstart, fend+1, desc="%d-%d" % (fstart, fend), leave=True):
+                cloud = self.lidar_data((seq, i), names="velo", bypass=True)
+                cloud = self._calibration.transform_points(cloud[:, :3], frame_to="pose", frame_from="velo")
+                cloud = cloud.dot(self._poses_r[seq][i].as_matrix().T) + self._poses_t[seq][i]
+
+                if dynamic:
+                    cur_semantics = semantics[timestamps == i]
+                    if not len(cur_semantics):
+                        continue
+                    tree = KDTree(cur_semantics.xyz)
+                    distance, sidx = tree.query(cloud[:, :3])
+                    selected = cur_semantics.to_ndarray()[sidx]
+                else:
+                    distance, sidx = tree.query(cloud[:, :3], return_distance=True)
+                    selected = semantics.to_ndarray()[sidx]
+
+                color = selected["rgb"].flatten()
+                slabels = selected["semantic"].flatten()
+                slabels = idmap[slabels]
+                ids = selected["instance"].astype('u2')
+                ids[ids % 1000 == 0] = 0 # make all points without instanceID marked 0
+                visible = selected["visible"].astype(bool)
+
+                label_path = result_path / ("%010d.npz" % i)
+                dist_path = result_path / ("%010d.dist.npy" % i)
+                
+                if dist_path.exists():
+                    update_mask = (distance < np.load(dist_path)).flatten()
+                    update_labels = np.load(label_path)
+                    color[update_mask] = update_labels['rgb'][update_mask]
+                    slabels[update_mask] = update_labels["semantic"][update_mask]
+                    ids[update_mask] = update_labels["tid"][update_mask]
+                    visible[update_mask] = update_labels["visible"][update_mask]
+
+                np.savez(label_path, rgb=color, semantic=slabels, tid=ids, visible=visible)
+                np.save(dist_path, distance)
+
+        for fspan in (data_path / "data_3d_semantics" / seq / "static").iterdir():
+            parse_semantic_ply(fspan, False)
+            break
+        for fspan in (data_path / "data_3d_semantics" / seq / "dynamic").iterdir():
+            parse_semantic_ply(fspan, True)
+            break
+
+        if self.inzip:
+            _logger.info("Saving indexed semantic labels...")
+            with ZipFile(self.base_path / "data_3d_semantics_indexed.zip", "w") as archive:
+                for f in result_path.iterdir():
+                    if f.suffix != ".npz":
+                        continue
+                    archive.write(f, f"data_3d_semantics/{seq}/indexed/{f.name}")
+
+            # remove temporary files
+            shutil.rmtree(result_path)
+            shutil.rmtree(data_path)
+            
+        else:
+            # remove distance files
+            for f in list(result_path.iterdir()):
+                if f.suffix == ".npy":
+                    f.unlink()
+
+
+    @expand_idx
     def annotation_3dsemantic(self, idx):
-        pass
+        seq_id, frame_idx = idx
+        self._preload_3dsemantics(seq_id)
 
     def annotation_2dsemantic(self, idx):
         pass
@@ -245,12 +423,12 @@ class KITTI360Loader(TrackingDatasetBase):
             return
 
         folder, subfolder, _, archive = self.FRAME_PATH_MAP[name]
-        fname = Path(folder, seq, subfolder, "timestamps.txt")
+        fname = Path(seq, subfolder, "timestamps.txt")
         if self.inzip:
             with PatchedZipFile(self.base_path / archive, to_extract=fname) as data:
                 ts = load_timestamps(data, fname, formatted=True)
         else:
-            ts = load_timestamps(self.base_path, fname, formatted=True)
+            ts = load_timestamps(self.base_path / folder, fname, formatted=True)
 
         self._timestamp_cache[(seq, name)] = ts.astype(int) // 1000
 
@@ -309,14 +487,19 @@ class KITTI360Loader(TrackingDatasetBase):
         return EgoPose(self._poses_t[seq_id][frame_idx], self._poses_r[seq_id][frame_idx])
 
 if __name__ == "__main__":
-    # loader = KITTI360Loader("/mnt/storage8t/datasets/KITTI-360/", inzip=True)
+    # loader = KITTI360Loader("/media/jacob/Storage/Datasets/kitti360-raw/", inzip=True)
     loader = KITTI360Loader("/media/jacob/Storage/Datasets/kitti360", inzip=False, nframes=0)
     # print(loader.camera_data(0))
     # print(loader.lidar_data(0))
-    for i in range(50):
-        print(loader.pose(i))
-        print(loader.annotation_3dobject(i))
+    # for i in range(50):
+    #     print(loader.pose(i))
+    #     print(loader.annotation_3dobject(i))
     # print(loader.timestamp(1))
-    # for obj in loader.annotation_3dobject(174, raw=True):
-    #     print(obj.vertices)
+    # for obj in loader.annotation_3dobject(174):
+    #     print(obj.dimension, obj.tag)
     # print(loader.annotation_3dobject(174))
+    import sys, warnings
+    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+    warnings.simplefilter("ignore")
+
+    print(loader.annotation_3dsemantic(0))

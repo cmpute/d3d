@@ -13,6 +13,7 @@ from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
                                       dump_detection_output, KittiTrackingLoader, KittiRawDataset)
 from d3d.dataset.waymo.loader import WaymoLoader
 from d3d.dataset.nuscenes.loader import NuscenesObjectClass, NuscenesLoader, NuscenesDetectionClass
+from d3d.dataset.kitti360.loader import KITTI360Loader
 from d3d.vis.pcl import visualize_detections as pcl_vis
 from d3d.vis.image import visualize_detections as img_vis
 
@@ -22,8 +23,9 @@ from d3d.vis.image import visualize_detections as img_vis
 kitti_location = os.environ['KITTI'] if 'KITTI' in os.environ else None
 waymo_location = os.environ['WAYMO'] if 'WAYMO' in os.environ else None
 nuscenes_location = os.environ['NUSCENES'] if 'NUSCENES' in os.environ else None
-selection = int(os.environ['INDEX']) if 'INDEX' in os.environ else None
+kitti360_location = os.environ['KITTI360'] if 'KITTI360' in os.environ else None
 
+selection = int(os.environ['INDEX']) if 'INDEX' in os.environ else None
 if 'INZIP' in os.environ:
     if os.environ['INZIP'].lower() in ['0', 'false']:
         inzip = False
@@ -129,6 +131,8 @@ class CommonTrackingDSMixin:
         cloud1, cloud2 = clouds[0][:, :4], clouds[-1][:, :4]
         pose1, pose2 = poses[0], poses[-1]
         targets1, targets2 = targets[0], targets[-1]
+        print("START", pose1)
+        print("END", pose2)
         
         # create transforms
         tf = TransformSet("global")
@@ -143,6 +147,9 @@ class CommonTrackingDSMixin:
         targets2 = calib.transform_objects(targets2, lidar)
         targets1.frame = fname1
         targets2.frame = fname2
+        print("HOMO1", pose1.homo())
+        print("HOMO2", pose2.homo())
+        print(tf.get_extrinsic(fname1, fname2))
 
         # visualize both point cloud in frame2
         visualizer = pcl.Visualizer()
@@ -204,7 +211,7 @@ class TestKittiObjectDataset(unittest.TestCase, CommonObjectDSMixin):
 class TestWaymoDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
         self.oloader = WaymoLoader(waymo_location, inzip=inzip, nframes=0)
-        self.tloader = WaymoLoader(waymo_location, inzip=inzip, nframes=2)
+        self.tloader = WaymoLoader(waymo_location, inzip=inzip, nframes=3)
 
     def test_point_cloud_projection_all(self):
         idx = selection or random.randint(0, len(self.oloader))
@@ -290,12 +297,33 @@ class TestKittiTrackingDataset(unittest.TestCase, CommonObjectDSMixin, CommonTra
         self.tloader = KittiTrackingLoader(kitti_location, inzip=inzip, nframes=2)
         
 
-@unittest.skipIf(not kitti_location, "Path to kitti not set")
-class TestKittiRawDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
+@unittest.skipIf(not kitti360_location, "Path to KITTI-360 not set")
+class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.oloader = KittiRawDataset(kitti_location, inzip=inzip, nframes=0)
-        self.tloader = KittiRawDataset(kitti_location, inzip=inzip, nframes=2)
+        self.oloader = KITTI360Loader(kitti360_location, inzip=inzip, nframes=0)
+        self.tloader = KITTI360Loader(kitti360_location, inzip=inzip, nframes=2)
 
+    def test_3d_semantic(self):
+        cloud = self.oloader.lidar_data(("2013_05_28_drive_0000_sync", 11400), names="velo", bypass=True)
+        labels = np.load(os.path.join(kitti360_location, "data_3d_semantics", "2013_05_28_drive_0000_sync", "indexed", "%010d.npz" % 11400))
+        color_cloud = pcl.create_xyzrgb(np.concatenate([cloud[:, :3], labels["rgb"].view('4u1')[:,:3]], axis=1))
+
+        def create_xyzl(data):
+            data = np.array(data, copy=False)
+            if data.shape[-1] != 4:
+                raise ValueError("Each point should contain 4 values")
+
+            dt = np.dtype(dict(names=['x','y','z','label'], formats=['f4','f4','f4','u4'], offsets=[0,4,8,16], itemsize=20))
+            arr = np.empty(len(data), dtype=dt)
+            arr['x'], arr['y'], arr['z'], arr['label'] = data[:,0], data[:,1], data[:,2], data[:,3]
+            return pcl.PointCloud(arr, 'XYZL')
+
+        label_cloud = create_xyzl(np.concatenate([cloud[:, :3], labels["semantic"].reshape(-1,1)], axis=1))
+
+        vis = pcl.Visualizer()
+        vis.addPointCloud(label_cloud, field="label")
+        vis.spin()
+        
 
 if __name__ == "__main__":
     TestKittiObjectDataset().test_detection_output()

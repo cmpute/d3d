@@ -445,7 +445,8 @@ class EgoPose:
 CameraMetadata = namedtuple('CameraMetadata', [
     'width', 'height',
     'distort_coeffs', # coefficients of camera distortion model, follow OpenCV format
-    'intri_matrix' # original intrinsic matrix used for cv2.undistortPoints
+    'intri_matrix', # original intrinsic matrix used for cv2.undistortPoints
+    'mirror_coeff' # coefficient of mirror equation (used in MEI camera model)
 ])
 LidarMetadata = namedtuple('LidarMetadata', [])
 RadarMetadata = namedtuple('RadarMetadata', [])
@@ -491,11 +492,15 @@ cdef class TransformSet:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = metadata
 
-    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, rotate=True, distort_coeffs=[], intri_matrix=None):
+    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, rotate=True,
+        distort_coeffs=[], intri_matrix=None, mirror_coeff=None):
         '''
         Set camera intrinsics
         :param size: (width, height)
         :param rotate: if True, then transform will append an axis rotation (Front-Left-Up to Right-Down-Front)
+        :param distort_coeffs: distortion coefficients, see [OpenCV](https://docs.opencv.org/3.4/d9/d0c/group__calib3d.html) for details
+        :param intri_matrix: intrinsic matrix (in general camera model)
+        :param mirror_coeff: the xi coefficient in MEI camera model. Reference: Single View Point OmnidirectionalCamera Calibration from Planar Grids
         '''
         width, height = size
         if rotate:
@@ -506,7 +511,7 @@ cdef class TransformSet:
             ]))
 
         self.intrinsics[frame_id] = transform
-        self.intrinsics_meta[frame_id] = CameraMetadata(width, height, distort_coeffs, intri_matrix)
+        self.intrinsics_meta[frame_id] = CameraMetadata(width, height, distort_coeffs, intri_matrix, mirror_coeff)
 
     cpdef void set_intrinsic_lidar(self, str frame_id):
         self.intrinsics[frame_id] = None

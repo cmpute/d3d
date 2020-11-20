@@ -54,6 +54,7 @@ Optional requirements:
 - `msgpack`: support serialization/deserialization
 - `filterpy`: support KF tracking
 - `intervaltree`: support indexing in some datasets
+- `pyyaml`: support calibration loading in some datasets
 
 # Build
 

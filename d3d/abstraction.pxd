@@ -42,7 +42,7 @@ cdef class TransformSet:
     cdef void _assert_exist(self, str frame_id, bint extrinsic=*)
 
     cpdef void set_intrinsic_general(self, str frame_id, object metadata=*)
-    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, rotate=*, distort_coeffs=*, intri_matrix=*)
+    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, rotate=*, distort_coeffs=*, intri_matrix=*, mirror_coeff=*)
     cpdef void set_intrinsic_lidar(self, str frame_id)
     cpdef void set_intrinsic_radar(self, str frame_id)
     cpdef void set_intrinsic_pinhole(self, str frame_id, size, cx, cy, fx, fy, s=*, distort_coeffs=*)
