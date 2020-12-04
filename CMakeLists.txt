@@ -24,7 +24,7 @@ if (TARGET torch_cpu)
     find_library(TORCH_PYTHON torch_python)
     list(APPEND TORCH_LIBRARIES ${TORCH_PYTHON})
 
-    if (TRUE) # FIXME: optional on BUILD_WITH_CUDA
+    if (BUILD_WITH_CUDA)
         set_property(TARGET torch_cuda PROPERTY INTERFACE_COMPILE_OPTIONS "")
 
         # tweak torch dependencies, see https://github.com/pytorch/pytorch/issues/33928
@@ -33,7 +33,7 @@ if (TARGET torch_cpu)
         set_target_properties(torch_cuda PROPERTIES INTERFACE_LINK_LIBRARIES "${TORCH_INTERFACE_LIB}")
     endif()
 else ()
-    if (TRUE) # BUILD_WITH_CUDA
+    if (BUILD_WITH_CUDA)
         # this case is for pytorch 1.4
         get_target_property(TORCH_INTERFACE_LIB torch INTERFACE_LINK_LIBRARIES)
         string(REPLACE "/usr/local/cuda" ${CUDA_TOOLKIT_ROOT_DIR} TORCH_INTERFACE_LIB "${TORCH_INTERFACE_LIB}")

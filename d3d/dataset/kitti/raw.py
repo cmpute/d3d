@@ -12,7 +12,7 @@ from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
 from d3d.dataset.zip import PatchedZipFile
 
-class KittiRawDataset(TrackingDatasetBase):
+class KittiRawLoader(TrackingDatasetBase):
     """
     Load and parse raw data into a usable format, please organize the files into following structure
 
@@ -53,6 +53,7 @@ class KittiRawDataset(TrackingDatasetBase):
 
     VALID_CAM_NAMES = ["cam0", "cam1", "cam2", "cam3"]
     VALID_LIDAR_NAMES = ["velo"]
+    VALID_OBJ_CLASSES = KittiObjectClass
     FRAME2FOLDER = {
         "cam0": "image_00", "cam1": "image_01", "cam2": "image_02", "cam3": "image_03",
         "velo": "velodyne_points", "imu": "oxts"
@@ -193,6 +194,23 @@ class KittiRawDataset(TrackingDatasetBase):
         data.set_intrinsic_general("imu")
         data.set_extrinsic(imu_to_velo, frame_from="imu")
 
+        # add position of vehicle bottom center and rear axis center
+        bc_rt = np.array([
+            [1, 0, 0, -0.27],
+            [0, 1, 0, 0],
+            [0, 0, 1, 1.73]
+        ], dtype='f4')
+        data.set_intrinsic_general("bottom_center")
+        data.set_extrinsic(bc_rt, frame_to="bottom_center")
+
+        rc_rt = np.array([
+            [1, 0, 0, -0.805],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0.30]
+        ])
+        data.set_intrinsic_general("rear_center")
+        data.set_extrinsic(rc_rt, frame_from="bottom_center", frame_to="rear_center")
+
         return data
 
     def calibration_data(self, idx, raw=False):
@@ -248,8 +266,8 @@ class KittiRawDataset(TrackingDatasetBase):
             dim = [tr.l, tr.w, tr.h]
             tag = ObjectTag(tr.objectType, KittiObjectClass)
             for pose_idx, pose in enumerate(tr.poses):
-                # TODO: convert from camera to lidar coordinate
                 pos = [pose.tx, pose.ty, pose.tz]
+                pos[2] += dim[2] / 2
                 ori = Rotation.from_euler("ZYX", (pose.rz, pose.ry, pose.rx))
                 objs[pose_idx + tr.first_frame].append(ObjectTarget3D(pos, ori, dim, tag, tid=tid))
 
@@ -294,7 +312,7 @@ class KittiRawDataset(TrackingDatasetBase):
 
         fname = Path(date, seq_id, 'velodyne_points', 'data', '%010d.bin' % frame_idx)
         if self.inzip:
-            with PatchedZipFile(self.base_path / f"{seq_id}.zip") as source:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as source:
                 return utils.load_velo_scan(source, fname)
         else:
             return utils.load_velo_scan(self.base_path, fname)

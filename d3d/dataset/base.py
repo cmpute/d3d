@@ -2,6 +2,7 @@ from pathlib import Path
 from multiprocessing import Manager, Pool
 from typing import Any, List, Optional, Union, Tuple, Dict
 from collections import OrderedDict
+from enum import Enum
 
 import numpy as np
 import numpy.random as npr
@@ -68,6 +69,7 @@ class DetectionDatasetBase:
     """
     VALID_CAM_NAMES: list
     VALID_LIDAR_NAMES: list
+    VALID_OBJ_CLASSES: Enum
 
     def __init__(self,
                  base_path: Union[str, Path],
@@ -257,9 +259,9 @@ class TrackingDatasetBase(DetectionDatasetBase):
 
     def timestamp(self, idx: Union[int, Tuple[int, int]], names: Optional[Union[str, List[str]]] = None) -> Union[int, List[int]]:
         '''
-        Return the timestamp of frames specified the index, represented by Unix timestamp in miliseconds
+        Return the timestamp of frames specified the index, represented by Unix timestamp in macroseconds
         '''
-        pass # TODO(v0.4): we should add frame option into this as in KITTI raw dataset, following similar manner
+        pass
 
     @property
     def sequence_sizes(self) -> Dict[Any, int]:

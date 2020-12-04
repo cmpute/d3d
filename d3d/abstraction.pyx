@@ -3,6 +3,7 @@
 import enum
 import pickle
 import logging
+import base64
 from collections import namedtuple
 from pathlib import Path
 
@@ -90,6 +91,13 @@ cdef inline float[:, :] create_matrix33(values):
         return np.zeros((3, 3), dtype=np.float32)
     else:
         return np.asarray(values, dtype=np.float32).reshape(3, 3)
+
+cdef inline bytes pack_ull(unsigned long long value):
+    cdef list result = []
+    while value > 0:
+        result.append(value % 256)
+        value = value // 256
+    return bytes(result)
 
 cdef class ObjectTarget3D:
     '''
@@ -191,6 +199,13 @@ cdef class ObjectTarget3D:
         offsets = np.array(np.meshgrid(*offsets)).T.reshape(-1, 3)
         offsets = offsets.dot(self.orientation.as_matrix().T)
         return self.position + offsets
+
+    @property
+    def tid64(self):
+        '''
+        Return base64 represented tracking id
+        '''
+        return base64.b64encode(pack_ull(self.tid)).rstrip(b'=').decode()
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
         # store only 3D box and label
@@ -672,7 +687,7 @@ cdef class TransformSet:
         self._assert_exist(frame_from)
         self._assert_exist(frame_to)
 
-        width, height, distorts, intri_matrix = self.intrinsics_meta[frame_to]
+        meta = self.intrinsics_meta[frame_to] 
         rt = self.get_extrinsic(frame_to=frame_to, frame_from=frame_from)
         homo_xyz = np.insert(points[:, :3], 3, 1, axis=1)
 
@@ -682,15 +697,17 @@ cdef class TransformSet:
 
         # mask points that are in camera view
         dmask = d > 0
-        mask = (0 < u) & (u < width) & (0 < v) & (v < height) & dmask
+        mask = (0 < u) & (u < meta.width) & (0 < v) & (v < meta.height) & dmask
 
-        distorts = np.array(distorts)
+        distorts = np.array(meta.distort_coeffs or [])
         if distorts.size > 0:
             # save old mask with tolerance
             tolerance = 20
-            mask = (-tolerance < u) & (u < width + tolerance) & (-tolerance < v) & (v < height + tolerance)
+            mask = (-tolerance < u) & (u < meta.width + tolerance) &\
+                   (-tolerance < v) & (v < meta.height + tolerance)
 
             # do distortion
+            intri_matrix = meta.intri_matrix
             fx, fy, cx, cy = intri_matrix[0,0], intri_matrix[1,1], intri_matrix[0,2], intri_matrix[1,2]
             k1, k2, p1, p2, k3 = distorts
             u, v = (u - cx) / fx, (v - cy) / fy
@@ -703,7 +720,7 @@ cdef class TransformSet:
             u, v = ud0 * fx + cx, vd0 * fy + cy
 
             # mask again
-            nmask = (0 < u) & (u < width) & (0 < v) & (v < height)
+            nmask = (0 < u) & (u < meta.width) & (0 < v) & (v < meta.height)
             mask = mask & nmask & dmask
 
         # filter points and return mask

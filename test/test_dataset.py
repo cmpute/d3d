@@ -10,7 +10,7 @@ from tkinter import TclError
 
 from d3d.abstraction import EgoPose, Target3DArray, TransformSet
 from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
-                                      dump_detection_output, KittiTrackingLoader, KittiRawDataset)
+                                      dump_detection_output, KittiTrackingLoader, KittiRawLoader)
 from d3d.dataset.waymo.loader import WaymoLoader
 from d3d.dataset.nuscenes.loader import NuscenesObjectClass, NuscenesLoader, NuscenesDetectionClass
 from d3d.dataset.kitti360.loader import KITTI360Loader
@@ -295,7 +295,14 @@ class TestKittiTrackingDataset(unittest.TestCase, CommonObjectDSMixin, CommonTra
     def setUp(self):
         self.oloader = KittiTrackingLoader(kitti_location, inzip=inzip, nframes=0)
         self.tloader = KittiTrackingLoader(kitti_location, inzip=inzip, nframes=2)
-        
+
+
+@unittest.skipIf(not kitti_location, "Path to kitti not set")
+class TestKittiRawDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
+    def setUp(self):
+        self.oloader = KittiRawLoader(kitti_location, inzip=inzip, nframes=0)
+        self.tloader = KittiRawLoader(kitti_location, inzip=inzip, nframes=2)
+
 
 @unittest.skipIf(not kitti360_location, "Path to KITTI-360 not set")
 class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
@@ -343,7 +350,7 @@ class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTracking
         # vis = pcl.Visualizer()
         # vis.addPointCloud(semantic_cloud, field="label")
         # vis.spin()
-        
+
 
 if __name__ == "__main__":
     TestKittiObjectDataset().test_detection_output()

@@ -14,9 +14,8 @@ except:
 
 # TODO: support set box_color by id hash
 def visualize_detections(visualizer: Visualizer, visualizer_frame: str, targets: Target3DArray, calib: TransformSet,
-    text_scale=0.8, box_color=(1, 1, 1), text_color=(1, 0.8, 1), id_prefix="", tags=None, position_offset=None):
+    text_scale=0.8, box_color=(1, 1, 1), text_color=(1, 0.8, 1), id_prefix="", tags=None, text_offset=None):
     '''
-    Note: To use this visualizer, targets should be in the same frame as the visualizer frame (lidar frame)
     '''
     if not _pcl_available:
         raise RuntimeError("pcl is not available, please check the installation of package pcl.py")
@@ -61,8 +60,8 @@ def visualize_detections(visualizer: Visualizer, visualizer_frame: str, targets:
 
         disp_pos = np.copy(target.position)
         disp_pos[2] += lz / 2 # lift the text out of box
-        if position_offset is not None: # apply offset
-            disp_pos += position_offset
+        if text_offset is not None: # apply offset
+            disp_pos += text_offset
         visualizer.addText3D(disp_text, list(disp_pos),
             text_scale=text_scale, color=text_color, id=text_id)
 
