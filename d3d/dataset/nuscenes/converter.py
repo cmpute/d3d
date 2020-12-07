@@ -36,13 +36,16 @@ def _load_table(path):
         return kvdata
 
 class KeyFrameConverter:
-    def __init__(self, input_meta_path, input_blob_paths, output_path):
+    def __init__(self, phase, input_meta_path, input_blob_paths, output_path, input_seg_path=None):
         '''
+        :param phase: mini / trainval / test
         :param local_map_range: Range of generated local map in meters, range <= 0 means not to output map
         '''
         assert isinstance(input_blob_paths, list), "blobs path should be a list"
         self.meta_path = Path(input_meta_path)
         self.blob_paths = [Path(p) for p in input_blob_paths]
+        self.seg_path = Path(input_seg_path) if input_seg_path is not None else None
+        self.phase = phase
         self.output_path = Path(output_path)
 
         # nuscenes tables
@@ -58,6 +61,7 @@ class KeyFrameConverter:
         self.annotation_table = None
         self.attribute_table = None
         self.category_table = None
+        self.lidarseg_table = None
         
         # temporary mappings and objects
         self.temp_dir = None
@@ -140,10 +144,12 @@ class KeyFrameConverter:
             self.filename_table[fname] = (token, scene, sensor, order, data['fileformat'])
             if ctoken not in self.scene_sensor_table[scene]:
                 self.scene_sensor_table[scene].add(ctoken)
+            if self.lidarseg_table and token in self.lidarseg_table:
+                fname = self.lidarseg_table[token]['filename']
+                fname = fname[fname.rfind('/')+1:]
+                self.filename_table[fname] = (token, scene, sensor + '_seg', order, 'bin')
 
     def _save_calibrations(self):
-        # TODO: add motion compensation, ref: https://github.com/waymo-research/waymo-open-dataset/issues/146
-        # https://github.com/waymo-research/waymo-open-dataset/issues/79
         for stoken, calib_tokens in self.scene_sensor_table.items():
             if stoken not in self.oscenes:
                 continue
@@ -210,11 +216,24 @@ class KeyFrameConverter:
         shutil.copy(self.table_path / "visibility.json", self.output_path)
         shutil.copy(self.table_path / "category.json", self.output_path)
         shutil.copy(self.table_path / "attribute.json", self.output_path)
+        if self.seg_path is not None:
+            shutil.copy(self.table_path / "lidarseg_category.json", self.output_path)
 
     def load_metadata(self):
         # extract metadata
         self.temp_dir = Path(tempfile.mkdtemp())
         print("Extracting tables to %s..." % self.temp_dir)
+
+        if self.seg_path is not None:
+            seg_file = tarfile.open(self.seg_path, "r|*")
+            for tinfo in seg_file:
+                if tinfo.name.endswith("lidarseg.json") and self.phase in tinfo.name:
+                    seg_file.extract(tinfo, self.temp_dir)
+                elif tinfo.name.endswith("category.json") and self.phase in tinfo.name:
+                    seg_file.extract(tinfo, self.temp_dir)
+                    json_path = self.temp_dir / tinfo.path
+                    json_path.rename(json_path.with_name("lidarseg_category.json"))
+            seg_file.close()
 
         meta_file = tarfile.open(self.meta_path, "r|*")
         for tinfo in meta_file:
@@ -228,6 +247,7 @@ class KeyFrameConverter:
 
         # load tables
         print("Constructing tables...")
+        assert version.endswith(self.phase), "Phase mismatch in loading nuscenes!"
         self.table_path = self.temp_dir / version
         self.sample_table = _load_table(self.table_path / "sample.json")
         self.sample_data_table = _load_table(self.table_path / "sample_data.json")
@@ -235,6 +255,8 @@ class KeyFrameConverter:
         self.sensor_table = _load_table(self.table_path / "sensor.json")
         self.calibrated_sensor_table = _load_table(self.table_path / "calibrated_sensor.json")
         self.ego_pose_table = _load_table(self.table_path / "ego_pose.json")
+        if self.seg_path is not None:
+            self.lidarseg_table = _load_table(self.table_path / "lidarseg.json")
 
         # parse tables
         self._parse_scenes()
@@ -243,13 +265,17 @@ class KeyFrameConverter:
 
     def load_blobs(self, debug):
         # iterate through all the sensor data
-        for iblob, blob_path in tqdm(enumerate(self.blob_paths), desc="Loading blobs", unit="tars"):
+        blobs = self.blob_paths
+        if self.seg_path is not None:
+            blobs = [self.seg_path] + blobs
+
+        # iterate through all the sensor data
+        for iblob, blob_path in tqdm(enumerate(blobs), desc="Loading blobs", unit="tars"):
             blob_file = tarfile.open(blob_path)
             if debug and iblob > 0:
                 break
 
-            counter = 0
-            for tinfo in tqdm(blob_file, desc="Reading files", unit="files"):
+            for counter, tinfo in enumerate(tqdm(blob_file, desc="Reading files", unit="files")):
                 # skip files that are not samples
                 if tinfo.isdir():
                     continue
@@ -259,10 +285,13 @@ class KeyFrameConverter:
 
                 # save sample data and pose
                 token, scene, sensor, order, ext = self.filename_table[fname]
+                if sensor.endswith("seg") and self.phase not in tinfo.name:
+                    continue # dealing with duplicates in mini and trainval blobs
+
                 with self.ohandles[scene].open("%s/%03d.%s" % (sensor, order, ext), "w") as fout:
                     shutil.copyfileobj(blob_file.extractfile(tinfo), fout)
                 if sensor == "lidar_top": # here we choose the pose of lidar as the pose of the key frame
-                # TODO: save pose and timestamp for each sensor
+                # TODO: save pose and timestamp for each sensor, can be in one single json file
                     ptoken = self.sample_data_table[token]["ego_pose_token"]
                     pose = self.ego_pose_table[ptoken]
                     with self.ohandles[scene].open("pose/%03d.json" % order, "w") as fout:
@@ -277,7 +306,6 @@ class KeyFrameConverter:
                     self.oframes[scene].add(order)
 
                 # only convert 2 files in debug
-                counter +=1
                 if debug and counter > 1:
                     break
 
@@ -320,14 +348,17 @@ class KeyFrameConverter:
 
 def convert_dataset_inpath(input_path, output_path, debug=False, mini=False):
     input_path, output_path = Path(input_path), Path(output_path)
+    output_path.mkdir(exist_ok=True, parents=True)
     if mini: # convert mini dataset
         phase_path = output_path / "trainval"
         if not phase_path.exists():
             phase_path.mkdir()
 
         mini_archive = next(input_path.glob("*-mini.*"))
-        KeyFrameConverter(input_meta_path=mini_archive, input_blob_paths=[mini_archive],
-            output_path=phase_path).convert(debug)
+        mini_seg = list(input_path.glob("*lidarseg-mini*"))
+        mini_seg = mini_seg[0] if len(mini_seg) > 0 else None
+        KeyFrameConverter("mini", input_meta_path=mini_archive, input_blob_paths=[mini_archive],
+            input_seg_path=mini_seg, output_path=phase_path).convert(debug)
     else:
         # convert trainval dataset
         print("Processing trainval datasets...")
@@ -336,9 +367,11 @@ def convert_dataset_inpath(input_path, output_path, debug=False, mini=False):
             phase_path.mkdir()
 
         trainval_meta = next(input_path.glob("*-trainval_meta.*"))
+        trainval_seg = list(input_path.glob("*lidarseg-all*"))
+        trainval_seg = trainval_seg[0] if len(trainval_seg) > 0 else None
         trainval_blobs = list(p for p in input_path.glob("*blobs*") if 'trainval' in p.name)
-        KeyFrameConverter(input_meta_path=trainval_meta, input_blob_paths=trainval_blobs,
-            output_path=phase_path).convert(debug)
+        KeyFrameConverter("trainval", input_meta_path=trainval_meta, input_blob_paths=trainval_blobs,
+            input_seg_path=trainval_seg, output_path=phase_path).convert(debug)
 
         # convert test dataset
         print("Processing test datasets")
@@ -348,7 +381,7 @@ def convert_dataset_inpath(input_path, output_path, debug=False, mini=False):
 
         test_meta = next(input_path.glob("*-test_meta.*"))
         test_blobs = list(p for p in input_path.glob("*blobs*") if 'test' in p.name)
-        KeyFrameConverter(input_meta_path=test_meta, input_blob_paths=test_blobs,
+        KeyFrameConverter("test", input_meta_path=test_meta, input_blob_paths=test_blobs,
             output_path=phase_path).convert(debug)
 
 def main():

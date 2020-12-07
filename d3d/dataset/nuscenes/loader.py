@@ -32,6 +32,7 @@ class NuscenesObjectClass(IntFlag):
       └───: attribute
     '''
     unknown = 0x0000
+    noise = 0x0010
 
     # categories
     animal = 0x0001
@@ -61,8 +62,18 @@ class NuscenesObjectClass(IntFlag):
     vehicle_motorcycle = 0x0054
     vehicle_trailer = 0x0064
     vehicle_truck = 0x0074
+    vehicle_ego = 0x0084
     static_object = 0x0005
     static_object_bicycle_rack = 0x0015
+    flat = 0x0006
+    flat_driveable_surface = 0x0016
+    flat_sidewalk = 0x0026
+    flat_terrain = 0x0036
+    flat_other = 0x0046
+    static = 0x0007
+    static_manmade = 0x0017
+    static_vegetation = 0x0027
+    static_other = 0x0037
 
     # attributes
     vehicle_moving = 0x1000
@@ -141,7 +152,7 @@ class NuscenesDetectionClass(Enum):
     trailer = auto()
     truck = auto()
 
-class NuscenesLoader(TrackingDatasetBase): # TODO(v0.4): add support for nuscenes-lidarseg
+class NuscenesLoader(TrackingDatasetBase):
     '''
     Load Nuscenes dataset into a usable format.
     Please use the d3d_nuscenes_convert command (do not use --all-frames) to convert the dataset first into following formats
@@ -169,6 +180,8 @@ class NuscenesLoader(TrackingDatasetBase): # TODO(v0.4): add support for nuscene
             raise NotImplementedError("Currently only support load from zip files in Nuscenes dataset")
         self.base_path = Path(base_path) / ("trainval" if phase in ["training", "validation"] else "test")
 
+        self._metadata = None
+        self._segmapping = None
         self._load_metadata()
 
         # split trainval
@@ -185,7 +198,7 @@ class NuscenesLoader(TrackingDatasetBase): # TODO(v0.4): add support for nuscene
                 if archive.is_dir() or archive.suffix != ".zip":
                     continue
 
-                with PatchedZipFile(archive) as ar:
+                with PatchedZipFile(archive, to_extract="scene/stats.json") as ar:
                     metadata[archive.stem] = json.loads(ar.read("scene/stats.json").decode())
             with open(meta_path, "w") as fout:
                 json.dump(metadata, fout)
@@ -195,6 +208,19 @@ class NuscenesLoader(TrackingDatasetBase): # TODO(v0.4): add support for nuscene
             meta_json = json.load(fin)
             for k, v in meta_json.items():
                 self._metadata[k] = edict(v)
+
+        # load category mapping for segmentation
+        cat_path = self.base_path / "lidarseg_category.json"
+        if cat_path.exists():
+            with open(cat_path) as fin:
+                cat_json = json.load(fin)
+            cat_dict = {}
+            for item in cat_json:
+                cat_dict[item['index']] = NuscenesObjectClass.parse(item['name'])
+            
+            self._segmapping = np.empty(max(cat_dict.keys()) + 1, dtype='u4')
+            for idx, clsobj in cat_dict.items():
+                self._segmapping[idx] = clsobj.value
 
     def __len__(self):
         return len(self.frames)
@@ -268,6 +294,19 @@ class NuscenesLoader(TrackingDatasetBase): # TODO(v0.4): add support for nuscene
             outputs.append(target)
 
         return outputs
+
+    @expand_idx
+    def annotation_3dpoints(self, idx, raw=False):
+        seq_id, frame_idx = idx
+
+        fname = "lidar_top_seg/%03d.bin" % frame_idx
+        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+            label = np.frombuffer(ar.read(fname), dtype='u1')
+
+        if raw:
+            return label
+        else:
+            return self._segmapping[label]
 
     def calibration_data(self, idx):
         seq_id, _ = self._locate_frame(idx)

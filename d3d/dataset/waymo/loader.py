@@ -178,6 +178,8 @@ class WaymoLoader(TrackingDatasetBase):
         return arr
 
     def calibration_data(self, idx):
+        # TODO: add motion compensation, ref: https://github.com/waymo-research/waymo-open-dataset/issues/146
+        # https://github.com/waymo-research/waymo-open-dataset/issues/79
         if isinstance(idx, int):
             seq_id, _ = self._locate_frame(idx)
         else:
