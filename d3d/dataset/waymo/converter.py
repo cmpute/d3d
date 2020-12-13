@@ -8,6 +8,7 @@ import shutil
 import tarfile
 import tempfile
 import zipfile
+from pathlib import Path
 
 import numpy as np
 from tqdm import tqdm
@@ -116,69 +117,83 @@ def convert_range_image_to_point_cloud(frame,
 
 # =========================================================================
 
-def add_property(proto, dict, name):
+def add_property(proto, dict_, name):
     if proto.HasField(name):
-        dict[name] = getattr(proto, name)
+        dict_[name] = getattr(proto, name)
 
-def save_context(frame, frame_count, output_zip):
+def write_file(out_archive, fname, data: bytes):
+    if isinstance(out_archive, Path):
+        ofile = out_archive / fname
+        ofile.parent.mkdir(exist_ok=True)
+        ofile.write_bytes(data)
+    else: # zipfile
+        out_archive.writestr(fname, data)
+
+def write_file_np(out_archive, fname, data: np.ndarray):
+    if isinstance(out_archive, Path):
+        ofile = out_archive / fname
+        ofile.parent.mkdir(exist_ok=True)
+        np.save(ofile, data)
+    else: # zipfile
+        with out_archive.open(fname, "w") as fout:
+            np.save(fout, data)
+
+def save_context(frame, frame_count, out_archive):
     # save stats
-    with output_zip.open("context/stats.json", "w") as fout:
-        stats = {}
-        add_property(frame.context.stats, stats, "time_of_day")
-        add_property(frame.context.stats, stats, "location")
-        add_property(frame.context.stats, stats, "weather")
+    stats = {}
+    add_property(frame.context.stats, stats, "time_of_day")
+    add_property(frame.context.stats, stats, "location")
+    add_property(frame.context.stats, stats, "weather")
 
-        for objcount in frame.context.stats.laser_object_counts:
-            if "laser_object_counts" not in stats:
-                stats["laser_object_counts"] = {}
-            stats['laser_object_counts'][label_name_map[objcount.type]] = objcount.count
+    for objcount in frame.context.stats.laser_object_counts:
+        if "laser_object_counts" not in stats:
+            stats["laser_object_counts"] = {}
+        stats['laser_object_counts'][label_name_map[objcount.type]] = objcount.count
 
-        for objcount in frame.context.stats.camera_object_counts:
-            if "camera_object_counts" not in stats:
-                stats["camera_object_counts"] = {}
-            stats['camera_object_counts'][label_name_map[objcount.type]] = objcount.count
+    for objcount in frame.context.stats.camera_object_counts:
+        if "camera_object_counts" not in stats:
+            stats["camera_object_counts"] = {}
+        stats['camera_object_counts'][label_name_map[objcount.type]] = objcount.count
 
-        stats['frame_count'] = frame_count
-        fout.write(json.dumps(stats).encode())
+    stats['frame_count'] = frame_count
+    write_file(out_archive, "context/stats.json", json.dumps(stats).encode())
 
     # save calibrations
-    with output_zip.open("context/calib_cams.json", "w") as fout:
-        calibs = {}
-        for calib_object in frame.context.camera_calibrations:
-            calib_dict = dict(
-                intrinsic=list(calib_object.intrinsic),
-                extrinsic=list(calib_object.extrinsic.transform),
-                width=calib_object.width,
-                height=calib_object.height,
-                # rolling_shutter_direction is currently ignored
-            )
-            calibs[camera_name_map[calib_object.name]] = calib_dict
-        fout.write(json.dumps(calibs).encode())
-    with output_zip.open("context/calib_lidars.json", "w") as fout:
-        calibs = {}
-        for calib_object in frame.context.laser_calibrations:
-            calib_dict = dict(
-                extrinsic=list(calib_object.extrinsic.transform),
-                # beam_inclinations are ignored
-            )
-            calibs[lidar_name_map[calib_object.name]] = calib_dict
-        fout.write(json.dumps(calibs).encode())
+    calibs = {}
+    for calib_object in frame.context.camera_calibrations:
+        calib_dict = dict(
+            intrinsic=list(calib_object.intrinsic),
+            extrinsic=list(calib_object.extrinsic.transform),
+            width=calib_object.width,
+            height=calib_object.height,
+            # rolling_shutter_direction is currently ignored
+        )
+        calibs[camera_name_map[calib_object.name]] = calib_dict
+    write_file(out_archive, "context/calib_cams.json", json.dumps(calibs).encode())
 
-def save_timestamp(frame, frame_idx, output_zip):
-    with output_zip.open("timestamp/%04d.txt" % frame_idx, "w") as fout:
-        fout.write(str(frame.timestamp_micros).encode())
+    calibs = {}
+    for calib_object in frame.context.laser_calibrations:
+        calib_dict = dict(
+            extrinsic=list(calib_object.extrinsic.transform),
+            # beam_inclinations are ignored
+        )
+        calibs[lidar_name_map[calib_object.name]] = calib_dict
+    write_file(out_archive, "context/calib_lidars.json", json.dumps(calibs).encode())
 
-def save_pose(frame, frame_idx, output_zip):
+def save_timestamp(frame, frame_idx, out_archive):
+    ts = str(frame.timestamp_micros).encode()
+    write_file(out_archive, "timestamp/%04d.txt" % frame_idx, ts)
+
+def save_pose(frame, frame_idx, out_archive):
     values = np.array(frame.pose.transform).reshape(4, 4)
-    with output_zip.open("pose/%04d.npy" % frame_idx, "w") as fout:
-        np.save(fout, values)
+    write_file_np(out_archive, "pose/%04d.npy" % frame_idx, values)
 
-def save_image(frame, frame_idx, output_zip):
+def save_image(frame, frame_idx, out_archive):
     for image in frame.images:
-        with output_zip.open("camera_%s/%04d.jpg" % (camera_name_map[image.name], frame_idx), "w") as fout:
-            fout.write(image.image)
+        fname = "camera_%s/%04d.jpg" % (camera_name_map[image.name], frame_idx)
+        write_file(out_archive, fname, image.image)
 
-def save_point_cloud(frame, frame_idx, output_zip):
+def save_point_cloud(frame, frame_idx, out_archive):
     range_images, camera_projections, range_image_top_pose =\
         frame_utils.parse_range_image_and_camera_projection(frame)
     points, cp_points, channels = convert_range_image_to_point_cloud(
@@ -189,13 +204,11 @@ def save_point_cloud(frame, frame_idx, output_zip):
     for i in range(5):
         name = lidar_name_map[i+1]
         cloud = np.hstack((points[i], channels[i]))
-        with output_zip.open("lidar_%s/%04d.npy" % (name, frame_idx), "w") as fout:
-            np.save(fout, cloud)
+        write_file_np(out_archive, "lidar_%s/%04d.npy" % (name, frame_idx), cloud)
         cloud_ri2 = np.hstack((points_ri2[i], channels_ri2[i]))
-        with output_zip.open("lidar_%s_ri2/%04d.npy" % (name, frame_idx), "w") as fout:
-            np.save(fout, cloud_ri2)
+        write_file_np(out_archive, "lidar_%s_ri2/%04d.npy" % (name, frame_idx), cloud_ri2)
 
-def save_labels(frame, frame_idx, output_zip):
+def save_labels(frame, frame_idx, out_archive):
     # labels in lidar frame
     label_list = []
     for label in frame.laser_labels:
@@ -209,8 +222,8 @@ def save_labels(frame, frame_idx, output_zip):
             tracking_difficulty_level=label.tracking_difficulty_level
         )
         label_list.append(label_obj)
-    with output_zip.open("label_lidars/%04d.json" % frame_idx, "w") as fout:
-        fout.write(json.dumps(label_list).encode())
+    label_json = json.dumps(label_list).encode()
+    write_file(out_archive, "label_lidars/%04d.json" % frame_idx, label_json)
 
     # labels in camera frames
     for label_tuple in frame.camera_labels:
@@ -226,13 +239,14 @@ def save_labels(frame, frame_idx, output_zip):
                 tracking_difficulty_level=label.tracking_difficulty_level
             )
             label_list.append(label_obj)
-        with output_zip.open("label_camera_%s/%04d.json" % (name, frame_idx), "w") as fout:
-            fout.write(json.dumps(label_list).encode())
+        label_json = json.dumps(label_list).encode()
+        write_file(out_archive, "label_camera_%s/%04d.json" % (name, frame_idx), label_json)
 
     # no_label_zones are ignored
 
-def convert_tfrecord(ntqdm, input_file, output_path, delele_input=True):
-    dataset = tf.data.TFRecordDataset(input_file, compression_type='')
+def convert_tfrecord(ntqdm, input_file, output_path: Path, zip_output=False, delele_input=True):
+    output_path.mkdir(exist_ok=True, parents=True)
+    dataset = tf.data.TFRecordDataset(str(input_file), compression_type='')
     archive = None
 
     disp = os.path.split(input_file)[1]
@@ -245,9 +259,11 @@ def convert_tfrecord(ntqdm, input_file, output_path, delele_input=True):
         frame.ParseFromString(bytearray(data.numpy()))
 
         if archive is None:
-            if not os.path.exists(output_path):
-                os.makedirs(output_path)
-            archive = zipfile.ZipFile(os.path.join(output_path, frame.context.name + ".zip"), "w")
+            if zip_output:
+                archive = zipfile.ZipFile(output_path / (frame.context.name + ".zip"), "w")
+            else:
+                archive = output_path / frame.context.name
+                archive.mkdir(exist_ok=True)
 
         save_timestamp(frame, idx, archive)
         save_image(frame, idx, archive)
@@ -256,14 +272,14 @@ def convert_tfrecord(ntqdm, input_file, output_path, delele_input=True):
         save_pose(frame, idx, archive)
     save_context(frame, idx, archive) # save metadata at last
 
-    if archive is not None:
+    if archive is not None and zip_output:
         archive.close()
     if delele_input: # delete intermediate file
         os.remove(input_file)
 
     return idx
 
-def convert_dataset_inpath(input_path, output_path, nworkers=8, debug=False):
+def convert_dataset_inpath(input_path, output_path, nworkers=8, debug=False, zip_output=False):
     pool = NumberPool(processes=nworkers, offset=1)
     temp_dir = tempfile.mkdtemp()
     total_records = 0
@@ -280,9 +296,14 @@ def convert_dataset_inpath(input_path, output_path, nworkers=8, debug=False):
                 if os.path.splitext(member.name)[1] != ".tfrecord":
                     continue
 
+                if total_records > nworkers:
+                    pool.wait_for_once() # prevent extracted too much records into temp folder
+
                 tarf.extract(member, temp_dir)
                 pool.apply_async(convert_tfrecord,
-                    (os.path.join(temp_dir, member.name), os.path.join(output_path, phase))
+                    (Path(temp_dir, member.name),
+                     Path(output_path, phase),
+                     zip_output)
                 )
                 total_records += 1
 
@@ -313,14 +334,12 @@ def main():
         help='Run the script in debug mode, only convert part of the tarballs')
     parser.add_argument('-p', '--parallel-workers', type=int, dest="workers", default=8,
         help="Number of parallet workers to convert tfrecord")
-    parser.add_argument('-u', '--unzip', action="store_true",
-        help="Convert the result into directory rather than zip files")
+    parser.add_argument('-z', '--zip', action="store_true",
+        help="Convert the result into zip files rather than flat directory")
     args = parser.parse_args()
 
-    if args.unzip: # XXX: implement this
-        raise NotImplementedError("Converting into directories is not implemented")
-
-    convert_dataset_inpath(args.input, args.output or args.input, nworkers=args.workers, debug=args.debug)
+    convert_dataset_inpath(args.input, args.output or args.input, nworkers=args.workers,
+                           debug=args.debug, zip_output=args.zip)
 
 if __name__ == "__main__":
     main()

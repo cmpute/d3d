@@ -1,18 +1,19 @@
-from pathlib import Path
-from multiprocessing import Manager, Pool
-from typing import Any, List, Optional, Union, Tuple, Dict
+import functools
+import inspect
 from collections import OrderedDict
 from enum import Enum
+from multiprocessing import Manager, Pool
+from threading import Event
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import numpy.random as npr
+from d3d.abstraction import EgoPose, Target3DArray, TransformSet
 from numpy import ndarray as NdArray
 from PIL.Image import Image
 from tqdm import tqdm
-import functools
-import inspect
 
-from d3d.abstraction import Target3DArray, TransformSet, EgoPose
 
 def split_trainval(phase, total_count, trainval_split, trainval_random):
     '''
@@ -371,6 +372,7 @@ class NumberPool:
         self._npool = Manager().Array('B', [0] * processes)
         self._nlock = Manager().Lock()
         self._offset = offset
+        self._complete_event = Event()
 
     @staticmethod
     def _wrap_func(func, args, pool, nlock, offset):
@@ -388,6 +390,7 @@ class NumberPool:
                 self._npool[n] = 0
             if callback is not None:
                 callback(oret)
+            self._complete_event.set()
 
         self._ppool.apply_async(NumberPool._wrap_func,
                                 (func, args, self._npool,
@@ -396,6 +399,10 @@ class NumberPool:
                                 error_callback=lambda e: print(
                                     f"{type(e).__name__}: {e}")
                                 )
+
+    def wait_for_once(self):
+        self._complete_event.wait()
+        self._complete_event.clear()
 
     def close(self):
         self._ppool.close()
