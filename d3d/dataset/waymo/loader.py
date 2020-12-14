@@ -16,6 +16,7 @@ from enum import Enum
 from io import BytesIO
 
 import numpy as np
+import msgpack
 from addict import Dict as edict
 from PIL import Image
 from scipy.spatial.transform import Rotation
@@ -59,31 +60,37 @@ class WaymoLoader(TrackingDatasetBase):
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
                          trainval_split=trainval_split, trainval_random=trainval_random)
 
-        if not inzip:
-            raise NotImplementedError("Currently only support load from zip files in Waymo dataset")
-
         self.base_path = Path(base_path) / phase
+        self.inzip = inzip
         self._load_metadata()
 
     def _load_metadata(self):
-        meta_path = self.base_path / "metadata.json"
+        meta_path = self.base_path / "metadata.msg"
         if not meta_path.exists():
             _logger.info("Creating metadata of Waymo dataset (%s)...", self.phase)
             metadata = {}
 
-            for archive in self.base_path.iterdir():
-                if archive.is_dir() or archive.suffix != ".zip":
-                    continue
+            if self.inzip:
+                for archive in self.base_path.iterdir():
+                    if archive.is_dir() or archive.suffix != ".zip":
+                        continue
 
-                with zipfile.ZipFile(archive) as ar:
-                    with ar.open("context/stats.json") as fin:
-                        metadata[archive.stem] = json.loads(fin.read().decode())
-            with open(meta_path, "w") as fout:
-                json.dump(metadata, fout)
+                    with PatchedZipFile(archive, to_extract="context/stats.json") as ar:
+                        metadata[archive.stem] = json.loads(ar.read("context/stats.json"))
+            else:
+                for folder in self.base_path.iterdir():
+                    if not folder.is_dir():
+                        continue
 
-        with open(meta_path) as fin:
+                    with (folder / "context/stats.json").open() as fin:
+                        metadata[folder.name] = json.load(fin)
+
+            with open(meta_path, "wb") as fout:
+                msgpack.pack(metadata, fout)
+
+        with open(meta_path, "rb") as fin:
             self._metadata = OrderedDict()
-            meta_json = json.load(fin)
+            meta_json = msgpack.unpack(fin)
             for k, v in meta_json.items():
                 self._metadata[k] = edict(v)
 
@@ -97,20 +104,6 @@ class WaymoLoader(TrackingDatasetBase):
             idx -= v.frame_count
         raise ValueError("Index larger than dataset size")
 
-    def _load_files(self, idx, folders, suffix):
-        '''
-        Load corresponding files given index, folders name and file suffix
-        The output would be a nested list of nframes * nfolders data
-        '''
-        if isinstance(idx, int):
-            seq_id, frame_idx = self._locate_frame(idx)
-        else:
-            seq_id, frame_idx = idx
-
-        ar = zipfile.ZipFile(self.base_path / (seq_id + ".zip"))
-        return [[ar.read("%s/%04d.%s" % (f, fidx, suffix)) for f in folders]
-            for fidx in range(frame_idx - self.nframes, frame_idx+1)]
-
     @expand_idx_name(VALID_LIDAR_NAMES)
     def lidar_data(self, idx, names=None):
         """
@@ -122,8 +115,11 @@ class WaymoLoader(TrackingDatasetBase):
         seq_id, frame_idx = idx
 
         fname = "%s/%04d.npy" % (names, frame_idx)
-        with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-            cloud = np.load(BytesIO(ar.read(fname)))
+        if self.inzip:
+            with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
+                cloud = np.load(BytesIO(ar.read(fname)))
+        else:
+            cloud = np.load(self.base_path / seq_id / fname)
 
         # point cloud is represented in base frame in Waymo dataset
         calib = self.calibration_data(idx)
@@ -138,16 +134,24 @@ class WaymoLoader(TrackingDatasetBase):
         """
         seq_id, frame_idx = idx
         fname = "%s/%04d.jpg" % (names, frame_idx)
-        with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-            return Image.open(ar.open(fname)).convert('RGB')
+        if self.inzip:
+            with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
+                return Image.open(ar.open(fname)).convert('RGB')
+        else:
+            Image.open(self.base_path / seq_id / fname).convert('RGB')
 
     @expand_idx_name(VALID_CAM_NAMES)
     def annotation_2dobject(self, idx, names=None):
         seq_id, frame_idx = idx
 
         fname = "label_%s/%04d.json" % (names, frame_idx)
-        with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-            labels = list(map(edict, json.loads(ar.read(fname).decode())))
+        if self.inzip:
+            with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
+                data = json.loads(ar.read(fname))
+        else:
+            with (self.base_path / seq_id / fname).open() as fin:
+                data = json.load(fin)
+        labels = list(map(edict, data))
 
         # XXX: currently we don't have a interface for storing 2d object
         return labels
@@ -157,8 +161,13 @@ class WaymoLoader(TrackingDatasetBase):
         seq_id, frame_idx = idx
 
         fname = "label_lidars/%04d.json" % frame_idx
-        with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-            labels = list(map(edict, json.loads(ar.read(fname).decode())))
+        if self.inzip:
+            with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
+                data = json.loads(ar.read(fname))
+        else:
+            with (self.base_path / seq_id / fname).open() as fin:
+                data = json.load(fin)
+        labels = list(map(edict, data))
         if raw:
             return labels
 
@@ -186,28 +195,35 @@ class WaymoLoader(TrackingDatasetBase):
             seq_id, _ = idx
 
         calib_params = TransformSet("vehicle")
-        ar = PatchedZipFile(self.base_path / (seq_id + ".zip"),
-                            to_extract=["context/calib_cams.json", "context/calib_lidars.json"])
 
-        # load camera calibration
-        with ar.open("context/calib_cams.json") as fin:
-            calib_cams = json.loads(fin.read().decode())
-            for frame, calib in calib_cams.items():
-                frame = "camera_" + frame
-                (fu, fv, cu, cv), distort = calib['intrinsic'][:4], calib['intrinsic'][4:]
-                transform = np.array(calib['extrinsic']).reshape(4,4)
-                size = (calib['width'], calib['height'])
-                calib_params.set_intrinsic_pinhole(frame, size, cu, cv, fu, fv, distort_coeffs=distort)
-                calib_params.set_extrinsic(transform, frame_from=frame)
+        # load json files
+        fname_cams = "context/calib_cams.json"
+        fname_lidars = "context/calib_lidars.json"
+        if self.inzip:
+            with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=[fname_cams, fname_lidars]) as ar:
+                calib_cams = json.loads(ar.read(fname_cams))
+                calib_lidars = json.loads(ar.read(fname_lidars))
+        else:
+            with (self.base_path / seq_id / fname_cams).open() as fin:
+                calib_cams = json.load(fin)
+            with (self.base_path / seq_id / fname_lidars).open() as fin:
+                calib_lidars = json.load(fin)
 
-        # load lidar calibration
-        with ar.open("context/calib_lidars.json") as fin:
-            calib_lidars = json.loads(fin.read().decode())
-            for frame, calib in calib_lidars.items():
-                frame = "lidar_" + frame
-                calib_params.set_intrinsic_lidar(frame)
-                transform = np.array(calib['extrinsic']).reshape(4,4)
-                calib_params.set_extrinsic(transform, frame_from=frame)
+        # parse camera calibration
+        for frame, calib in calib_cams.items():
+            frame = "camera_" + frame
+            (fu, fv, cu, cv), distort = calib['intrinsic'][:4], calib['intrinsic'][4:]
+            transform = np.array(calib['extrinsic']).reshape(4,4)
+            size = (calib['width'], calib['height'])
+            calib_params.set_intrinsic_pinhole(frame, size, cu, cv, fu, fv, distort_coeffs=distort)
+            calib_params.set_extrinsic(transform, frame_from=frame)
+
+        # parse lidar calibration
+        for frame, calib in calib_lidars.items():
+            frame = "lidar_" + frame
+            calib_params.set_intrinsic_lidar(frame)
+            transform = np.array(calib['extrinsic']).reshape(4,4)
+            calib_params.set_extrinsic(transform, frame_from=frame)
 
         return calib_params
 
@@ -220,15 +236,21 @@ class WaymoLoader(TrackingDatasetBase):
     def timestamp(self, idx):
         seq_id, frame_idx = idx
         fname = "timestamp/%04d.txt" % frame_idx
-        with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-            return int(ar.read(fname).decode())
+        if self.inzip:
+            with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
+                return int(ar.read(fname).decode())
+        else:
+            return int((self.base_path / seq_id / fname).read_bytes())
 
     @expand_idx
     def pose(self, idx, raw=False):
         seq_id, frame_idx = idx
         fname = "pose/%04d.npy" % frame_idx
-        with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-            rt = np.load(BytesIO(ar.read(fname)))
+        if self.inzip:
+            with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
+                rt = np.load(BytesIO(ar.read(fname)))
+        else:
+            rt = np.load(self.base_path / seq_id / fname)
 
         if raw:
             return rt

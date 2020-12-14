@@ -26,12 +26,15 @@ def full_version(): # get
     from subprocess import check_output
     from setuptools_scm.version import get_local_node_and_date
 
-    try:
-        cuda_ver = check_output(["nvcc", "-V"]).decode()
-        ver_aidx = cuda_ver.find("release")
-        ver_bidx = cuda_ver.find(',', ver_aidx)
-        cuda_ver = cuda_ver[ver_aidx+8:ver_bidx].replace('.', '')
-    except FileNotFoundError:
+    if use_cuda:
+        try:
+            cuda_ver = check_output(["nvcc", "-V"]).decode()
+            ver_aidx = cuda_ver.find("release")
+            ver_bidx = cuda_ver.find(',', ver_aidx)
+            cuda_ver = cuda_ver[ver_aidx+8:ver_bidx].replace('.', '')
+        except FileNotFoundError:
+            cuda_ver = ''
+    else:
         cuda_ver = ''
 
     full_ver = 'th' + torch_ver if torch_ver else ''

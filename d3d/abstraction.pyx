@@ -511,7 +511,7 @@ cdef class TransformSet:
             raise ValueError("Frame {0} not found in extrinsic parameters, "
                 "please add extrinsic for {0} first!".format(frame_id))
 
-    cpdef void set_intrinsic_general(self, str frame_id, object metadata=None):
+    cpdef void set_intrinsic_general(self, str frame_id, object metadata=None) except*:
         '''
         Set intrinsic for a general sensor.
         This is used for marking existence of a frame
@@ -520,7 +520,7 @@ cdef class TransformSet:
         self.intrinsics_meta[frame_id] = metadata
 
     cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, bint rotate=True,
-        np.ndarray distort_coeffs=None, np.ndarray intri_matrix=None, mirror_coeff=float('nan')):
+        np.ndarray distort_coeffs=None, np.ndarray intri_matrix=None, mirror_coeff=float('nan')) except*:
         '''
         Set camera intrinsics
         :param size: (width, height)
@@ -541,28 +541,28 @@ cdef class TransformSet:
         self.intrinsics_meta[frame_id] = CameraMetadata(width, height,
             distort_coeffs, intri_matrix, mirror_coeff)
 
-    cpdef void set_intrinsic_lidar(self, str frame_id):
+    cpdef void set_intrinsic_lidar(self, str frame_id) except*:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = LidarMetadata()
 
-    cpdef void set_intrinsic_radar(self, str frame_id):
+    cpdef void set_intrinsic_radar(self, str frame_id) except*:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = RadarMetadata()
 
-    cpdef void set_intrinsic_pinhole(self, str frame_id, size, cx, cy, fx, fy, s=0, distort_coeffs=[]):
+    cpdef void set_intrinsic_pinhole(self, str frame_id, size, cx, cy, fx, fy, s=0, distort_coeffs=[]) except*:
         '''
         Set camera intrinsics with pinhole model parameters
         :param s: skew coefficient
         '''
         P = np.array([[fx, s, cx], [0, fy, cy], [0, 0, 1]])
         self.set_intrinsic_camera(frame_id, P, size,
-            rotate=True, distort_coeffs=distort_coeffs, intri_matrix=P)
+            rotate=True, distort_coeffs=np.asarray(distort_coeffs), intri_matrix=P)
 
-    cpdef void set_intrinsic_map_pin(self, str frame_id, lon=float('nan'), lat=float('nan')):
+    cpdef void set_intrinsic_map_pin(self, str frame_id, lon=float('nan'), lat=float('nan')) except*:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = PinMetadata(lon, lat)
 
-    cpdef void set_extrinsic(self, transform, str frame_to=None, str frame_from=None):
+    cpdef void set_extrinsic(self, transform, str frame_to=None, str frame_from=None) except*:
         '''
         All extrinsics are stored as transform convert point from `frame_from` to `frame_to`
         :param frame_from: If set to None, then the source frame is base frame

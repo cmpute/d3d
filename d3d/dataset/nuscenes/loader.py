@@ -8,6 +8,7 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
+import msgpack
 from addict import Dict as edict
 from PIL import Image
 from enum import Enum, IntFlag, auto
@@ -176,9 +177,9 @@ class NuscenesLoader(TrackingDatasetBase):
         """
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
                          trainval_split=trainval_split, trainval_random=trainval_random)
-        if not inzip:
-            raise NotImplementedError("Currently only support load from zip files in Nuscenes dataset")
+
         self.base_path = Path(base_path) / ("trainval" if phase in ["training", "validation"] else "test")
+        self.inzip = inzip
 
         self._metadata = None
         self._segmapping = None
@@ -189,23 +190,31 @@ class NuscenesLoader(TrackingDatasetBase):
         self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
 
     def _load_metadata(self):
-        meta_path = self.base_path / "metadata.json"
+        meta_path = self.base_path / "metadata.msg"
         if not meta_path.exists():
             _logger.info("Creating metadata of Nuscenes dataset (%s)...", self.phase)
             metadata = {}
 
-            for archive in self.base_path.iterdir():
-                if archive.is_dir() or archive.suffix != ".zip":
-                    continue
+            if self.inzip:
+                for archive in self.base_path.iterdir():
+                    if archive.is_dir() or archive.suffix != ".zip":
+                        continue
 
-                with PatchedZipFile(archive, to_extract="scene/stats.json") as ar:
-                    metadata[archive.stem] = json.loads(ar.read("scene/stats.json").decode())
-            with open(meta_path, "w") as fout:
-                json.dump(metadata, fout)
+                    with PatchedZipFile(archive, to_extract="scene/stats.json") as ar:
+                        metadata[archive.stem] = json.loads(ar.read("scene/stats.json"))
+            else:
+                for folder in self.base_path.iterdir():
+                    if not folder.is_dir() or folder.name == "maps":
+                        continue
 
-        with open(meta_path) as fin:
+                    metadata[folder.name] = json.loads((folder / "scene/stats.json").read_text())
+
+            with open(meta_path, "wb") as fout:
+                msgpack.pack(metadata, fout)
+
+        with open(meta_path, "rb") as fin:
             self._metadata = OrderedDict()
-            meta_json = json.load(fin)
+            meta_json = msgpack.unpack(fin)
             for k, v in meta_json.items():
                 self._metadata[k] = edict(v)
 
@@ -244,8 +253,11 @@ class NuscenesLoader(TrackingDatasetBase):
     def lidar_data(self, idx, names='lidar_top'):
         seq_id, frame_idx = idx
         fname = "lidar_top/%03d.pcd" % frame_idx
-        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
-            buffer = ar.read(fname)
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+                buffer = ar.read(fname)
+        else:
+            buffer = (self.base_path / seq_id / fname).read_bytes()
 
         scan = np.frombuffer(buffer, dtype=np.float32)
         scan = np.copy(scan.reshape(-1, 5)) # (x, y, z, intensity, ring index)
@@ -256,18 +268,27 @@ class NuscenesLoader(TrackingDatasetBase):
     def camera_data(self, idx, names=None):
         seq_id, frame_idx = idx
         fname = "%s/%03d.jpg" % (names, frame_idx)
-        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
-            return Image.open(ar.open(fname)).convert('RGB')
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+                return Image.open(ar.open(fname)).convert('RGB')
+        else:
+            Image.open(self.base_path / seq_id / fname)
 
     @expand_idx
     def annotation_3dobject(self, idx, raw=False, convert_tag=False):
         seq_id, frame_idx = idx
         fname = "annotation/%03d.json" % frame_idx
-        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
-            labels = list(map(edict, json.loads(ar.read(fname).decode())))
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+                labels = json.loads(ar.read(fname))
+        else:
+            with (self.base_path / seq_id / fname).open() as fin:
+                labels = json.load(fin)
+        labels = list(map(edict, labels))
         if raw:
             return labels
 
+        # parse annotations
         ego_pose = self.pose(idx, bypass=True)
         ego_r, ego_t = ego_pose.orientation, ego_pose.position
         outputs = Target3DArray(frame="ego")
@@ -300,8 +321,12 @@ class NuscenesLoader(TrackingDatasetBase):
         seq_id, frame_idx = idx
 
         fname = "lidar_top_seg/%03d.bin" % frame_idx
-        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
-            label = np.frombuffer(ar.read(fname), dtype='u1')
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+                buffer = ar.read(fname)
+        else:
+            buffer = (self.base_path / seq_id / fname).read_bytes()
+        label = np.frombuffer(buffer, dtype='u1')
 
         if raw:
             return label
@@ -309,32 +334,40 @@ class NuscenesLoader(TrackingDatasetBase):
             return self._segmapping[label]
 
     def calibration_data(self, idx):
-        seq_id, _ = self._locate_frame(idx)
+        if isinstance(idx, int):
+            seq_id, _ = self._locate_frame(idx)
+        else:
+            seq_id, _ = idx
+
         calib_params = TransformSet("ego")
-        ar = PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract="scene/calib.json")
+        calib_fname = "scene/calib.json"
+        if self.inzip:
+            with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=calib_fname) as ar:
+                calib_data = json.loads(ar.read(calib_fname))
+        else:
+            with (self.base_path / seq_id / calib_fname).open() as fin:
+                calib_data = json.load(fin)
 
-        with ar.open("scene/calib.json") as fin:
-            calib_data = json.loads(fin.read().decode())
-            for frame, calib in calib_data.items():
-                # set intrinsics
-                if frame.startswith('cam'):
-                    image_size = (1600, 900) # currently all the images have the same size
-                    projection = np.array(calib['camera_intrinsic'])
-                    calib_params.set_intrinsic_camera(frame, projection, image_size, rotate=False)
-                elif frame.startswith('lidar'):
-                    calib_params.set_intrinsic_lidar(frame)
-                elif frame.startswith('radar'):
-                    calib_params.set_intrinsic_radar(frame)
-                else:
-                    raise ValueError("Unrecognized frame name.")
+        for frame, calib in calib_data.items():
+            # set intrinsics
+            if frame.startswith('cam'):
+                image_size = (1600, 900) # currently all the images have the same size
+                projection = np.array(calib['camera_intrinsic'])
+                calib_params.set_intrinsic_camera(frame, projection, image_size, rotate=False)
+            elif frame.startswith('lidar'):
+                calib_params.set_intrinsic_lidar(frame)
+            elif frame.startswith('radar'):
+                calib_params.set_intrinsic_radar(frame)
+            else:
+                raise ValueError("Unrecognized frame name.")
 
-                # set extrinsics
-                r = Rotation.from_quat(calib['rotation'][1:] + [calib['rotation'][0]])
-                t = np.array(calib['translation'])
-                extri = np.eye(4)
-                extri[:3, :3] = r.as_matrix()
-                extri[:3, 3] = t
-                calib_params.set_extrinsic(extri, frame_from=frame)
+            # set extrinsics
+            r = Rotation.from_quat(calib['rotation'][1:] + [calib['rotation'][0]])
+            t = np.array(calib['translation'])
+            extri = np.eye(4)
+            extri[:3, :3] = r.as_matrix()
+            extri[:3, 3] = t
+            calib_params.set_extrinsic(extri, frame_from=frame)
 
         return calib_params
 
@@ -347,15 +380,23 @@ class NuscenesLoader(TrackingDatasetBase):
     def timestamp(self, idx): 
         seq_id, frame_idx = idx
         fname = "timestamp/%03d.txt" % frame_idx
-        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
-            return int(ar.read(fname))
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+                return int(ar.read(fname))
+        else:
+            return int((self.base_path / seq_id / fname).read_bytes())
 
     @expand_idx
     def pose(self, idx):
         seq_id, frame_idx = idx
         fname = "pose/%03d.json" % frame_idx
-        with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
-            data = json.loads(ar.read(fname).decode())
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+                data = json.loads(ar.read(fname))
+        else:
+            with (self.base_path / seq_id / fname).open() as fin:
+                data = json.load(fin)
+
         r = Rotation.from_quat(data['rotation'][1:] + [data['rotation'][0]])
         t = np.array(data['translation'])
         return EgoPose(t, r)
