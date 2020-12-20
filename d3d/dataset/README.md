@@ -3,8 +3,9 @@
 <!-- TODO: create a table for all the dataset, marking availability -->
 
 - [x] [KITTI](http://www.cvlibs.net/datasets/kitti/): Support object, tracking, raw
-- [x] [Waymo](https://waymo.com/open/data/): Added
-- [x] [NuScenes](https://www.nuscenes.org/): Added
+- [x] [Waymo](https://waymo.com/open/data/): Full support
+- [x] [NuScenes](https://www.nuscenes.org/): Full support
+- [x] [KITTI-360](http://www.cvlibs.net/datasets/kitti-360/): Full Support
 - [ ] [Lyft L5](https://level5.lyft.com/dataset/): To be added
 - [ ] [ApolloScape](http://apolloscape.auto/): To be added
 - [ ] [Argo.AI](https://www.argoverse.org/data.html#download-link): To be added
@@ -18,10 +19,11 @@
 - [ ] [BLVD](https://github.com/VCCIV/BLVD): To be added
 - [ ] [Pandaset](https://pandaset.org/): To be added
 - [ ] [CADC](http://cadcd.uwaterloo.ca/) ([github](https://github.com/mpitropov/cadc_devkit)): To be added
-- [ ] [KITTI-360](http://www.cvlibs.net/datasets/kitti-360/): To be added
+- [ ] [Cirrus](https://arxiv.org/pdf/2012.02938.pdf)
 
 # Indoor datasets
 - [ ] [Objectron](https://github.com/google-research-datasets/Objectron): To be added
+- [ ] [ScanNet](http://www.scan-net.org/): To be added
 
 ## Datasets of other type
 - [ ] [CityScape](https://www.cityscapes-dataset.com/):
