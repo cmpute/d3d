@@ -1,4 +1,4 @@
-## AV datasets
+## Outdoor datasets
 
 <!-- TODO: create a table for all the dataset, marking availability -->
 
@@ -24,6 +24,7 @@
 # Indoor datasets
 - [ ] [Objectron](https://github.com/google-research-datasets/Objectron): To be added
 - [ ] [ScanNet](http://www.scan-net.org/): To be added
+- [ ] [SUN RGBD](http://rgbd.cs.princeton.edu/): To be added
 
 ## Datasets of other type
 - [ ] [CityScape](https://www.cityscapes-dataset.com/):
