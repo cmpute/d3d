@@ -63,15 +63,7 @@ def check_frames(names, valid):
 
     return unpack_result, names
 
-
-class DetectionDatasetBase:
-    """
-    This class defines basic interface for object detection
-    """
-    VALID_CAM_NAMES: list
-    VALID_LIDAR_NAMES: list
-    VALID_OBJ_CLASSES: Enum
-
+class DatasetBase:
     def __init__(self,
                  base_path: Union[str, Path],
                  inzip: bool = False,
@@ -98,6 +90,54 @@ class DetectionDatasetBase:
         
         if phase not in ['training', 'validation', 'testing']:
             raise ValueError("Invalid phase tag")
+
+        self._return_file_path = False
+
+    class _ReturnPathContext:
+        def __init__(self, ds: "DatasetBase"):
+            self.ds = ds
+        def __enter__(self):
+            if self.ds.inzip:
+                raise RuntimeError("Cannot return path from a dataset in zip!")
+            self.ds._return_file_path = True
+        def __exit__(self, type, value, traceback):
+            self.ds._return_file_path = False
+
+    def return_path(self):
+        """
+        Make the dataset return the raw paths to the data instead of parsing it
+        """
+        return DatasetBase._ReturnPathContext(self)
+
+class DetectionDatasetBase(DatasetBase):
+    """
+    This class defines basic interface for object detection
+    """
+    VALID_CAM_NAMES: list
+    VALID_LIDAR_NAMES: list
+    VALID_OBJ_CLASSES: Enum
+
+    def __init__(self,
+                 base_path: Union[str, Path],
+                 inzip: bool = False,
+                 phase: str = "training",
+                 trainval_split: float = 1.,
+                 trainval_random: bool = False):
+        """
+        :param base_path: directory containing the zip files, or the required data
+        :param inzip: whether the dataset is store in original zip archives or unzipped
+        :param phase: training or testing
+        :param trainval_split: the ratio to split training dataset. If set to 1, then the validation dataset is empty
+            If it's a number, then it's the ratio to split training dataset.
+            If it's 1, then the validation set is empty, if it's 0, then training set is empty
+            If it's a list of number, then it directly defines the indices to report (ignoring trainval_random)
+        :param trainval_random: whether select the train/val split randomly.
+            If it's a bool, then trainval is split with or without shuffle
+            If it's a number, then it's used as the seed for random shuffling
+            If it's a string, then predefined order is used. {r: reverse}
+        """
+        super().__init__(base_path, inzip=inzip, phase=phase,
+                         trainval_split=trainval_split, trainval_random=trainval_random)
 
     def lidar_data(self,
                    idx: int,
@@ -166,17 +206,6 @@ class TrackingDatasetBase(DetectionDatasetBase):
                  trainval_random: bool = False,
                  nframes: int = 0):
         """
-        :param base_path: directory containing the zip files, or the required data
-        :param inzip: whether the dataset is store in original zip archives or unzipped
-        :param phase: training or testing
-        :param trainval_split: the ratio to split training dataset. If set to 1, then the validation dataset is empty
-            If it's a number, then it's the ratio to split training dataset.
-            If it's 1, then the validation set is empty, if it's 0, then training set is empty
-            If it's a list of number, then it directly defines the indices to report (ignoring trainval_random)
-        :param trainval_random: whether select the train/val split randomly.
-            If it's a bool, then trainval is split with or without shuffle
-            If it's a number, then it's used as the seed for random shuffling
-            If it's a string, then predefined order is used. {r: reverse}
         :param nframes: number of consecutive frames returned from the accessors
             If it's a positive number, then it returns adjacent frames with total number reduced
             If it's zero, then it act like object detection dataset, which means the methods will return unpacked data
@@ -363,14 +392,22 @@ def expand_idx_name(valid_names):
 
 class NumberPool:
     '''
-    This class is a utility for multiprocessing using tqdm
+    This class is a utility for multiprocessing using tqdm, define the task as
+    ```
+    def task(ntqdm, ...):
+        ...
+        for data in tqdm(..., position=ntqdm, leave=False):
+            ...
+    ```
+    Then the parallel progress bars will be displayed in place.
     '''
 
     def __init__(self, processes, offset=0, *args, **kargs):
-        self._ppool = Pool(processes, initializer=tqdm.set_lock,
+        self._ppool = Pool(processes, initializer=tqdm.set_lock, # pool of processes
                            initargs=(tqdm.get_lock(),), *args, **kargs)
-        self._npool = Manager().Array('B', [0] * processes)
-        self._nlock = Manager().Lock()
+        self._npool = Manager().Array('B', [0] * processes) # pool of position number
+        self._nlock = Manager().Lock() # lock for self._npool
+        self._nqueue = 0 # number of tasks in pool
         self._offset = offset
         self._complete_event = Event()
 
@@ -388,10 +425,12 @@ class NumberPool:
             n, oret = ret
             with self._nlock:
                 self._npool[n] = 0
+            self._nqueue -= 1
             if callback is not None:
                 callback(oret)
             self._complete_event.set()
 
+        self._nqueue += 1
         self._ppool.apply_async(NumberPool._wrap_func,
                                 (func, args, self._npool,
                                  self._nlock, self._offset),
@@ -400,8 +439,10 @@ class NumberPool:
                                     f"{type(e).__name__}: {e}")
                                 )
 
-    def wait_for_once(self):
-        self._complete_event.wait()
+    def wait_for_once(self, margin=0):
+        """ Wait for one available process """
+        if self._nqueue >= len(self._npool) + margin: # only wait if the pool is full
+            self._complete_event.wait()
         self._complete_event.clear()
 
     def close(self):

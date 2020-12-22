@@ -253,6 +253,9 @@ class NuscenesLoader(TrackingDatasetBase):
     def lidar_data(self, idx, names='lidar_top'):
         seq_id, frame_idx = idx
         fname = "lidar_top/%03d.pcd" % frame_idx
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 buffer = ar.read(fname)
@@ -268,6 +271,9 @@ class NuscenesLoader(TrackingDatasetBase):
     def camera_data(self, idx, names=None):
         seq_id, frame_idx = idx
         fname = "%s/%03d.jpg" % (names, frame_idx)
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 return Image.open(ar.open(fname)).convert('RGB')
@@ -278,6 +284,9 @@ class NuscenesLoader(TrackingDatasetBase):
     def annotation_3dobject(self, idx, raw=False, convert_tag=False):
         seq_id, frame_idx = idx
         fname = "annotation/%03d.json" % frame_idx
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 labels = json.loads(ar.read(fname))
@@ -321,6 +330,9 @@ class NuscenesLoader(TrackingDatasetBase):
         seq_id, frame_idx = idx
 
         fname = "lidar_top_seg/%03d.bin" % frame_idx
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 buffer = ar.read(fname)
@@ -338,6 +350,7 @@ class NuscenesLoader(TrackingDatasetBase):
             seq_id, _ = self._locate_frame(idx)
         else:
             seq_id, _ = idx
+        assert not self._return_file_path, "The calibration is not in a single file!"
 
         calib_params = TransformSet("ego")
         calib_fname = "scene/calib.json"

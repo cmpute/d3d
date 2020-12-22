@@ -36,7 +36,8 @@ def _load_table(path):
         return kvdata
 
 class KeyFrameConverter:
-    def __init__(self, phase, input_meta_path, input_blob_paths, output_path, input_seg_path=None, zip_output=False):
+    def __init__(self, phase, input_meta_path, input_blob_paths, output_path, input_seg_path=None,
+        zip_output=False, compression=zipfile.ZIP_STORED):
         '''
         :param phase: mini / trainval / test
         :param local_map_range: Range of generated local map in meters, range <= 0 means not to output map
@@ -48,6 +49,7 @@ class KeyFrameConverter:
         self.phase = phase
         self.output_path = Path(output_path)
         self.zip_output = zip_output
+        self.zip_compression = compression
 
         # nuscenes tables
         self.sample_table = None
@@ -109,7 +111,8 @@ class KeyFrameConverter:
             meta_json = json.dumps(meta).encode()
 
             if self.zip_output:
-                self.ohandles[stoken] = zipfile.ZipFile(self.output_path / ("%s.zip" % data['name']), "w")
+                self.ohandles[stoken] = zipfile.ZipFile(self.output_path / ("%s.zip" % data['name']),
+                    "w", compression=self.zip_compression)
                 self.ohandles[stoken].writestr("scene/stats.json", meta_json)
             else:
                 self.ohandles[stoken] = self.output_path / data['name']
@@ -380,6 +383,20 @@ class KeyFrameConverter:
 def convert_dataset_inpath(input_path, output_path, debug=False, mini=False, zip_output=False):
     input_path, output_path = Path(input_path), Path(output_path)
     output_path.mkdir(exist_ok=True, parents=True)
+
+    # parse compression options
+    if zip_output:
+        if zip_output == "deflated":
+            compression = zipfile.ZIP_DEFLATED
+        elif zip_output == "bzip2":
+            compression = zipfile.ZIP_BZIP2
+        elif zip_output == "lzma":
+            compression = zipfile.ZIP_LZMA
+        else:
+            compression = zipfile.ZIP_STORED
+    else:
+        compression = zipfile.ZIP_STORED
+
     if mini: # convert mini dataset
         phase_path = output_path / "trainval"
         if not phase_path.exists():
@@ -389,7 +406,8 @@ def convert_dataset_inpath(input_path, output_path, debug=False, mini=False, zip
         mini_seg = list(input_path.glob("*lidarseg-mini*"))
         mini_seg = mini_seg[0] if len(mini_seg) > 0 else None
         KeyFrameConverter("mini", input_meta_path=mini_archive, input_blob_paths=[mini_archive],
-            input_seg_path=mini_seg, output_path=phase_path, zip_output=zip_output).convert(debug)
+            input_seg_path=mini_seg, output_path=phase_path, zip_output=zip_output,
+            compression=compression).convert(debug)
     else:
         # convert trainval dataset
         print("Processing trainval datasets...")
@@ -402,7 +420,8 @@ def convert_dataset_inpath(input_path, output_path, debug=False, mini=False, zip
         trainval_seg = trainval_seg[0] if len(trainval_seg) > 0 else None
         trainval_blobs = list(p for p in input_path.glob("*blobs*") if 'trainval' in p.name)
         KeyFrameConverter("trainval", input_meta_path=trainval_meta, input_blob_paths=trainval_blobs,
-            input_seg_path=trainval_seg, output_path=phase_path, zip_output=zip_output).convert(debug)
+            input_seg_path=trainval_seg, output_path=phase_path, zip_output=zip_output,
+            compression=compression).convert(debug)
 
         # convert test dataset
         print("Processing test datasets")
@@ -413,7 +432,7 @@ def convert_dataset_inpath(input_path, output_path, debug=False, mini=False, zip
         test_meta = next(input_path.glob("*-test_meta.*"))
         test_blobs = list(p for p in input_path.glob("*blobs*") if 'test' in p.name)
         KeyFrameConverter("test", input_meta_path=test_meta, input_blob_paths=test_blobs,
-            output_path=phase_path, zip_output=zip_output).convert(debug)
+            output_path=phase_path, zip_output=zip_output, compression=compression).convert(debug)
 
 def main():
     from argparse import ArgumentParser
@@ -433,6 +452,8 @@ def main():
         help="Convert all data frames. By default only key frames are preserved.")
     parser.add_argument('-z', '--zip', action="store_true",
         help="Convert the result into zip files rather than flat directory")
+    parser.add_argument('-c', '--compression', type=str, default='stored', choices=['stored', 'deflated', 'bzip2', 'lzma'],
+        help="Choose zip compression type")
     args = parser.parse_args()
 
     if args.allframes:
@@ -442,7 +463,7 @@ def main():
         raise NotImplementedError("Converting all frames is not implemented")
 
     convert_dataset_inpath(args.input, args.output or args.input,
-        debug=args.debug, mini=args.mini, zip_output=args.zip)
+        debug=args.debug, mini=args.mini, zip_output=args.compression if args.zip else False)
 
 if __name__ == "__main__":
     main()

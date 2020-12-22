@@ -209,6 +209,9 @@ class KittiTrackingLoader(TrackingDatasetBase):
         folder_name, zip_name = _folders[names]
 
         fname = Path(self.phase_path, folder_name, "%04d" % seq_id, '%06d.png' % frame_idx)
+        if self._return_file_path:
+            return self.base_path / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / zip_name, to_extract=fname) as source:
                 image = utils.load_image(source, fname, gray=False)
@@ -231,6 +234,9 @@ class KittiTrackingLoader(TrackingDatasetBase):
         assert names == 'velo'
 
         fname = Path(self.phase_path, 'velodyne', "%04d" % seq_id, '%06d.bin' % frame_idx)
+        if self._return_file_path:
+            return self.base_path / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_tracking_velodyne.zip", to_extract=fname) as source:
                 return utils.load_velo_scan(source, fname)
@@ -271,6 +277,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
         return data
 
     def calibration_data(self, idx, raw=False):
+        assert not self._return_file_path, "The calibration is not stored in single file!"
         if isinstance(idx, int):
             seq_id, _ = self._locate_frame(idx)
         else:
@@ -285,6 +292,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         Note that objects labelled as `DontCare` are removed
         '''
+        assert not self._return_file_path, "The annotation is not stored in single file!"
         assert self.phase_path != "testing", "Testing dataset doesn't contain label data"
         seq_id, frame_idx = idx
 

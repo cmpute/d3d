@@ -133,10 +133,9 @@ def write_file_np(out_archive, fname, data: np.ndarray):
     if isinstance(out_archive, Path):
         ofile = out_archive / fname
         ofile.parent.mkdir(exist_ok=True)
-        np.save(ofile, data)
+        data.tofile(ofile)
     else: # zipfile
-        with out_archive.open(fname, "w") as fout:
-            np.save(fout, data)
+        out_archive.writestr(fname, data.tobytes())
 
 def save_context(frame, frame_count, out_archive):
     # save stats
@@ -185,8 +184,8 @@ def save_timestamp(frame, frame_idx, out_archive):
     write_file(out_archive, "timestamp/%04d.txt" % frame_idx, ts)
 
 def save_pose(frame, frame_idx, out_archive):
-    values = np.array(frame.pose.transform).reshape(4, 4)
-    write_file_np(out_archive, "pose/%04d.npy" % frame_idx, values)
+    values = np.array(frame.pose.transform).astype("f8").reshape(4, 4)
+    write_file_np(out_archive, "pose/%04d.bin" % frame_idx, values)
 
 def save_image(frame, frame_idx, out_archive):
     for image in frame.images:
@@ -204,9 +203,9 @@ def save_point_cloud(frame, frame_idx, out_archive):
     for i in range(5):
         name = lidar_name_map[i+1]
         cloud = np.hstack((points[i], channels[i]))
-        write_file_np(out_archive, "lidar_%s/%04d.npy" % (name, frame_idx), cloud)
+        write_file_np(out_archive, "lidar_%s/%04d.bin" % (name, frame_idx), cloud)
         cloud_ri2 = np.hstack((points_ri2[i], channels_ri2[i]))
-        write_file_np(out_archive, "lidar_%s_ri2/%04d.npy" % (name, frame_idx), cloud_ri2)
+        write_file_np(out_archive, "lidar_%s_ri2/%04d.bin" % (name, frame_idx), cloud_ri2)
 
 def save_labels(frame, frame_idx, out_archive):
     # labels in lidar frame
@@ -249,9 +248,21 @@ def convert_tfrecord(ntqdm, input_file, output_path: Path, zip_output=False, del
     dataset = tf.data.TFRecordDataset(str(input_file), compression_type='')
     archive = None
 
+    # parse compression
+    compression = None
+    if zip_output:
+        if zip_output == "deflated":
+            compression = zipfile.ZIP_DEFLATED
+        elif zip_output == "bzip2":
+            compression = zipfile.ZIP_BZIP2
+        elif zip_output == "lzma":
+            compression = zipfile.ZIP_LZMA
+        else:
+            compression = zipfile.ZIP_STORED
+
     disp = os.path.split(input_file)[1]
     disp = "Converting %s..." % disp[8:disp.find("_")]
-    for idx, data in tqdm(enumerate(dataset), desc=disp, position=ntqdm, unit="frames", dynamic_ncols=True):
+    for idx, data in tqdm(enumerate(dataset), desc=disp, position=ntqdm, unit="frames", dynamic_ncols=True, leave=False):
         if idx > 9999:
             raise RuntimeError("Frame index is larger than file name capacity!")
 
@@ -260,7 +271,8 @@ def convert_tfrecord(ntqdm, input_file, output_path: Path, zip_output=False, del
 
         if archive is None:
             if zip_output:
-                archive = zipfile.ZipFile(output_path / (frame.context.name + ".zip"), "w")
+                archive = zipfile.ZipFile(output_path / (frame.context.name + ".zip"), "w",
+                    compression=compression)
             else:
                 archive = output_path / frame.context.name
                 archive.mkdir(exist_ok=True)
@@ -286,7 +298,8 @@ def convert_dataset_inpath(input_path, output_path, nworkers=8, debug=False, zip
     print("Extracting tfrecords from tarballs to %s..." % temp_dir)
 
     try:
-        for tar_name in tqdm(os.listdir(input_path), desc="Extract tfrecords", position=0, unit="tars", leave=False, dynamic_ncols=True):
+        for tar_name in tqdm(os.listdir(input_path), desc="Extract tfrecords",
+                             position=0, unit="tars", leave=False, dynamic_ncols=True):
             if os.path.splitext(tar_name)[1] != ".tar":
                 continue
 
@@ -296,10 +309,9 @@ def convert_dataset_inpath(input_path, output_path, nworkers=8, debug=False, zip
                 if os.path.splitext(member.name)[1] != ".tfrecord":
                     continue
 
-                if total_records > nworkers:
-                    pool.wait_for_once() # prevent extracted too much records into temp folder
-
+                pool.wait_for_once(margin=3) # prevent extracted too much records into temp folder
                 tarf.extract(member, temp_dir)
+
                 pool.apply_async(convert_tfrecord,
                     (Path(temp_dir, member.name),
                      Path(output_path, phase),
@@ -336,10 +348,12 @@ def main():
         help="Number of parallet workers to convert tfrecord")
     parser.add_argument('-z', '--zip', action="store_true",
         help="Convert the result into zip files rather than flat directory")
+    parser.add_argument('-c', '--compression', type=str, default='stored', choices=['stored', 'deflated', 'bzip2', 'lzma'],
+        help="Choose zip compression type")
     args = parser.parse_args()
 
     convert_dataset_inpath(args.input, args.output or args.input, nworkers=args.workers,
-                           debug=args.debug, zip_output=args.zip)
+                           debug=args.debug, zip_output=args.compression if args.zip else False)
 
 if __name__ == "__main__":
     main()

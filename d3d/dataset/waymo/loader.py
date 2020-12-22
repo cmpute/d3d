@@ -114,12 +114,16 @@ class WaymoLoader(TrackingDatasetBase):
         """
         seq_id, frame_idx = idx
 
-        fname = "%s/%04d.npy" % (names, frame_idx)
+        fname = "%s/%04d.bin" % (names, frame_idx)
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-                cloud = np.load(BytesIO(ar.read(fname)))
+                cloud = np.frombuffer(ar.read(fname), dtype='f4')
         else:
-            cloud = np.load(self.base_path / seq_id / fname)
+            cloud = np.fromfile(self.base_path / seq_id / fname, dtype='f4')
+        cloud = cloud.reshape(-1, 5) # x, y, z, intensity, elongation
 
         # point cloud is represented in base frame in Waymo dataset
         calib = self.calibration_data(idx)
@@ -134,6 +138,9 @@ class WaymoLoader(TrackingDatasetBase):
         """
         seq_id, frame_idx = idx
         fname = "%s/%04d.jpg" % (names, frame_idx)
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
                 return Image.open(ar.open(fname)).convert('RGB')
@@ -145,6 +152,9 @@ class WaymoLoader(TrackingDatasetBase):
         seq_id, frame_idx = idx
 
         fname = "label_%s/%04d.json" % (names, frame_idx)
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
                 data = json.loads(ar.read(fname))
@@ -161,6 +171,9 @@ class WaymoLoader(TrackingDatasetBase):
         seq_id, frame_idx = idx
 
         fname = "label_lidars/%04d.json" % frame_idx
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
                 data = json.loads(ar.read(fname))
@@ -193,6 +206,7 @@ class WaymoLoader(TrackingDatasetBase):
             seq_id, _ = self._locate_frame(idx)
         else:
             seq_id, _ = idx
+        assert not self._return_file_path, "The calibration data is not in a single file!"
 
         calib_params = TransformSet("vehicle")
 
@@ -245,12 +259,12 @@ class WaymoLoader(TrackingDatasetBase):
     @expand_idx
     def pose(self, idx, raw=False):
         seq_id, frame_idx = idx
-        fname = "pose/%04d.npy" % frame_idx
+        fname = "pose/%04d.bin" % frame_idx
         if self.inzip:
             with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
-                rt = np.load(BytesIO(ar.read(fname)))
+                rt = np.frombuffer(ar.read(fname), dtype="f8")
         else:
-            rt = np.load(self.base_path / seq_id / fname)
+            rt = np.fromfile(self.base_path / seq_id / fname, dtype="f8")
 
         if raw:
             return rt

@@ -214,6 +214,7 @@ class KittiRawLoader(TrackingDatasetBase):
         return data
 
     def calibration_data(self, idx, raw=False):
+        assert not self._return_file_path, "The calibration is not stored in single file!"
         if isinstance(idx, int):
             seq_id, _ = self._locate_frame(idx)
         else:
@@ -243,6 +244,7 @@ class KittiRawLoader(TrackingDatasetBase):
 
         :param names: specify the data source of timestamp. Options include {cam0-3, velo, imu}
         '''
+        assert not self._return_file_path, "The timestamp is not stored in single file!"
         seq_id, frame_idx = idx
         self._preload_timestamp(seq_id)
         return self._timestamp_cache[seq_id][names][frame_idx]
@@ -275,6 +277,7 @@ class KittiRawLoader(TrackingDatasetBase):
 
     @expand_idx
     def annotation_3dobject(self, idx):
+        assert not self._return_file_path, "The annotation is not stored in single file!"
         seq_id, frame_idx = idx
         self._preload_tracklets(seq_id)
         return self._tracklet_cache[seq_id][frame_idx]
@@ -285,6 +288,9 @@ class KittiRawLoader(TrackingDatasetBase):
         date = self._get_date(seq_id)
 
         file_name = Path(date, seq_id, "oxts", "data", "%010d.txt" % frame_idx)
+        if self._return_file_path:
+            return self.base_path / file_name
+
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=file_name) as data:
                 oxt = utils.load_oxt_file(data, file_name)[0]
@@ -298,6 +304,9 @@ class KittiRawLoader(TrackingDatasetBase):
         date = self._get_date(seq_id)
 
         fname = Path(date, seq_id, self.FRAME2FOLDER[names], 'data', '%010d.png' % frame_idx)
+        if self._return_file_path:
+            return self.base_path / fname
+
         gray = names in ['cam0', 'cam1']
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as source:
@@ -311,6 +320,9 @@ class KittiRawLoader(TrackingDatasetBase):
         date = self._get_date(seq_id)
 
         fname = Path(date, seq_id, 'velodyne_points', 'data', '%010d.bin' % frame_idx)
+        if self._return_file_path:
+            return self.base_path / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as source:
                 return utils.load_velo_scan(source, fname)

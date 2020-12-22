@@ -134,6 +134,9 @@ class KittiObjectLoader(DetectionDatasetBase):
             folder_name = "image_3"
 
         fname = Path(self.phase_path, folder_name, '%06d.png' % self.frames[idx])
+        if self._return_file_path:
+            return self.base_path / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / ("data_object_%s.zip" % folder_name), to_extract=fname) as source:
                 image = utils.load_image(source, fname, gray=False)
@@ -151,6 +154,9 @@ class KittiObjectLoader(DetectionDatasetBase):
         assert names == 'velo'
 
         fname = Path(self.phase_path, 'velodyne', '%06d.bin' % self.frames[idx])
+        if self._return_file_path:
+            return self.base_path / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_object_velodyne.zip", to_extract=fname) as source:
                 return utils.load_velo_scan(source, fname)
@@ -159,6 +165,9 @@ class KittiObjectLoader(DetectionDatasetBase):
 
     def calibration_data(self, idx, raw=False):
         fname = Path(self.phase_path, 'calib', '%06d.txt' % self.frames[idx])
+        if self._return_file_path:
+            return self.base_path / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_object_calib.zip", to_extract=fname) as source:
                 return self._load_calib(source, idx, raw)
@@ -174,6 +183,9 @@ class KittiObjectLoader(DetectionDatasetBase):
         assert self.phase_path != "testing", "Testing dataset doesn't contain label data"
 
         fname = Path(self.phase_path, 'label_2', '%06d.txt' % self.frames[idx])
+        if self._return_file_path:
+            return self.base_path / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_object_label_2.zip", to_extract=fname) as source:
                 label = load_label(source, fname)

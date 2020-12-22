@@ -179,6 +179,9 @@ class KITTI360Loader(TrackingDatasetBase):
 
         _, folder_name, dname, _ = self.FRAME_PATH_MAP[names]
         fname = Path(seq_id, folder_name, dname, '%010d.png' % frame_idx)
+        if self._return_file_path:
+            return self.base_path / "data_2d_raw" / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}_{folder_name}.zip", to_extract=fname) as source:
                 return load_image(source, fname, gray=False)
@@ -192,6 +195,9 @@ class KITTI360Loader(TrackingDatasetBase):
         if names == "velo":
             # load velodyne points
             fname = Path(seq_id, "velodyne_points", "data", '%010d.bin' % frame_idx)
+            if self._return_file_path:
+                return self.base_path / "data_3d_raw" / fname
+
             if self.inzip:
                 with PatchedZipFile(self.base_path / f"{seq_id}_velodyne.zip", to_extract=fname) as source:
                     return load_velo_scan(source, fname)
@@ -202,6 +208,9 @@ class KITTI360Loader(TrackingDatasetBase):
             # TODO: sick data is not supported due to synchronization issue currently
             #       official way to accumulate SICK data is by linear interpolate between adjacent point clouds
             fname = Path(seq_id, "sick_points", "data", '%010d.bin' % frame_idx)
+            if self._return_file_path:
+                return self.base_path / "data_3d_raw" / fname
+
             if self.inzip:
                 with PatchedZipFile(self.base_path / f"{seq_id}_sick.zip", to_extract=fname) as source:
                     return load_sick_scan(source, fname)
@@ -225,6 +234,7 @@ class KITTI360Loader(TrackingDatasetBase):
 
     @expand_idx
     def annotation_3dobject(self, idx, raw=False, visible_range=80): # TODO: it seems that dynamic objects need interpolation
+        assert not self._return_file_path, "The annotation is not in a single file!"
         seq_id, frame_idx = idx
         self._preload_3dobjects(seq_id)
         objects = [self._3dobjects_cache[seq_id][i.data]
@@ -336,7 +346,7 @@ class KITTI360Loader(TrackingDatasetBase):
         else:
             tree = KDTree(semantics.xyz)
 
-        for i in tqdm.trange(fstart, fend, desc=frame_desc, position=ntqdm):
+        for i in tqdm.trange(fstart, fend, desc=frame_desc, position=ntqdm, leave=False):
             cloud = self.lidar_data((seq, i), names="velo", bypass=True)
             cloud = self._calibration.transform_points(cloud[:, :3], frame_to="pose", frame_from="velo")
             cloud = cloud.dot(self._poses_r[seq][i].as_matrix().T) + self._poses_t[seq][i]
@@ -454,6 +464,9 @@ class KITTI360Loader(TrackingDatasetBase):
         self._preload_3dsemantics(seq_id)
         
         fname = Path("data_3d_semantics", seq_id, "indexed", "%010d.npz" % frame_idx)
+        if self._return_file_path:
+            return self.base_path / fname
+
         if self.inzip:
             fname = str(fname)
             with PatchedZipFile("data_3d_semantics_indexed.zip", to_extract=fname) as ar:
