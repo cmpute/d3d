@@ -132,8 +132,12 @@ class KittiObjectLoader(DetectionDatasetBase):
             folder_name = "image_2"
         elif names == "cam3":
             folder_name = "image_3"
+        if isinstance(idx, int):
+            uidx = self.frames[idx]
+        else:
+            uidx, = idx
 
-        fname = Path(self.phase_path, folder_name, '%06d.png' % self.frames[idx])
+        fname = Path(self.phase_path, folder_name, '%06d.png' % uidx)
         if self._return_file_path:
             return self.base_path / fname
 
@@ -144,16 +148,20 @@ class KittiObjectLoader(DetectionDatasetBase):
             image = utils.load_image(self.base_path, fname, gray=False)
 
         # save image size for calibration
-        if idx not in self._image_size_cache:
-            self._image_size_cache[idx] = image.size
+        if uidx not in self._image_size_cache:
+            self._image_size_cache[uidx] = image.size
 
         return image
 
     @expand_name(VALID_LIDAR_NAMES)
     def lidar_data(self, idx, names='velo'):
         assert names == 'velo'
+        if isinstance(idx, int):
+            uidx = self.frames[idx]
+        else:
+            uidx, = idx
 
-        fname = Path(self.phase_path, 'velodyne', '%06d.bin' % self.frames[idx])
+        fname = Path(self.phase_path, 'velodyne', '%06d.bin' % uidx)
         if self._return_file_path:
             return self.base_path / fname
 
@@ -164,15 +172,20 @@ class KittiObjectLoader(DetectionDatasetBase):
             return utils.load_velo_scan(self.base_path, fname)
 
     def calibration_data(self, idx, raw=False):
-        fname = Path(self.phase_path, 'calib', '%06d.txt' % self.frames[idx])
+        if isinstance(idx, int):
+            uidx = self.frames[idx]
+        else:
+            uidx, = idx
+
+        fname = Path(self.phase_path, 'calib', '%06d.txt' % uidx)
         if self._return_file_path:
             return self.base_path / fname
 
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_object_calib.zip", to_extract=fname) as source:
-                return self._load_calib(source, idx, raw)
+                return self._load_calib(source, uidx, raw)
         else:
-            return self._load_calib(self.base_path, idx, raw)
+            return self._load_calib(self.base_path, uidx, raw)
 
     def annotation_3dobject(self, idx, raw=False):
         '''
@@ -181,8 +194,12 @@ class KittiObjectLoader(DetectionDatasetBase):
         Note that objects labelled as `DontCare` are removed
         '''
         assert self.phase_path != "testing", "Testing dataset doesn't contain label data"
+        if isinstance(idx, int):
+            uidx = self.frames[idx]
+        else:
+            uidx, = idx
 
-        fname = Path(self.phase_path, 'label_2', '%06d.txt' % self.frames[idx])
+        fname = Path(self.phase_path, 'label_2', '%06d.txt' % uidx)
         if self._return_file_path:
             return self.base_path / fname
 
@@ -194,26 +211,23 @@ class KittiObjectLoader(DetectionDatasetBase):
 
         if raw:
             return label
-        return parse_label(label, self.calibration_data(idx, raw=True))
+        return parse_label(label, self.calibration_data((uidx,), raw=True))
 
     def identity(self, idx):
-        '''
-        For KITTI this method just return the phase and index
-        '''
-        return self.phase_path, self.frames[idx]
+        return (self.frames[idx],)
 
-    def _load_calib(self, basepath, idx, raw=False):
+    def _load_calib(self, basepath, uidx, raw=False):
         # load the calibration file
-        fname = Path(self.phase_path, 'calib', '%06d.txt' % self.frames[idx])
+        fname = Path(self.phase_path, 'calib', '%06d.txt' % uidx)
         filedata = utils.load_calib_file(basepath, fname)
 
         if raw:
             return filedata
 
         # load image size, which could take additional time
-        if idx not in self._image_size_cache:
-            self.camera_data(idx) # fill image size cache
-        image_size = self._image_size_cache[idx]
+        if uidx not in self._image_size_cache:
+            self.camera_data((uidx,)) # fill image size cache
+        image_size = self._image_size_cache[uidx]
 
         # load matrics
         data = TransformSet("velo")

@@ -1,11 +1,12 @@
 # cython: language_level=3, embedsignature=True
 
-import enum
-import pickle
-import logging
 import base64
+import enum
+import logging
+import pickle
 from collections import namedtuple
 from pathlib import Path
+from warnings import warn
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -185,9 +186,10 @@ cdef class ObjectTarget3D:
         '''
         angles = self.orientation.as_euler("ZYX")
         if abs(angles[1]) + abs(angles[2]) > 0.2:
-            # TODO: use user warning
-            _logger.warning("The roll (%.2f) and pitch(%.2f) angle in objects may be to large to ignore!",
-                angles[2], angles[1])
+            message = "The roll (%.2f) and pitch(%.2f) angle in objects may be to large to ignore!" % \
+                (angles[2], angles[1])
+            _logger.warning(message)
+            warn(message)
         return angles[0]
 
     @property
@@ -208,9 +210,9 @@ cdef class ObjectTarget3D:
         return base64.b64encode(pack_ull(self.tid)).rstrip(b'=').decode()
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
-        # store only 3D box and label
         cls_value = self.tag_top.value
-        cdef np.ndarray arr = np.concatenate([self.position, self.dimension, [self.yaw, cls_value]])
+        cdef np.ndarray arr = np.concatenate([self.position, self.dimension,
+            [self.yaw, cls_value, self.tag_score]])
         return arr
 
     def serialize(self):
@@ -320,9 +322,9 @@ cdef class TrackingTarget3D(ObjectTarget3D):
         )
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
-        # store only 3D box and label
         cls_value = self.tag_top.value
-        cdef np.ndarray arr = np.concatenate([self.position, self.dimension, [self.yaw, cls_value]])
+        cdef np.ndarray arr = np.concatenate([self.position, self.dimension,
+            [self.yaw, cls_value, self.tag_score]])
         return arr
 
 cdef class Target3DArray(list):
@@ -353,7 +355,7 @@ cdef class Target3DArray(list):
         :param box_type: Decide how to represent the box. {ground: box projected along z axis}
         '''
         if len(self) == 0:
-            return np.empty((0, 8))
+            return np.empty((0, 9))
         return np.stack([box.to_numpy(box_type) for box in self])
 
     def to_torch(self, box_type="ground"):

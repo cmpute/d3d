@@ -386,11 +386,10 @@ class NuscenesLoader(TrackingDatasetBase):
 
     @expand_idx
     def identity(self, idx):
-        scene, fidx = idx
-        return self.phase, scene, fidx
+        return idx
 
     @expand_idx
-    def timestamp(self, idx): 
+    def timestamp(self, idx):
         seq_id, frame_idx = idx
         fname = "timestamp/%03d.txt" % frame_idx
         if self.inzip:

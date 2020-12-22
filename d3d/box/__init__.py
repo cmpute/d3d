@@ -11,7 +11,7 @@ from .box_impl import (cuda_available,
     diou2dr_forward,
     diou2dr_backward,
     nms2d as nms2d_cc,
-    rbox_2d_crop as rbox_2d_crop_cc,
+    crop_2dr as crop_2dr_cc,
     IouType, SupressionType
 )
 
@@ -232,11 +232,39 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
         return mask.numpy()
     return mask
 
-def box2d_crop(cloud, boxes):
+def crop_2dr(cloud, boxes):
     '''
     Crop point cloud points out given rotated boxes.
     The result is a list of indices tensor where each tensor is corresponding to indices of points lying in the box
+
+    :param cloud: A point cloud with N x 2 shape
+    :param boxes: Boxes array with M x 5 shape
+    '''
+    result = crop_2dr(cloud, boxes)
+    return result
+
+def crop_3dr(cloud, boxes, project_axis=2):
+    '''
+    Crop point cloud points out given rotated boxes with boxes projected to given axis
+
+    TODO: test against the implementation in mmdet3d (correctness and speed)
     '''
 
-    result = rbox_2d_crop_cc(cloud, boxes)
-    return result
+    if project_axis == 0:
+        cloud_2d = cloud[:, [1,2]]
+        boxes_2d = boxes[:, [1,2,4,5,6]]
+    elif project_axis == 1:
+        cloud_2d = cloud[:, [0,2]]
+        boxes_2d = boxes[:, [0,2,3,5,6]]
+    elif project_axis == 2:
+        cloud_2d = cloud[:, [0,1]]
+        boxes_2d = boxes[:, [0,1,3,4,6]]
+    else:
+        raise ValueError("The projection axis can only be 0-x, 1-y and 2-z!")
+    mask_2d = crop_2dr_cc(cloud_2d, boxes_2d)
+
+    cloud_p = cloud[:, [project_axis]].t()
+    boxes_p = boxes[:, [project_axis]]
+    boxes_pd = boxes[:, [3+project_axis]] / 2
+    mask_p = (cloud_p - boxes_pd < boxes_p) & (boxes_p < cloud_p + boxes_pd)
+    return mask_2d & mask_p

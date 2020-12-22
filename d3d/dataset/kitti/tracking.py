@@ -307,11 +307,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
     @expand_idx
     def identity(self, idx):
-        '''
-        For KITTI this method just return the phase and index
-        '''
-        seq_id, frame_idx = idx
-        return self.phase_path, seq_id, frame_idx
+        return idx
 
     @expand_idx
     def pose(self, idx, raw=False):

@@ -292,7 +292,8 @@ class KeyFrameConverter:
             if debug and iblob > 0:
                 break
 
-            for counter, tinfo in enumerate(tqdm(blob_file, desc="Reading files", unit="files")):
+            for counter, tinfo in enumerate(tqdm(
+                blob_file, desc="Reading files",unit="files", leave=False)):
                 # skip files that are not samples
                 if tinfo.isdir():
                     continue

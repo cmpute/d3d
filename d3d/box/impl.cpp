@@ -20,7 +20,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("diou2dr_forward", &diou2dr_forward, "Rotated GIoU of 2D boxes");
     m.def("diou2dr_backward", &diou2dr_backward);
     m.def("nms2d", &nms2d, "NMS on 2D boxes");
-    m.def("rbox_2d_crop", &rbox_2d_crop, "Crop points from a point cloud within boxes");
+    m.def("crop_2dr", &crop_2dr, "Crop points from a point cloud within boxes");
 
     #ifdef BUILD_WITH_CUDA
     m.def("iou2d_forward_cuda", &iou2d_forward_cuda, "IoU of 2D boxes (using CUDA)");

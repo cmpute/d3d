@@ -1,15 +1,16 @@
 # Deal with rotation filtering: https://math.stackexchange.com/questions/2621677/extended-kalman-filter-equation-for-orientation-quaternion
 
+import logging
+import math
+import sys
+from warnings import warn
+
+import filterpy.kalman as kf
 import numpy as np
 import numpy.linalg as npl
-import math
-import filterpy.kalman as kf
+from d3d.abstraction import ObjectTarget3D
 from scipy.spatial.transform import Rotation
 
-import sys
-from d3d.abstraction import ObjectTarget3D
-
-import logging
 _logger = logging.getLogger("d3d")
 
 
@@ -390,11 +391,13 @@ class Pose_3DOF_UKF_CTRA:
         if not is_pd(self._filter.P):
             newp = nearest_pd(self._filter.P)
             diff = npl.norm(self._filter.P - newp)
+            message = "Covariance matrix is not positive definite, fixed with diff %.3f! (note: %s)" % (diff, note)
             if diff < 10:
-                _logger.warning("Covariance matrix is not positive definite, fixed with diff %.3f! (note: %s)", diff, note)
+                _logger.warning(message)
+                warn(message)
             else:
-                # TODO: also raise error here
-                _logger.error("Covariance matrix is not positive definite, fixed with diff %.3f! (note: %s)", diff, note)
+                _logger.error(message)
+                raise RuntimeError(message)
             self._filter.P = newp
 
     def __init__(self, init: ObjectTarget3D, Q=np.eye(6)):

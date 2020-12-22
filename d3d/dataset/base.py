@@ -68,8 +68,8 @@ class DatasetBase:
                  base_path: Union[str, Path],
                  inzip: bool = False,
                  phase: str = "training",
-                 trainval_split: float = 1.,
-                 trainval_random: bool = False):
+                 trainval_split: Union[float, List[float]] = 1.,
+                 trainval_random: Union[bool, int, str] = False):
         """
         :param base_path: directory containing the zip files, or the required data
         :param inzip: whether the dataset is store in original zip archives or unzipped
@@ -121,8 +121,8 @@ class DetectionDatasetBase(DatasetBase):
                  base_path: Union[str, Path],
                  inzip: bool = False,
                  phase: str = "training",
-                 trainval_split: float = 1.,
-                 trainval_random: bool = False):
+                 trainval_split: Union[float, List[float]] = 1.,
+                 trainval_random: Union[bool, int, str] = False):
         """
         :param base_path: directory containing the zip files, or the required data
         :param inzip: whether the dataset is store in original zip archives or unzipped
@@ -140,7 +140,7 @@ class DetectionDatasetBase(DatasetBase):
                          trainval_split=trainval_split, trainval_random=trainval_random)
 
     def lidar_data(self,
-                   idx: int,
+                   idx: Union[int, tuple],
                    names: Optional[Union[str, List[str]]] = None
                    ) -> Union[NdArray, List[NdArray]]:
         '''
@@ -152,7 +152,7 @@ class DetectionDatasetBase(DatasetBase):
         raise NotImplementedError("abstract function")
 
     def camera_data(self,
-                    idx: int,
+                    idx: Union[int, tuple],
                     names: Optional[Union[str, List[str]]] = None
                     ) -> Union[Image, List[Image]]:
         '''
@@ -163,7 +163,7 @@ class DetectionDatasetBase(DatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def calibration_data(self, idx: int, raw: Optional[bool] = None) -> TransformSet:
+    def calibration_data(self, idx: Union[int, tuple], raw: Optional[bool] = None) -> TransformSet:
         '''
         Return the calibration data
 
@@ -172,7 +172,7 @@ class DetectionDatasetBase(DatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def annotation_3dobject(self, idx: int, raw: Optional[bool] = None) -> Target3DArray:
+    def annotation_3dobject(self, idx: Union[int, tuple], raw: Optional[bool] = None) -> Target3DArray:
         '''
         Return list of converted ground truth targets in lidar frame.
 
@@ -181,9 +181,10 @@ class DetectionDatasetBase(DatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def identity(self, idx: int) -> Any:
+    def identity(self, idx: int) -> tuple:
         '''
-        Return something that can track the data back to original dataset
+        Return something that can track the data back to original dataset. The result tuple can be passed
+            to any accessors above and directly access given data.
 
         :param idx: index of requested frame to be parsed
         '''
@@ -202,8 +203,8 @@ class TrackingDatasetBase(DetectionDatasetBase):
                  base_path: Union[str, Path],
                  inzip: bool = False,
                  phase: str = "training",
-                 trainval_split: float = 1.,
-                 trainval_random: bool = False,
+                 trainval_split: Union[float, List[float]] = 1.,
+                 trainval_random: Union[bool, int, str] = False,
                  nframes: int = 0):
         """
         :param nframes: number of consecutive frames returned from the accessors
@@ -214,7 +215,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
                          trainval_split=trainval_split, trainval_random=trainval_random)
         self.nframes = abs(nframes)
 
-    def _locate_frame(self, idx: int) -> Tuple[int, int]:
+    def _locate_frame(self, idx: int) -> tuple:
         '''
         Subclass should implement this function to convert overall index to (sequence_id, frame_idx) to support
             decorator 'expand_idx' and 'expand_idx_name'
@@ -223,7 +224,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         raise NotImplementedError("_locate_frame is not implemented!")
 
     def lidar_data(self,
-                   idx: Union[int, Tuple[int, int]],
+                   idx: Union[int, tuple],
                    names: Optional[Union[str, List[str]]] = None
                    ) -> Union[NdArray, List[NdArray], List[List[NdArray]]]:
         '''
@@ -239,7 +240,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         raise NotImplementedError("_locate_frame is not implemented!")
 
     def camera_data(self,
-                    idx: Union[int, Tuple[int, int]],
+                    idx: Union[int, tuple],
                     names: Optional[Union[str, List[str]]] = None
                     ) -> Union[Image, List[Image], List[List[Image]]]:
         '''
@@ -250,7 +251,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def calibration_data(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> TransformSet:
+    def calibration_data(self, idx: Union[int, tuple], raw: Optional[bool] = False) -> TransformSet:
         '''
         Return the calibration data. Notices that we assume the calibration is fixed among one squence, so it always
             return a single object.
@@ -260,7 +261,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def annotation_3dobject(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> Union[Target3DArray, List[Target3DArray]]:
+    def annotation_3dobject(self, idx: Union[int, tuple], raw: Optional[bool] = False) -> Union[Target3DArray, List[Target3DArray]]:
         '''
         Return list of converted ground truth targets in lidar frame.
 
@@ -269,7 +270,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def identity(self, idx: Union[int, Tuple[int, int]]) -> Union[Any, List[Any]]:
+    def identity(self, idx: int) -> Union[tuple, List[tuple]]:
         '''
         Return something that can track the data back to original dataset
 
@@ -278,7 +279,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def pose(self, idx: Union[int, Tuple[int, int]], raw: Optional[bool] = False) -> EgoPose:
+    def pose(self, idx: Union[int, tuple], raw: Optional[bool] = False) -> EgoPose:
         '''
         Return (relative) pose of the vehicle for the frame. The base frame should be ground attached
             which means the base frame will follow a East-North-Up axis order.
@@ -287,7 +288,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def timestamp(self, idx: Union[int, Tuple[int, int]], names: Optional[Union[str, List[str]]] = None) -> Union[int, List[int]]:
+    def timestamp(self, idx: Union[int, tuple], names: Optional[Union[str, List[str]]] = None) -> Union[int, List[int]]:
         '''
         Return the timestamp of frames specified the index, represented by Unix timestamp in macroseconds
         '''

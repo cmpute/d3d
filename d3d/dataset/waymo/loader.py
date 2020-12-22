@@ -243,8 +243,7 @@ class WaymoLoader(TrackingDatasetBase):
 
     @expand_idx
     def identity(self, idx):
-        seq_id, frame_idx = idx
-        return self.phase, seq_id, frame_idx
+        return idx
 
     @expand_idx
     def timestamp(self, idx):
