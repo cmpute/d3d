@@ -76,6 +76,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
     VALID_CAM_NAMES = ["cam2", "cam3"]
     VALID_LIDAR_NAMES = ["velo"]
+    VALID_OBJ_CLASSES = KittiObjectClass
 
     # TODO: add option to split trainval dataset by sequence instead of overall index
     def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8, trainval_random=False, nframes=0):

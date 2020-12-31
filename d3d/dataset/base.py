@@ -290,9 +290,9 @@ class TrackingDatasetBase(DetectionDatasetBase):
 
     def timestamp(self, idx: Union[int, tuple], names: Optional[Union[str, List[str]]] = None) -> Union[int, List[int]]:
         '''
-        Return the timestamp of frames specified the index, represented by Unix timestamp in macroseconds
+        Return the timestamp of frames specified the index, represented by Unix timestamp in macroseconds (usually 16 digits integer)
         '''
-        pass
+        raise NotImplementedError("abstract function")
 
     @property
     def sequence_sizes(self) -> Dict[Any, int]:

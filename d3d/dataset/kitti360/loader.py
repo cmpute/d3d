@@ -60,6 +60,7 @@ class KITTI360Loader(TrackingDatasetBase):
     """
     VALID_CAM_NAMES = ['cam1', 'cam2', 'cam3', 'cam4'] # cam 1,2 are persective
     VALID_LIDAR_NAMES = ['velo'] # velo stands for velodyne
+    VALID_OBJ_CLASSES = Kitti360Class
     # TODO: add 'sick' frame to the list after the loader for sick points is completed
 
     FRAME_PATH_MAP = dict(

@@ -210,9 +210,16 @@ cdef class ObjectTarget3D:
         return base64.b64encode(pack_ull(self.tid)).rstrip(b'=').decode()
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
-        cls_value = self.tag_top.value
-        cdef np.ndarray arr = np.concatenate([self.position, self.dimension,
-            [self.yaw, cls_value, self.tag_score]])
+        cdef np.ndarray[float, ndim=1] arr = np.empty(9, dtype='f4')
+        arr[0] = float(self.tag.labels[0])
+        arr[1] = self.tag.scores[0]
+        arr[2] = self.position_[0]
+        arr[3] = self.position_[1]
+        arr[4] = self.position_[2]
+        arr[5] = self.dimension_[0]
+        arr[6] = self.dimension_[1]
+        arr[7] = self.dimension_[2]
+        arr[8] = self.yaw
         return arr
 
     def serialize(self):
@@ -322,9 +329,19 @@ cdef class TrackingTarget3D(ObjectTarget3D):
         )
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
-        cls_value = self.tag_top.value
-        cdef np.ndarray arr = np.concatenate([self.position, self.dimension,
-            [self.yaw, cls_value, self.tag_score]])
+        cdef np.ndarray[float, ndim=1] arr = np.empty(12, dtype='f4')
+        arr[0] = float(self.tag.labels[0])
+        arr[1] = self.tag.scores[0]
+        arr[2] = self.position_[0]
+        arr[3] = self.position_[1]
+        arr[4] = self.position_[2]
+        arr[5] = self.dimension_[0]
+        arr[6] = self.dimension_[1]
+        arr[7] = self.dimension_[2]
+        arr[8] = self.yaw
+        arr[9] = self.velocity_[0]
+        arr[10] = self.velocity_[1]
+        arr[11] = self.angular_velocity_[2]
         return arr
 
 cdef class Target3DArray(list):
@@ -355,7 +372,7 @@ cdef class Target3DArray(list):
         :param box_type: Decide how to represent the box. {ground: box projected along z axis}
         '''
         if len(self) == 0:
-            return np.empty((0, 9))
+            return np.empty((0,), dtype=np.float32)
         return np.stack([box.to_numpy(box_type) for box in self])
 
     def to_torch(self, box_type="ground"):

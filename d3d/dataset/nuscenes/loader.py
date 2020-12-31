@@ -15,7 +15,7 @@ from enum import Enum, IntFlag, auto
 from scipy.spatial.transform import Rotation
 
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
-                             TransformSet, EgoPose)
+                             TrackingTarget3D, TransformSet, EgoPose)
 from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval, expand_idx, expand_idx_name
 from d3d.dataset.zip import PatchedZipFile
 
@@ -169,6 +169,7 @@ class NuscenesLoader(TrackingDatasetBase):
     '''
     VALID_CAM_NAMES = ["cam_front", "cam_front_left", "cam_front_right", "cam_back", "cam_back_left", "cam_back_right"]
     VALID_LIDAR_NAMES = ["lidar_top"]
+    VALID_OBJ_CLASSES = NuscenesDetectionClass
 
     def __init__(self, base_path, inzip=False, phase="training", trainval_split=1, trainval_random=False, nframes=0):
         """
@@ -209,6 +210,8 @@ class NuscenesLoader(TrackingDatasetBase):
 
                     metadata[folder.name] = json.loads((folder / "scene/stats.json").read_text())
 
+            assert len(metadata) > 0, "The dataset folder contains no valid frame, "\
+                "please check path or parameters!"
             with open(meta_path, "wb") as fout:
                 msgpack.pack(metadata, fout)
 
@@ -281,7 +284,7 @@ class NuscenesLoader(TrackingDatasetBase):
             Image.open(self.base_path / seq_id / fname)
 
     @expand_idx
-    def annotation_3dobject(self, idx, raw=False, convert_tag=False):
+    def annotation_3dobject(self, idx, raw=False, convert_tag=True, with_velocity=True):
         seq_id, frame_idx = idx
         fname = "annotation/%03d.json" % frame_idx
         if self._return_file_path:
@@ -317,11 +320,17 @@ class NuscenesLoader(TrackingDatasetBase):
             rel_r = ego_r.inv() * r
             rel_t = np.dot(ego_r.inv().as_matrix(), t - ego_t)
             size = [label.size[1], label.size[0], label.size[2]] # wlh -> lwh
+            tid = int(label.instance[:8], 16) # truncate into uint64
 
             # create object
-            tid = int(label.instance[:8], 16) # truncate into uint64
-            target = ObjectTarget3D(rel_t, rel_r, size, tag, tid=tid)
-            outputs.append(target)
+            if with_velocity:
+                v = label.velocity
+                w = label.angular_velocity
+                target = TrackingTarget3D(rel_t, rel_r, size, v, w, tag, tid=tid)
+                outputs.append(target)
+            else:
+                target = ObjectTarget3D(rel_t, rel_r, size, tag, tid=tid)
+                outputs.append(target)
 
         return outputs
 
@@ -345,11 +354,15 @@ class NuscenesLoader(TrackingDatasetBase):
         else:
             return self._segmapping[label]
 
+    @expand_idx
+    def metadata(self, idx):
+        seq_id, _ = idx
+        assert not self._return_file_path, "The metadata is not in a single file!"
+        return self._metadata[seq_id]
+
+    @expand_idx
     def calibration_data(self, idx):
-        if isinstance(idx, int):
-            seq_id, _ = self._locate_frame(idx)
-        else:
-            seq_id, _ = idx
+        seq_id, _ = idx
         assert not self._return_file_path, "The calibration is not in a single file!"
 
         calib_params = TransformSet("ego")
@@ -388,18 +401,21 @@ class NuscenesLoader(TrackingDatasetBase):
     def identity(self, idx):
         return idx
 
-    @expand_idx
-    def timestamp(self, idx):
+    @expand_idx_name(VALID_LIDAR_NAMES + VALID_CAM_NAMES)
+    def timestamp(self, idx, names="lidar_top"):
         seq_id, frame_idx = idx
-        fname = "timestamp/%03d.txt" % frame_idx
+        fname = "timestamp/%03d.json" % frame_idx
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
-                return int(ar.read(fname))
+                tsdict = json.loads(ar.read(fname))
         else:
-            return int((self.base_path / seq_id / fname).read_bytes())
+            with (self.base_path / seq_id / fname).open() as fin:
+                tsdict = json.load(fin)
+        return tsdict[names]
 
-    @expand_idx
-    def pose(self, idx):
+    @expand_idx_name(VALID_LIDAR_NAMES + VALID_CAM_NAMES)
+    def pose(self, idx, names="lidar_top"):
+        # Note that here pose always return the pose of the vehicle, names are for different timestamps
         seq_id, frame_idx = idx
         fname = "pose/%03d.json" % frame_idx
         if self.inzip:
@@ -409,6 +425,7 @@ class NuscenesLoader(TrackingDatasetBase):
             with (self.base_path / seq_id / fname).open() as fin:
                 data = json.load(fin)
 
+        data = data[names]
         r = Rotation.from_quat(data['rotation'][1:] + [data['rotation'][0]])
         t = np.array(data['translation'])
         return EgoPose(t, r)

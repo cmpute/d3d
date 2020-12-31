@@ -14,6 +14,7 @@ from multiprocessing import Pool, Value
 from pathlib import Path, PurePath
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 from tqdm import tqdm
 
 
@@ -37,7 +38,7 @@ def _load_table(path):
 
 class KeyFrameConverter:
     def __init__(self, phase, input_meta_path, input_blob_paths, output_path, input_seg_path=None,
-        zip_output=False, compression=zipfile.ZIP_STORED):
+        zip_output=False, compression=zipfile.ZIP_STORED, **conversion_args):
         '''
         :param phase: mini / trainval / test
         :param local_map_range: Range of generated local map in meters, range <= 0 means not to output map
@@ -50,11 +51,13 @@ class KeyFrameConverter:
         self.output_path = Path(output_path)
         self.zip_output = zip_output
         self.zip_compression = compression
+        self.merge_cloud = conversion_args.get('merger_cloud', 0) # TODO: merge previous cloud
+        self.estimate_velocity = conversion_args.get('estimate_velocity', False) # TODO: estimate velocity
 
         # nuscenes tables
-        self.sample_table = None
-        self.sample_data_table = None
-        self.scene_table = None
+        self.sample_table = None # key frames
+        self.sample_data_table = None # data frames
+        self.scene_table = None # sequence
         self.log_table = None
         self.map_table = None
         self.sensor_table = None
@@ -75,7 +78,7 @@ class KeyFrameConverter:
         self.scene_map_table = None # scene -> {map category: map file}
         self.ohandles = {} # scene -> scene directory or zipfile handle
         self.oscenes = set() # mark output scenes
-        self.oframes = defaultdict(set) # mark output frames
+        self.oframes = defaultdict(dict) # scene -> order -> (timestamp_dict, pose_dict)
 
     def _save_file(self, stoken, fname, data):
         if self.zip_output:
@@ -95,17 +98,38 @@ class KeyFrameConverter:
             for ltoken in mdata["log_tokens"]:
                 log_map_table[ltoken][mdata['category']] = mdata['filename']
 
-        # create output handles and save metadata
+        # create output handles, sort samples and save timestamps and metadata
         self.scene_map_table = {}
+        self.sample_order = {}
         for stoken, data in self.scene_table.items():
+            # add scene table mapping
             log = self.log_table[data['log_token']]
             self.scene_map_table[stoken] = log_map_table[data['log_token']]
 
+            # sort samples
+            count = 0
+            cur = data['first_sample_token']
+            token_list = []
+
+            while True:
+                # add mapping and save timestamp
+                self.sample_order[cur] = (stoken, count)
+
+                # move to the next sample
+                token_list.append(hex(cur)[2:])
+                if self.sample_table[cur]['next'] is None:
+                    break
+                cur = self.sample_table[cur]['next']
+                count += 1
+                assert count < 1000, "Frame index is larger than file name capacity!"
+
+            # save metadata
             meta = dict(
                 nbr_samples=data['nbr_samples'],
                 description=data['description'],
                 token=hex(stoken)[2:],
-                map=self.scene_map_table[stoken]
+                map=self.scene_map_table[stoken],
+                sample_tokens=token_list
             )
             meta.update(log)
             meta_json = json.dumps(meta).encode()
@@ -122,27 +146,6 @@ class KeyFrameConverter:
         # clean used tables
         self.log_table = None
         self.map_table = None
-
-    def _sort_samples(self):
-        # sort samples and save timestamps
-        self.sample_order = dict()
-        for stoken, data in self.scene_table.items():
-            count = 0
-            cur = data['first_sample_token']
-
-            while True:
-                # add mapping and save timestamp
-                self.sample_order[cur] = (stoken, count)
-                ts_data = b'%d' % self.sample_table[cur]['timestamp']
-                self._save_file(stoken, "timestamp/%03d.txt" % count, ts_data)
-
-                # move to the next sample
-                if self.sample_table[cur]['next'] is None:
-                    break
-                cur = self.sample_table[cur]['next']
-                count += 1
-                if count > 999:
-                    raise RuntimeError("Frame index is larger than file name capacity!")
 
     def _parse_sample_data(self):
         # parse and reverse sample_data table
@@ -188,17 +191,25 @@ class KeyFrameConverter:
         self.annotation_table = _load_table(self.table_path / "sample_annotation.json")
         anno_list = defaultdict(list)
 
+        def extract_rt(adata): # utility function for velocity estimation
+            t = np.array(adata['translation'])
+            r = adata['rotation'][1:] + [adata['rotation'][0]]
+            r = Rotation.from_quat(r).as_rotvec()
+            ts = self.sample_table[adata['sample_token']]['timestamp']
+            return t, r, ts
+
         # parse annotations from table
         for itoken, data in self.instance_table.items():
             cur = data['first_annotation_token']
             instance_id = hex(itoken)[2:]
             instance_category = self.category_table[data['category_token']]['name']
-            
+
             while True:
                 adata = self.annotation_table[cur]
                 scene, order = self.sample_order[adata['sample_token']]
+
+                # save this annotation if the sample has corresponding sensor data
                 if order in self.oframes[scene]:
-                    # save this annotation if the sample has corresponding sensor data
                     anno = dict(
                         category=instance_category,
                         instance=instance_id,
@@ -210,6 +221,23 @@ class KeyFrameConverter:
                         num_radar_pts=adata['num_radar_pts'],
                         visibility=adata['visibility_token'],
                     )
+
+                    # estimate velocity if required
+                    if self.estimate_velocity:
+                        aprev, anext = adata['prev'], adata['next']
+                        if not aprev and not anext:
+                            v = w = np.array([np.nan] * 3)
+                        else:
+                            t1, r1, ts1 = extract_rt(self.annotation_table[aprev] if aprev else adata)
+                            t2, r2, ts2 = extract_rt(self.annotation_table[anext] if anext else adata)
+                            dt = (ts2 - ts1) * 1e-6
+                            v = ((t2 - t1) / dt)
+                            w = ((r2 - r1) / dt)
+                            v[v < 1e-4] = 0 # gating values for static objects
+                            w[w < 1e-4] = 0
+                        anno['velocity'] = v.tolist()
+                        anno['angular_velocity'] = w.tolist()
+
                     anno_list[adata['sample_token']].append(anno)
 
                 # move to the next sample
@@ -277,7 +305,6 @@ class KeyFrameConverter:
 
         # parse tables
         self._parse_scenes()
-        self._sort_samples()
         self._parse_sample_data()
 
     def load_blobs(self, debug):
@@ -310,21 +337,16 @@ class KeyFrameConverter:
                 data = blob_file.extractfile(tinfo).read()
                 self._save_file(scene, "%s/%03d.%s" % (sensor, order, ext), data)
 
-                # save pose
-                if sensor == "lidar_top": # here we choose the pose of lidar as the pose of the key frame
-                # TODO: save pose and timestamp for each sensor, can be in one single json file
-                    ptoken = self.sample_data_table[token]["ego_pose_token"]
-                    pose = self.ego_pose_table[ptoken]
-                    pose_json = json.dumps(dict(
-                        rotation=pose["rotation"], translation=pose["translation"]
-                    )).encode()
-                    self._save_file(scene, "pose/%03d.json" % order, pose_json)
-
                 # tag the scene to be filled
                 if scene not in self.oscenes:
                     self.oscenes.add(scene)
                 if order not in self.oframes[scene]:
-                    self.oframes[scene].add(order)
+                    self.oframes[scene][order] = ({}, {})
+
+                # save timestamp and pose
+                sample_data = self.sample_data_table[token]
+                self.oframes[scene][order][0][sensor] = sample_data["timestamp"]
+                self.oframes[scene][order][1][sensor] = sample_data["ego_pose_token"]
 
                 # only convert 2 files in debug
                 if debug and counter > 1:
@@ -348,14 +370,23 @@ class KeyFrameConverter:
                     handle.close()
                     os.remove(handle.filename)
                 
-                # fill scene samples without annotation
                 else:
                     nlist = set(handle.namelist())
                     for i in range(nsamples):
+                        # fill scene samples without annotation
                         aname = "annotation/%03d.json" % i
                         if aname not in nlist:
                             handle.writestr(aname, b"[]")
+
+                        # save timestamp and pose
+                        timestamps, poses = self.oframes[scene][i]
+                        poses = {k: dict(rotation=self.ego_pose_table[v]["rotation"],
+                                         translation=self.ego_pose_table[v]["translation"])
+                                    for k, v in poses.items()}
+                        handle.writestr("timestamp/%03d.json" % i, json.dumps(timestamps).encode())
+                        handle.writestr("pose/%03d.json" % i, json.dumps(poses).encode())
                     handle.close()
+
         else:
             for scene, path in self.ohandles.items():
                 nsamples = self.scene_table[scene]['nbr_samples']
@@ -363,13 +394,22 @@ class KeyFrameConverter:
                 # remove archives where the data is incomplete
                 if scene not in self.oscenes or len(self.oframes[scene]) < nsamples:
                     shutil.rmtree(path)
-                
-                # fill scene samples without annotation
-                for i in range(nsamples):
-                    afile = path / ("annotation/%03d.json" % i)
-                    afile.parent.mkdir(exist_ok=True, parents=True)
-                    if not afile.exists():
-                        afile.write_bytes(b"[]")
+
+                else:
+                    for i in range(nsamples):
+                        # fill scene samples without annotation
+                        afile = path / ("annotation/%03d.json" % i)
+                        afile.parent.mkdir(exist_ok=True, parents=True)
+                        if not afile.exists():
+                            afile.write_bytes(b"[]")
+
+                        # save timestamp and pose
+                        timestamps, poses = self.oframes[scene][i]
+                        poses = {k: dict(rotation=self.ego_pose_table[v]["rotation"],
+                                         translation=self.ego_pose_table[v]["translation"])
+                                    for k, v in poses.items()}
+                        self._save_file(scene, "timestamp/%03d.json" % i, json.dumps(timestamps).encode())
+                        self._save_file(scene, "pose/%03d.json" % i, json.dumps(poses).encode())
 
     def convert(self, debug=False):
         try:
@@ -381,7 +421,8 @@ class KeyFrameConverter:
             if self.temp_dir is not None:
                 shutil.rmtree(self.temp_dir)
 
-def convert_dataset_inpath(input_path, output_path, debug=False, mini=False, zip_output=False):
+def convert_dataset_inpath(input_path, output_path, debug=False,
+    mini=False, zip_output=False, **conversion_args):
     input_path, output_path = Path(input_path), Path(output_path)
     output_path.mkdir(exist_ok=True, parents=True)
 
@@ -408,7 +449,7 @@ def convert_dataset_inpath(input_path, output_path, debug=False, mini=False, zip
         mini_seg = mini_seg[0] if len(mini_seg) > 0 else None
         KeyFrameConverter("mini", input_meta_path=mini_archive, input_blob_paths=[mini_archive],
             input_seg_path=mini_seg, output_path=phase_path, zip_output=zip_output,
-            compression=compression).convert(debug)
+            compression=compression, **conversion_args).convert(debug)
     else:
         # convert trainval dataset
         print("Processing trainval datasets...")
@@ -422,7 +463,7 @@ def convert_dataset_inpath(input_path, output_path, debug=False, mini=False, zip
         trainval_blobs = list(p for p in input_path.glob("*blobs*") if 'trainval' in p.name)
         KeyFrameConverter("trainval", input_meta_path=trainval_meta, input_blob_paths=trainval_blobs,
             input_seg_path=trainval_seg, output_path=phase_path, zip_output=zip_output,
-            compression=compression).convert(debug)
+            compression=compression, **conversion_args).convert(debug)
 
         # convert test dataset
         print("Processing test datasets")
@@ -433,13 +474,15 @@ def convert_dataset_inpath(input_path, output_path, debug=False, mini=False, zip
         test_meta = next(input_path.glob("*-test_meta.*"))
         test_blobs = list(p for p in input_path.glob("*blobs*") if 'test' in p.name)
         KeyFrameConverter("test", input_meta_path=test_meta, input_blob_paths=test_blobs,
-            output_path=phase_path, zip_output=zip_output, compression=compression).convert(debug)
+            output_path=phase_path, zip_output=zip_output, compression=compression,
+            **conversion_args).convert(debug)
 
 def main():
     from argparse import ArgumentParser
 
     parser = ArgumentParser(description="Convert nuscenes dataset tarballs to normal zip files with numpy arrays."
-        "Multi-processing is not used since the metadata could be too large to be copied among processes.")
+        "Multi-processing is not used since the metadata could be too large to be copied among processes."
+        "The whole conversion process will takes hours.")
 
     parser.add_argument('input', type=str,
         help='Input directory')
@@ -449,22 +492,20 @@ def main():
         help='Run the script in debug mode, only convert part of the tarballs')
     parser.add_argument('-m', '--mini', action="store_true",
         help="Only convert the mini dataset")
-    parser.add_argument('-k', '--all-frames', dest="allframes", action="store_true",
-        help="Convert all data frames. By default only key frames are preserved.")
+    parser.add_argument('--merge-point-cloud', dest="merge_cloud", type=int, default=0,
+        help="Merge point cloud data before key frames with given numbers. Disabled by default.")
+    parser.add_argument('--estimate-box-velocity', dest="estimate_velocity", action="store_true",
+        help="Estimate velocity of bounding boxes. Disabled by default")
     parser.add_argument('-z', '--zip', action="store_true",
         help="Convert the result into zip files rather than flat directory")
     parser.add_argument('-c', '--compression', type=str, default='stored', choices=['stored', 'deflated', 'bzip2', 'lzma'],
         help="Choose zip compression type")
     args = parser.parse_args()
 
-    if args.allframes:
-        # XXX: implement this.
-        #      To support all frames we may store all the data just using their token or using a data structure like rosbag.
-        #      Canbus extension and Vector map should be included when converting all frames
-        raise NotImplementedError("Converting all frames is not implemented")
-
+    conversion_args = dict(merge_cloud = args.merge_cloud, estimate_velocity=args.estimate_velocity)
     convert_dataset_inpath(args.input, args.output or args.input,
-        debug=args.debug, mini=args.mini, zip_output=args.compression if args.zip else False)
+        debug=args.debug, mini=args.mini,
+        zip_output=args.compression if args.zip else False, **conversion_args)
 
 if __name__ == "__main__":
     main()

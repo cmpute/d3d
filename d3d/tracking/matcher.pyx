@@ -37,13 +37,13 @@ cdef class BaseMatcher:
         cdef np.ndarray dst_arr = dst_boxes.to_numpy().astype(np.float32)
         if distance_metric == DistanceTypes.IoU:
             self._distance_cache = 1 - box2d_iou( # use 1-iou as distance
-                src_arr[:, [0,1,3,4,6]],
-                dst_arr[:, [0,1,3,4,6]],
+                src_arr[:, [2,3,5,6,8]],
+                dst_arr[:, [2,3,5,6,8]],
                 method="box") 
         if distance_metric == DistanceTypes.RIoU:
             self._distance_cache = 1 - box2d_iou(
-                src_arr[:, [0,1,3,4,6]],
-                dst_arr[:, [0,1,3,4,6]],
+                src_arr[:, [2,3,5,6,8]],
+                dst_arr[:, [2,3,5,6,8]],
                 method="rbox")
         elif distance_metric == DistanceTypes.Position:
             self._distance_cache = cdist(src_arr[:, :3], dst_arr[:, :3], metric='euclidean').astype(np.float32)

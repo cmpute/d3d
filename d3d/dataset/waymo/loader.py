@@ -12,7 +12,7 @@ import zipfile
 import tarfile
 from pathlib import Path
 from collections import OrderedDict
-from enum import Enum
+from enum import Enum, auto
 from io import BytesIO
 
 import numpy as np
@@ -30,10 +30,10 @@ _logger = logging.getLogger("d3d")
 
 class WaymoObjectClass(Enum):
     Unknown = 0
-    Vehicle = 1
-    Pedestrian = 2
-    Sign = 3
-    Cyclist = 4
+    Vehicle = auto()
+    Pedestrian = auto()
+    Sign = auto()
+    Cyclist = auto()
 
 class WaymoLoader(TrackingDatasetBase):
     """
@@ -51,6 +51,7 @@ class WaymoLoader(TrackingDatasetBase):
     """
     VALID_CAM_NAMES = ["camera_front", "camera_front_left", "camera_front_right", "camera_side_left", "camera_side_right"]
     VALID_LIDAR_NAMES = ["lidar_top", "lidar_front", "lidar_side_left", "lidar_side_right", "lidar_rear"]
+    VALID_OBJ_CLASSES = WaymoObjectClass
 
     def __init__(self, base_path, phase="training", inzip=False, trainval_split=None, trainval_random=False, nframes=0):
         """

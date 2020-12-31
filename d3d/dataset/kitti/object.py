@@ -95,6 +95,7 @@ class KittiObjectLoader(DetectionDatasetBase):
 
     VALID_CAM_NAMES = ["cam2", "cam3"]
     VALID_LIDAR_NAMES = ["velo"]
+    VALID_OBJ_CLASSES = KittiObjectClass
 
     def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8, trainval_random=False):
         super().__init__(base_path, inzip=inzip, phase=phase,
