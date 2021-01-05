@@ -11,7 +11,6 @@
 - [ ] [Argo.AI](https://www.argoverse.org/data.html#download-link): To be added
 - [ ] [H3D](https://usa.honda-ri.com/H3D): To be added
 - [ ] [KAIST](http://irap.kaist.ac.kr/dataset/): To be added, no label
-- [ ] [IDD](http://idd.insaan.iiit.ac.in/): To be added
 - [ ] [RobotCar](https://robotcar-dataset.robots.ox.ac.uk/): To be added, no label
 - [ ] [A*3D](https://arxiv.org/pdf/1909.07541.pdf): To be added
 - [ ] [WoodScape](https://github.com/valeoai/woodscape): To be added
@@ -20,6 +19,8 @@
 - [ ] [Pandaset](https://pandaset.org/): To be added
 - [ ] [CADC](http://cadcd.uwaterloo.ca/) ([github](https://github.com/mpitropov/cadc_devkit)): To be added
 - [ ] [Cirrus](https://arxiv.org/pdf/2012.02938.pdf)
+- [ ] [SemanticKITTI](http://www.semantic-kitti.org/): To be added
+- [ ] [vKITTI3D](https://github.com/VisualComputingInstitute/vkitti3D-dataset): To be added
 
 # Indoor datasets
 - [ ] [Objectron](https://github.com/google-research-datasets/Objectron): To be added
@@ -30,5 +31,4 @@
 - [ ] [CityScape](https://www.cityscapes-dataset.com/):
   - https://github.com/mcordts/cityscapesScripts
 - [ ] [BDD](https://bdd-data.berkeley.edu/): To be added
-- [ ] [SemanticKITTI](http://www.semantic-kitti.org/): To be added
-- [ ] [vKITTI](https://github.com/VisualComputingInstitute/vkitti3D-dataset): To be added
+- [ ] [IDD](http://idd.insaan.iiit.ac.in/): To be added

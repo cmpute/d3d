@@ -17,7 +17,7 @@ cdef class BaseMatcher:
         self._src_assignment.clear()
         self._dst_assignment.clear()
 
-    cpdef void prepare_boxes(self, Target3DArray src_boxes, Target3DArray dst_boxes, DistanceTypes distance_metric):
+    cpdef void prepare_boxes(self, Target3DArray src_boxes, Target3DArray dst_boxes, DistanceTypes distance_metric) except*:
         '''
         This method add two arrays of boxes and prepare related informations, it will also clean previous
         results.
@@ -35,6 +35,12 @@ cdef class BaseMatcher:
         # sometimes pre-calculate these values will be slower?
         cdef np.ndarray src_arr = src_boxes.to_numpy().astype(np.float32)
         cdef np.ndarray dst_arr = dst_boxes.to_numpy().astype(np.float32)
+
+        # prevent really weird boxes with unusual size
+        src_arr[:, 5:8] = np.clip(src_arr[:, 5:8], -1e3, 1e3)
+        dst_arr[:, 5:8] = np.clip(dst_arr[:, 5:8], -1e3, 1e3)
+
+        # calculate metrics
         if distance_metric == DistanceTypes.IoU:
             self._distance_cache = 1 - box2d_iou( # use 1-iou as distance
                 src_arr[:, [2,3,5,6,8]],
@@ -48,7 +54,7 @@ cdef class BaseMatcher:
         elif distance_metric == DistanceTypes.Position:
             self._distance_cache = cdist(src_arr[:, :3], dst_arr[:, :3], metric='euclidean').astype(np.float32)
 
-    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold):
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*:
         '''
         :param src_subset: Indices of source boxes to be considered
         :param dst_subset: Indices of destination boxes to be considered
@@ -103,7 +109,7 @@ cdef class BaseMatcher:
         return self._src_assignment.size()
 
 cdef class ScoreMatcher:
-    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold):
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*:
         # sort src boxes by their score, and sort dst boxes by its distance to src boxes
         cdef list src_list = src_subset, dst_list = dst_subset
         cdef list src_scores = [self._src_boxes.get(sidx).tag.scores[0] for sidx in src_subset]
@@ -126,7 +132,7 @@ cdef class ScoreMatcher:
         self.match_by_order(src_indices, dst_indices, distance_threshold)
 
 cdef class NearestNeighborMatcher:
-    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold):
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*:
         # sort the match pairs by distance
         cdef list src_list = src_subset, dst_list = dst_subset
         cdef np.ndarray distance_subset = np.asarray(self._distance_cache)[np.ix_(src_list, dst_list)]
@@ -147,7 +153,7 @@ cdef class NearestNeighborMatcher:
         self.match_by_order(src_indices, dst_indices, distance_threshold)
 
 cdef class HungarianMatcher:
-    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold):
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*:
         # split the input by categories
         cdef dict src_classes = {}, dst_classes = {}
         cdef int src_idx, dst_idx

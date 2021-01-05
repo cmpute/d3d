@@ -185,7 +185,7 @@ def load_sick_scan(basepath, file):
     return scan.reshape((-1, 2))
 
 
-def load_bboxes(basepath, file):
+def load_bboxes(basepath, file, estimate_velocity=True): # TODO: add velocity information
     """
     :param poses: if poses are provided, static objects will be filtered if it's out
         of visible_range

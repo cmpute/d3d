@@ -265,7 +265,7 @@ cdef class DetectionEvaluator:
         summary.acc_var = self._aggregate_stats(var_acc, gt_tags)
         return summary
 
-    cpdef void add_stats(self, DetectionEvalStats stats):
+    cpdef void add_stats(self, DetectionEvalStats stats) except*:
         '''
         Add statistics from calc_stats into database
         '''
@@ -686,7 +686,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
         summary.acc_var = self._aggregate_stats(var_acc, gt_tags)
         return summary
 
-    cpdef void add_stats(self, DetectionEvalStats stats):
+    cpdef void add_stats(self, DetectionEvalStats stats) except*:
         DetectionEvaluator.add_stats(self, stats)
         cdef TrackingEvalStats tstats = <TrackingEvalStats> stats
         cdef ull gt_tid, dt_tid

@@ -1,3 +1,5 @@
+# cython: language_level=3, embedsignature=True
+
 from libcpp.vector cimport vector
 cimport numpy as np
 

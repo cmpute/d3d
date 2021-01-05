@@ -51,8 +51,8 @@ class KeyFrameConverter:
         self.output_path = Path(output_path)
         self.zip_output = zip_output
         self.zip_compression = compression
-        self.merge_cloud = conversion_args.get('merger_cloud', 0) # TODO: merge previous cloud
-        self.estimate_velocity = conversion_args.get('estimate_velocity', False) # TODO: estimate velocity
+        self.store_inter = conversion_args.get('store_inter', 0) # TODO: merge previous cloud
+        self.estimate_velocity = conversion_args.get('estimate_velocity', False)
 
         # nuscenes tables
         self.sample_table = None # key frames
@@ -73,19 +73,20 @@ class KeyFrameConverter:
         self.temp_dir = None
         self.table_path = None
         self.sample_order = None # sample -> (scene token, order)
-        self.filename_table = None # filename -> (sample_data token, scene token, sensor name, order, file extension)
+        self.filename_table = None # filename -> (sample_data token, scene token, sensor name, order, file extension/full name)
         self.scene_sensor_table = None # scene -> calibrated_sensor
         self.scene_map_table = None # scene -> {map category: map file}
         self.ohandles = {} # scene -> scene directory or zipfile handle
         self.oscenes = set() # mark output scenes
         self.oframes = defaultdict(dict) # scene -> order -> (timestamp_dict, pose_dict)
+        self.oframes_inter = defaultdict(list) # (scene, order) -> [(sensor, rotation, translation, timestamp)]
 
     def _save_file(self, stoken, fname, data):
         if self.zip_output:
             self.ohandles[stoken].writestr(fname, data)
         else:
             ofile = self.ohandles[stoken] / fname
-            ofile.parent.mkdir(exist_ok=True)
+            ofile.parent.mkdir(exist_ok=True, parents=True)
             ofile.write_bytes(data)
 
     def _parse_scenes(self):
@@ -152,8 +153,6 @@ class KeyFrameConverter:
         self.filename_table = dict()
         self.scene_sensor_table = defaultdict(set)
         for token, data in self.sample_data_table.items():
-            if not data['is_key_frame']:
-                continue # only key frames are considered
 
             fname = data['filename']
             fname = fname[fname.rfind('/')+1:]
@@ -162,13 +161,46 @@ class KeyFrameConverter:
             sensor = self.calibrated_sensor_table[ctoken]['sensor_token']
             sensor = self.sensor_table[sensor]['channel'].lower()
             
-            self.filename_table[fname] = (token, scene, sensor, order, data['fileformat'])
-            if ctoken not in self.scene_sensor_table[scene]:
-                self.scene_sensor_table[scene].add(ctoken)
-            if self.lidarseg_table and token in self.lidarseg_table:
-                fname = self.lidarseg_table[token]['filename']
-                fname = fname[fname.rfind('/')+1:]
-                self.filename_table[fname] = (token, scene, sensor + '_seg', order, 'bin')
+            if data['is_key_frame']: # process key frames
+                # store output format
+                self.filename_table[fname] = (token, scene, sensor, order, data['fileformat'])
+
+                # store calibration object
+                if ctoken not in self.scene_sensor_table[scene]:
+                    self.scene_sensor_table[scene].add(ctoken)
+
+                # store lidar segmentation
+                if self.lidarseg_table and token in self.lidarseg_table:
+                    fname = self.lidarseg_table[token]['filename']
+                    fname = fname[fname.rfind('/')+1:]
+                    self.filename_table[fname] = (token, scene, sensor + '_seg', order, 'bin')
+
+            elif self.store_inter: # process intermediate frames
+                cur_data = data
+                counter = 0
+
+                # check if frame is with self.store_inter count range
+                while cur_data['next'] and counter < self.store_inter:
+                    cur_data = self.sample_data_table[cur_data['next']]
+                    counter += 1
+
+                    # found corresponding key frame
+                    if cur_data['is_key_frame']:
+                        # store output format
+                        packed_name = "%03d/%s-%d.%s" % (order, sensor, counter, data['fileformat'])
+                        self.filename_table[fname] = (token, scene, "intermediate", order, packed_name)
+
+                        # store metadata
+                        pose = self.ego_pose_table[data['ego_pose_token']]
+                        self.oframes_inter[(scene, order)].append(dict(
+                            file=packed_name[4:],
+                            sensor=sensor,
+                            rotation=pose['rotation'],
+                            translation=pose['translation'],
+                            timestamp=data['timestamp']
+                        ))
+
+                        break
 
     def _save_calibrations(self):
         for stoken, calib_tokens in self.scene_sensor_table.items():
@@ -199,6 +231,8 @@ class KeyFrameConverter:
             return t, r, ts
 
         # parse annotations from table
+        time_delta_threshold = 1.5
+        static_speed_threshold = 0.01
         for itoken, data in self.instance_table.items():
             cur = data['first_annotation_token']
             instance_id = hex(itoken)[2:]
@@ -231,10 +265,12 @@ class KeyFrameConverter:
                             t1, r1, ts1 = extract_rt(self.annotation_table[aprev] if aprev else adata)
                             t2, r2, ts2 = extract_rt(self.annotation_table[anext] if anext else adata)
                             dt = (ts2 - ts1) * 1e-6
-                            v = ((t2 - t1) / dt)
-                            w = ((r2 - r1) / dt)
-                            v[v < 1e-4] = 0 # gating values for static objects
-                            w[w < 1e-4] = 0
+                            if dt > time_delta_threshold: # gating differential time delta
+                                v = w = np.array([np.nan] * 3)
+                            else:
+                                v, w = (t2 - t1) / dt, (r2 - r1) / dt
+                                v[np.abs(v) < static_speed_threshold] = 0 # gating values for static objects
+                                w[np.abs(w) < static_speed_threshold] = 0
                         anno['velocity'] = v.tolist()
                         anno['angular_velocity'] = w.tolist()
 
@@ -327,15 +363,18 @@ class KeyFrameConverter:
                 fname = PurePath(tinfo.name).name
                 if fname not in self.filename_table:
                     continue
+                token, scene, sensor, order, ext = self.filename_table[fname]
 
                 # dealing with duplicates in mini and trainval blobs
-                token, scene, sensor, order, ext = self.filename_table[fname]
                 if sensor.endswith("seg") and self.phase not in tinfo.name:
                     continue
 
                 # save sample data
                 data = blob_file.extractfile(tinfo).read()
-                self._save_file(scene, "%s/%03d.%s" % (sensor, order, ext), data)
+                if sensor == 'intermediate':
+                    self._save_file(scene, "intermediate/%s" % ext, data)
+                else:
+                    self._save_file(scene, "%s/%03d.%s" % (sensor, order, ext), data)
 
                 # tag the scene to be filled
                 if scene not in self.oscenes:
@@ -385,6 +424,14 @@ class KeyFrameConverter:
                                     for k, v in poses.items()}
                         handle.writestr("timestamp/%03d.json" % i, json.dumps(timestamps).encode())
                         handle.writestr("pose/%03d.json" % i, json.dumps(poses).encode())
+
+                        # sort and save intermediate table
+                        inter_table = defaultdict(list)
+                        for item in self.oframes_inter[(scene, i)]:
+                            sensor = item.pop('sensor')
+                            inter_table[sensor].append(item)
+                        if self.store_inter:
+                            handle.writestr("intermediate/%03d/meta.json" % i, json.dumps(inter_table).encode())
                     handle.close()
 
         else:
@@ -410,6 +457,14 @@ class KeyFrameConverter:
                                     for k, v in poses.items()}
                         self._save_file(scene, "timestamp/%03d.json" % i, json.dumps(timestamps).encode())
                         self._save_file(scene, "pose/%03d.json" % i, json.dumps(poses).encode())
+
+                        # sort and save intermediate table
+                        inter_table = defaultdict(list)
+                        for item in self.oframes_inter[(scene, i)]:
+                            sensor = item.pop('sensor')
+                            inter_table[sensor].append(item)
+                        if self.store_inter:
+                            self._save_file(scene, "intermediate/%03d/meta.json" % i, json.dumps(inter_table).encode())
 
     def convert(self, debug=False):
         try:
@@ -492,9 +547,9 @@ def main():
         help='Run the script in debug mode, only convert part of the tarballs')
     parser.add_argument('-m', '--mini', action="store_true",
         help="Only convert the mini dataset")
-    parser.add_argument('--merge-point-cloud', dest="merge_cloud", type=int, default=0,
-        help="Merge point cloud data before key frames with given numbers. Disabled by default.")
-    parser.add_argument('--estimate-box-velocity', dest="estimate_velocity", action="store_true",
+    parser.add_argument('-i', '--store-intermediate-frames', dest="store_inter", type=int, default=0,
+        help="Store certain number of intermediate frames before key frames. Disabled by default.")
+    parser.add_argument('-v', '--estimate-box-velocity', dest="estimate_velocity", action="store_true",
         help="Estimate velocity of bounding boxes. Disabled by default")
     parser.add_argument('-z', '--zip', action="store_true",
         help="Convert the result into zip files rather than flat directory")
@@ -502,7 +557,7 @@ def main():
         help="Choose zip compression type")
     args = parser.parse_args()
 
-    conversion_args = dict(merge_cloud = args.merge_cloud, estimate_velocity=args.estimate_velocity)
+    conversion_args = dict(store_inter = args.store_inter, estimate_velocity=args.estimate_velocity)
     convert_dataset_inpath(args.input, args.output or args.input,
         debug=args.debug, mini=args.mini,
         zip_output=args.compression if args.zip else False, **conversion_args)

@@ -146,7 +146,7 @@ class DetectionDatasetBase(DatasetBase):
         '''
         Return the lidar point cloud data
 
-        :param names: name of requested lidar frames
+        :param names: name of requested lidar frames. The default frame is the first element in VALID_LIDAR_NAMES.
         :param idx: index of requested lidar frames
         '''
         raise NotImplementedError("abstract function")
@@ -158,8 +158,8 @@ class DetectionDatasetBase(DatasetBase):
         '''
         Return the camera image data
 
+        :param names: name of requested image frames. The default frame is the first element in VALID_CAM_NAMES.
         :param idx: index of requested image frames
-        :param names: name of requested image frames
         '''
         raise NotImplementedError("abstract function")
 
@@ -230,8 +230,8 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         If multiple frames are requested, the results will be a list of list. Outer list corresponds to frame names and inner
             list corresponds to time sequence. So names * frames data objects will be returned
-
-        :param names: name of requested lidar frames
+\
+        :param names: name of requested lidar frames. The default frame is the first element in VALID_LIDAR_NAMES.
         :param idx: index of requested lidar frames
                     if single index is given, then the frame indexing is done on the whole dataset with trainval split
                     if tuple of two integers is given, then first is the sequence index and the second is the frame index,
@@ -246,7 +246,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         Return the camera image data
 
-        :param names: name of requested image frames
+        :param names: name of requested image frames. The default frame is the first element in VALID_CAM_NAMES.
         :param idx: index of requested lidar frames
         '''
         raise NotImplementedError("abstract function")

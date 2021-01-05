@@ -237,6 +237,14 @@ class NuscenesLoader(TrackingDatasetBase):
     def __len__(self):
         return len(self.frames)
 
+    @property
+    def sequence_ids(self):
+        return list(self._metadata.keys())
+
+    @property
+    def sequence_sizes(self):
+        return {k: v.nbr_samples for k, v in self._metadata.items()}
+
     def _locate_frame(self, idx):
         # use underlying frame index
         idx = self.frames[idx]
@@ -324,7 +332,7 @@ class NuscenesLoader(TrackingDatasetBase):
 
             # create object
             if with_velocity:
-                v = label.velocity
+                v = np.dot(ego_r.inv().as_matrix(), label.velocity)
                 w = label.angular_velocity
                 target = TrackingTarget3D(rel_t, rel_r, size, v, w, tag, tid=tid)
                 outputs.append(target)
@@ -356,9 +364,19 @@ class NuscenesLoader(TrackingDatasetBase):
 
     @expand_idx
     def metadata(self, idx):
-        seq_id, _ = idx
+        seq_id, frame_idx = idx
         assert not self._return_file_path, "The metadata is not in a single file!"
-        return self._metadata[seq_id]
+
+        meta = self._metadata[seq_id]
+        return edict(
+            scene_description=meta.description,
+            scene_token=meta.token,
+            sample_token=meta.sample_tokens[frame_idx],
+            logfile=meta.logfile,
+            date_captured=meta.date_captured,
+            vehicle=meta.vehicle,
+            location=meta.location
+        )
 
     @expand_idx
     def calibration_data(self, idx):

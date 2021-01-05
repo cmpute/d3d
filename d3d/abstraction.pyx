@@ -665,7 +665,6 @@ cdef class TransformSet:
         for obj in objects:
             position = np.dot(r.as_matrix(), obj.position) + t
             orientation = r * obj.orientation
-            # TODO: also rotate the velocity
 
             if isinstance(obj, TrackingTarget3D): # notice that TrackingTarget3D derives from ObjectTarget3D
                 velocity = np.dot(r.as_matrix(), obj.velocity)

@@ -13,18 +13,18 @@ cdef class BaseMatcher:
     cdef unordered_map[int, int] _src_assignment, _dst_assignment
 
     cpdef void clear_match(self)
-    cpdef void prepare_boxes(self, Target3DArray src_boxes, Target3DArray dst_boxes, DistanceTypes distance_metric)
-    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold)
+    cpdef void prepare_boxes(self, Target3DArray src_boxes, Target3DArray dst_boxes, DistanceTypes distance_metric) except*
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*
     cdef void match_by_order(self, vector[int]& src_order, vector[int]& dst_order, unordered_map[int, float]& distance_threshold)
     cpdef int query_src_match(self, int src_idx)
     cpdef int query_dst_match(self, int dst_idx)
     cpdef int num_of_matches(self)
 
 cdef class ScoreMatcher(BaseMatcher):
-    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold)
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*
 
 cdef class NearestNeighborMatcher(BaseMatcher):
-    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold)
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*
 
 cdef class HungarianMatcher(BaseMatcher):
-    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold)
+    cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*
