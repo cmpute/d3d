@@ -430,6 +430,8 @@ class KeyFrameConverter:
                         for item in self.oframes_inter[(scene, i)]:
                             sensor = item.pop('sensor')
                             inter_table[sensor].append(item)
+                        for items in inter_table.values():
+                            items.sort(key=lambda item: item['timestamp'], reverse=True) # lastest to old frames
                         if self.store_inter:
                             handle.writestr("intermediate/%03d/meta.json" % i, json.dumps(inter_table).encode())
                     handle.close()
@@ -463,6 +465,8 @@ class KeyFrameConverter:
                         for item in self.oframes_inter[(scene, i)]:
                             sensor = item.pop('sensor')
                             inter_table[sensor].append(item)
+                        for items in inter_table.values():
+                            items.sort(key=lambda item: item['timestamp'], reverse=True) # lastest to old frames
                         if self.store_inter:
                             self._save_file(scene, "intermediate/%03d/meta.json" % i, json.dumps(inter_table).encode())
 

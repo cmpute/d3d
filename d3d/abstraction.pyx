@@ -464,8 +464,9 @@ class EgoPose:
         matrix`Rx+T`.
         '''
         arr = np.eye(4)
-        arr[:3, :3] = self.orientation.as_matrix()
-        arr[:3, 3] = self.orientation.as_matrix().dot(self.position)
+        r = self.orientation.as_matrix()
+        arr[:3, :3] = r
+        arr[:3, 3] = r.dot(self.position)
         return arr
 
     def __repr__(self):

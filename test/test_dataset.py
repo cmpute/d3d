@@ -322,26 +322,16 @@ class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTracking
         labels = np.load(os.path.join(kitti360_location, "data_3d_semantics", seq, "indexed", "%010d.npz" % idx))
         color_cloud = pcl.create_xyzrgb(np.concatenate([cloud[:, :3], labels["rgb"].view('4u1')[:,:3]], axis=1))
 
-        def create_xyzl(data):
-            data = np.array(data, copy=False)
-            if data.shape[-1] != 4:
-                raise ValueError("Each point should contain 4 values")
-
-            dt = np.dtype(dict(names=['x','y','z','label'], formats=['f4','f4','f4','u4'], offsets=[0,4,8,16], itemsize=20))
-            arr = np.empty(len(data), dtype=dt)
-            arr['x'], arr['y'], arr['z'], arr['label'] = data[:,0], data[:,1], data[:,2], data[:,3]
-            return pcl.PointCloud(arr, 'XYZL')
-
-        semantic_cloud = create_xyzl(np.concatenate([cloud[:, :3], labels["semantic"].reshape(-1,1)], axis=1))
-        instance_cloud = create_xyzl(np.concatenate([cloud[:, :3], labels["instance"].reshape(-1,1)], axis=1))
+        semantic_cloud = pcl.create_xyzl(np.concatenate([cloud[:, :3], labels["semantic"].reshape(-1,1)], axis=1))
+        instance_cloud = pcl.create_xyzl(np.concatenate([cloud[:, :3], labels["instance"].reshape(-1,1)], axis=1))
         distance = os.path.join(kitti360_location, "data_3d_semantics", seq, "indexed", "%010d.dist.npy" % idx)
         distance = np.load(distance)
         print("Index:", idx, ", MAX distance", np.max(distance))
         distance_cloud = pcl.create_xyzi(np.concatenate([cloud[:, :3], distance.reshape(-1,1)], axis=1))
 
         # gt = pcl.io.load_ply("/media/jacob/Storage/Datasets/kitti360/data_3d_semantics/2013_05_28_drive_0000_sync/static/000834_001286.ply")
-        # semantic_cloud = create_xyzl(np.concatenate([gt.xyz, gt.to_ndarray()['semantic'].reshape(-1, 1)], axis=1))
-        # instance_cloud = create_xyzl(np.concatenate([gt.xyz, gt.to_ndarray()['instance'].reshape(-1, 1)], axis=1))
+        # semantic_cloud = pcl.create_xyzl(np.concatenate([gt.xyz, gt.to_ndarray()['semantic'].reshape(-1, 1)], axis=1))
+        # instance_cloud = pcl.create_xyzl(np.concatenate([gt.xyz, gt.to_ndarray()['instance'].reshape(-1, 1)], axis=1))
 
         pcl.io.save_pcd("instance.pcd", instance_cloud, binary=True)
         pcl.io.save_pcd("semantic.pcd", semantic_cloud, binary=True)

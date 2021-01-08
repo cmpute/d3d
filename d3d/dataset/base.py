@@ -261,6 +261,16 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
+    def intermediate_data(self, idx: Union[int, tuple], names: Optional[Union[str, List[str]]] = None, ninter_frames=1):
+        '''
+        Return the intermediate data between keyframes. For key frames data, please use lidar_data or camera_data to load them
+
+        :param idx: index of requested data frames
+        :param names: name of requested data frames.
+        :param ninter_frames: number of intermediate frames. If set to None, then all frames will be returned.
+        '''
+        return []
+
     def annotation_3dobject(self, idx: Union[int, tuple], raw: Optional[bool] = False) -> Union[Target3DArray, List[Target3DArray]]:
         '''
         Return list of converted ground truth targets in lidar frame.

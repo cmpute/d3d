@@ -260,13 +260,7 @@ class NuscenesLoader(TrackingDatasetBase):
         # TODO(v0.5): see https://jdhao.github.io/2019/02/23/crop_rotated_rectangle_opencv/ for image cropping
         raise NotImplementedError()
 
-    @expand_idx_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='lidar_top'):
-        seq_id, frame_idx = idx
-        fname = "lidar_top/%03d.pcd" % frame_idx
-        if self._return_file_path:
-            return self.base_path / seq_id / fname
-
+    def _load_lidar_data(self, seq_id, fname):
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 buffer = ar.read(fname)
@@ -275,21 +269,77 @@ class NuscenesLoader(TrackingDatasetBase):
 
         scan = np.frombuffer(buffer, dtype=np.float32)
         scan = np.copy(scan.reshape(-1, 5)) # (x, y, z, intensity, ring index)
-
         return scan
+
+    @expand_idx_name(VALID_LIDAR_NAMES)
+    def lidar_data(self, idx, names='lidar_top'):
+        seq_id, frame_idx = idx
+        fname = "lidar_top/%03d.pcd" % frame_idx
+
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+        else:
+            return self._load_lidar_data(seq_id, fname)
+
+    def _load_camera_data(self, seq_id, fname):
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+                return Image.open(ar.open(fname)).convert('RGB')
+        else:
+            return Image.open(self.base_path / seq_id / fname)
 
     @expand_idx_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names=None):
         seq_id, frame_idx = idx
         fname = "%s/%03d.jpg" % (names, frame_idx)
+
         if self._return_file_path:
             return self.base_path / seq_id / fname
+        else:
+            return self._load_camera_data(seq_id, fname)
 
+    @expand_idx_name(VALID_CAM_NAMES + VALID_LIDAR_NAMES)
+    def intermediate_data(self, idx, names=None, ninter_frames=1):
+        seq_id, frame_idx = idx
+        fname = "intermediate/%03d/meta.json" % frame_idx
+
+        # Load meta json
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
-                return Image.open(ar.open(fname)).convert('RGB')
+                meta = json.loads(ar.read(fname))
         else:
-            Image.open(self.base_path / seq_id / fname)
+            with (self.base_path / seq_id / fname).open() as fin:
+                meta = json.load(fin)
+        if not meta:
+            return []
+
+        # Select frames
+        if ninter_frames is None:
+            meta = [edict(item) for item in meta[names]]
+        else:
+            meta = [edict(item) for item in meta[names][:ninter_frames]]
+
+        # parse pose part
+        for item in meta:
+            rotation = item.pop("rotation")
+            rotation = Rotation.from_quat(rotation[1:] + [rotation[0]])
+            translation = item.pop("translation")
+            translation = rotation.inv().as_matrix().dot(translation)
+            item.pose = EgoPose(translation, rotation)
+
+        if self._return_file_path:
+            for item in meta:
+                item.file = self.base_path / seq_id / "intermediate" / f"{frame_idx:03}" / item.file
+            return meta
+
+        # Load actual data
+        for item in meta:
+            fname = "intermediate/%03d/%s" % (frame_idx, item.pop("file"))
+            if names in self.VALID_CAM_NAMES:
+                item.data = self._load_camera_data(seq_id, fname)
+            else: # names in VALID_LIDAR_NAMES:
+                item.data = self._load_lidar_data(seq_id, fname)
+        return meta
 
     @expand_idx
     def annotation_3dobject(self, idx, raw=False, convert_tag=True, with_velocity=True):
@@ -311,6 +361,7 @@ class NuscenesLoader(TrackingDatasetBase):
         # parse annotations
         ego_pose = self.pose(idx, bypass=True)
         ego_r, ego_t = ego_pose.orientation, ego_pose.position
+        ego_t = ego_r.as_matrix().dot(ego_t) # convert to original representation
         outputs = Target3DArray(frame="ego")
         for label in labels:
             # convert tags
@@ -445,5 +496,5 @@ class NuscenesLoader(TrackingDatasetBase):
 
         data = data[names]
         r = Rotation.from_quat(data['rotation'][1:] + [data['rotation'][0]])
-        t = np.array(data['translation'])
+        t = r.inv().as_matrix().dot(np.array(data['translation']))
         return EgoPose(t, r)
