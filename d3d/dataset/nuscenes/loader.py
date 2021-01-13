@@ -89,6 +89,46 @@ class NuscenesObjectClass(IntFlag):
     @classmethod
     def parse(cls, string):
         return cls[string.replace('.', '_')]
+    @classmethod
+    def _get_nuscenes_id_table(cls):
+        return [
+            cls.noise, # 0
+            cls.vehicle_car,
+            cls.vehicle_truck,
+            cls.vehicle_bus_bendy,
+            cls.vehicle_bus_rigid,
+            cls.vehicle_construction, # 5
+            cls.vehicle_motorcycle,
+            cls.vehicle_bicycle,
+            cls.static_object_bicycle_rack,
+            cls.vehicle_trailer,
+            cls.vehicle_emergency_police, # 10
+            cls.vehicle_emergency_ambulance,
+            cls.human_pedestrian_adult,
+            cls.human_pedestrian_child,
+            cls.human_pedestrian_construction_worker,
+            cls.human_pedestrian_stroller, # 15
+            cls.human_pedestrian_wheelchair,
+            cls.human_pedestrian_personal_mobility,
+            cls.human_pedestrian_police_officer,
+            cls.animal,
+            cls.movable_object_trafficcone, # 20
+            cls.movable_object_barrier,
+            cls.movable_object_pushable_pullable,
+            cls.movable_object_debris,
+            cls.flat_driveable_surface,
+            cls.flat_sidewalk, # 25
+            cls.flat_terrain,
+            cls.flat_other,
+            cls.static_manmade,
+            cls.static_vegetation,
+            cls.static_other, # 30
+            cls.vehicle_ego,
+        ]
+
+    @classmethod
+    def from_nuscenes_id(cls, nid):
+        return cls._get_nuscenes_id_table()[nid]
 
     @property
     def category(self):
@@ -393,8 +433,9 @@ class NuscenesLoader(TrackingDatasetBase):
 
         return outputs
 
-    @expand_idx
-    def annotation_3dpoints(self, idx, raw=False):
+    @expand_idx_name(VALID_LIDAR_NAMES)
+    def annotation_3dpoints(self, idx, names='lidar_top', raw=False):
+        assert names == 'lidar_top'
         seq_id, frame_idx = idx
 
         fname = "lidar_top_seg/%03d.bin" % frame_idx
