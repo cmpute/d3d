@@ -461,3 +461,5 @@ class NumberPool:
 
     def join(self):
         self._ppool.join()
+
+    # TODO: add imap function and support progress bar for imap

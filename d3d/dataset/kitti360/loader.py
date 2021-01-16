@@ -2,6 +2,7 @@ import logging
 import shutil
 import tempfile
 import time
+from bisect import bisect_right
 from collections import OrderedDict
 from io import BytesIO
 from itertools import chain
@@ -10,6 +11,7 @@ from zipfile import ZipFile
 
 import numpy as np
 import tqdm
+from addict import Dict as edict
 from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
 from d3d.dataset.base import (NumberPool, TrackingDatasetBase, check_frames,
@@ -61,7 +63,6 @@ class KITTI360Loader(TrackingDatasetBase):
     VALID_CAM_NAMES = ['cam1', 'cam2', 'cam3', 'cam4'] # cam 1,2 are persective
     VALID_LIDAR_NAMES = ['velo'] # velo stands for velodyne
     VALID_OBJ_CLASSES = Kitti360Class
-    # TODO: add 'sick' frame to the list after the loader for sick points is completed
 
     FRAME_PATH_MAP = dict(
         sick=("data_3d_raw", "sick_points"    , "data"     , "data_timestamps_sick.zip"),
@@ -73,12 +74,13 @@ class KITTI360Loader(TrackingDatasetBase):
     )
 
     def __init__(self, base_path, phase="training", inzip=False,
-                 trainval_split=1, trainval_random=False, nframes=0):
+                 trainval_split=1, trainval_random=False, nframes=0, interpolate_pose=True):
         """
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders
-        :param visible_range: range for visible objects. Objects beyond that distance will be removed when reporting
         """
+        super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
+                         trainval_split=trainval_split, trainval_random=trainval_random)
 
         if phase not in ['training', 'validation', 'testing']:
             raise ValueError("Invalid phase tag")
@@ -87,6 +89,7 @@ class KITTI360Loader(TrackingDatasetBase):
         self.inzip = inzip
         self.phase = phase
         self.nframes = nframes
+        self.interpolate_pose = interpolate_pose
 
         # count total number of frames
         frame_count = dict()
@@ -113,7 +116,7 @@ class KITTI360Loader(TrackingDatasetBase):
                     break
         else:
             _folders = [
-                # ("data_3d_raw", "sick_points", "data"), # SICK points are out of synchronization
+                # ("data_3d_raw", "sick_points", "data"),
                 ("data_3d_raw", "velodyne_points", "data"),
                 ("data_2d_raw", "image_00", "data_rect"),
                 ("data_2d_raw", "image_01", "data_rect"),
@@ -191,37 +194,25 @@ class KITTI360Loader(TrackingDatasetBase):
 
     @expand_idx_name(['velo'])
     def lidar_data(self, idx, names='velo'):
+        assert names == 'velo'
         seq_id, frame_idx = idx
-        
-        if names == "velo":
-            # load velodyne points
-            fname = Path(seq_id, "velodyne_points", "data", '%010d.bin' % frame_idx)
-            if self._return_file_path:
-                return self.base_path / "data_3d_raw" / fname
 
-            if self.inzip:
-                with PatchedZipFile(self.base_path / f"{seq_id}_velodyne.zip", to_extract=fname) as source:
-                    return load_velo_scan(source, fname)
-            else:
-                return load_velo_scan(self.base_path / "data_3d_raw", fname)
+        # load velodyne points
+        fname = Path(seq_id, "velodyne_points", "data", '%010d.bin' % frame_idx)
+        if self._return_file_path:
+            return self.base_path / "data_3d_raw" / fname
 
-        elif names == "sick":
-            # TODO: sick data is not supported due to synchronization issue currently
-            #       official way to accumulate SICK data is by linear interpolate between adjacent point clouds
-            fname = Path(seq_id, "sick_points", "data", '%010d.bin' % frame_idx)
-            if self._return_file_path:
-                return self.base_path / "data_3d_raw" / fname
-
-            if self.inzip:
-                with PatchedZipFile(self.base_path / f"{seq_id}_sick.zip", to_extract=fname) as source:
-                    return load_sick_scan(source, fname)
-            else:
-                return load_sick_scan(self.base_path / "data_3d_raw", fname)
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}_velodyne.zip", to_extract=fname) as source:
+                return load_velo_scan(source, fname)
+        else:
+            return load_velo_scan(self.base_path / "data_3d_raw", fname)
             
     def _preload_3dobjects(self, seq_id):
         assert self.phase in ["training", "validation"], "Testing set doesn't contains label"
         if seq_id in self._3dobjects_mapping:
             return
+        assert seq_id in self.sequence_ids
 
         fname = Path("data_3d_bboxes", "train", f"{seq_id}.xml")
         if self.inzip:
@@ -235,6 +226,9 @@ class KITTI360Loader(TrackingDatasetBase):
 
     @expand_idx
     def annotation_3dobject(self, idx, raw=False, visible_range=80): # TODO: it seems that dynamic objects need interpolation
+        '''
+        :param visible_range: range for visible objects. Objects beyond that distance will be removed when reporting
+        '''
         assert not self._return_file_path, "The annotation is not in a single file!"
         seq_id, frame_idx = idx
         self._preload_3dobjects(seq_id)
@@ -321,7 +315,6 @@ class KITTI360Loader(TrackingDatasetBase):
         return self._calibration
 
     # TODO: fix the points (with large distance?) with bounding box
-    # TODO: support sick points
     def _parse_semantic_ply(self, ntqdm, seq: str, fname: Path, dynamic: bool, result_path: Path, expand_frames: int):
         # match point cloud in aggregated semantic point clouds
         import pcl
@@ -341,139 +334,188 @@ class KITTI360Loader(TrackingDatasetBase):
         idmap = np.zeros(max(id2label.keys()) + 1, dtype='u1')
         for i in range(len(idmap)):
             idmap[i] = id2label[i].name.value
-        
+
+        # load semantics for static points
         if dynamic:
             timestamps = semantics.to_ndarray()['timestamp'].flatten()
         else:
             tree = KDTree(semantics.xyz)
 
+        # iterate all semantic label files
         for i in tqdm.trange(fstart, fend, desc=frame_desc, position=ntqdm, leave=False):
-            cloud = self.lidar_data((seq, i), names="velo", bypass=True)
-            cloud = self._calibration.transform_points(cloud[:, :3], frame_to="pose", frame_from="velo")
-            cloud = cloud.dot(self._poses_r[seq][i].as_matrix().T) + self._poses_t[seq][i]
-
+            # load semantics for dynamic points
             if dynamic:
                 cur_semantics = semantics[timestamps == i]
                 if len(cur_semantics) == 0:
                     continue
                 tree = KDTree(cur_semantics.xyz)
-                distance, sidx = tree.query(cloud[:, :3], return_distance=True)
-                selected = cur_semantics.to_ndarray()[sidx]
             else:
-                distance, sidx = tree.query(cloud[:, :3], return_distance=True)
-                selected = semantics.to_ndarray()[sidx]
-            distance = distance.flatten()
+                cur_semantics = semantics
 
-            rgb = selected["rgb"].flatten()
-            slabels = selected["semantic"].flatten()
-            slabels = idmap[slabels]
-            ilabels = selected["instance"].flatten().astype('u2')
-            visible = selected["visible"].flatten().astype(bool)
+            def update_semantics(cloud, name, idx):
+                label_path = result_path / name / ("%010d.npz" % idx)
+                dist_path = result_path / name / ("%010d.dist.npy" % idx)
+                lock_path = FileLock(result_path / name / ("%010d.lock" % idx))
 
-            label_path = result_path / ("%010d.npz" % i)
-            dist_path = result_path / ("%010d.dist.npy" % i)
-            lock_path = FileLock(result_path / ("%010d.lock" % i))
-            
-            with lock_path:
-                if dist_path.exists():
-                    old_distance = np.load(dist_path)
-                    update_mask = (distance < old_distance)
-                    distance = np.where(update_mask, distance, old_distance)
+                # deal with empty (sick cloud)
+                if len(cloud) == 0:
+                    np.savez(label_path,
+                        rgb=np.array([], dtype='u1').reshape(0, 3),
+                        semantic=np.array([], dtype='u1'),
+                        instance=np.array([], dtype='u2'),
+                        visible=np.array([], dtype=bool))
+                    np.save(dist_path, np.array([]))
+                    return
 
-                    old_labels = np.load(label_path)
-                    rgb = np.where(update_mask, rgb, old_labels['rgb'])
-                    slabels = np.where(update_mask, slabels, old_labels["semantic"])
-                    ilabels = np.where(update_mask, ilabels, old_labels["instance"])
-                    visible = np.where(update_mask, visible, old_labels["visible"])
+                # match point cloud
+                distance, sidx = tree.query(cloud, return_distance=True)
+                selected = cur_semantics.to_ndarray()[sidx]
+                distance = distance.flatten()
 
-                np.savez(label_path, rgb=rgb, semantic=slabels, instance=ilabels, visible=visible)
-                np.save(dist_path, distance)
+                # fetch labels from nearest points
+                rgb = selected["rgb"].flatten().view('4u1')[:,:3]
+                slabels = selected["semantic"].flatten()
+                slabels = idmap[slabels]
+                ilabels = selected["instance"].flatten().astype('u2')
+                visible = selected["visible"].flatten()
 
-    def _preload_3dsemantics(self, seq, nworkers=7, expand_frames=150):
+                # update saved labels
+                with lock_path:
+                    if dist_path.exists():
+                        old_distance = np.load(dist_path)
+                        update_mask = (distance < old_distance)
+                        distance = np.where(update_mask, distance, old_distance)
+
+                        old_labels = np.load(label_path)
+                        old_visible = np.unpackbits(old_labels["visible"], count=len(cloud))
+                        rgb = np.where(update_mask.reshape(-1, 1), rgb, old_labels['rgb'])
+                        slabels = np.where(update_mask, slabels, old_labels["semantic"])
+                        ilabels = np.where(update_mask, ilabels, old_labels["instance"])
+                        visible = np.where(update_mask, visible, old_visible)
+
+                    np.savez(label_path, rgb=rgb, semantic=slabels, instance=ilabels,
+                                         visible=np.packbits(visible))
+                    np.save(dist_path, distance)
+
+            # load and transform velodyne points
+            cloud = self.lidar_data((seq, i), names="velo", bypass=True)
+            cloud = self._calibration.transform_points(cloud[:, :3], frame_to="pose", frame_from="velo")
+            cloud = cloud.dot(self._poses_r[seq][i].as_matrix().T) + self._poses_t[seq][i]
+            update_semantics(cloud, 'velodyne', i)
+ 
+            # load and transform sick points
+            for item in self.intermediate_data((seq, i), names="sick", ninter_frames=None, report_semantic=False):
+                cloud = np.insert(item.data, 2, 0, axis=1)
+                cloud = self._calibration.transform_points(cloud, frame_to="pose", frame_from="sick")
+                cloud = cloud.dot(item.pose.orientation.as_matrix().T) + item.pose.position
+                update_semantics(cloud, 'sick', item.index)
+
+    def _preload_3dsemantics(self, seq, nworkers=7, expand_frames=150, stats_error=False):
         """
         This method will convert the combined semantic point cloud back in to frames
 
         expand_frames: number of expanded frames to be considered based on original sequence split
             Better painting results will be generated with larger expansion, but it will be slower
         """
+        assert seq in self.sequence_ids
+
         if self.inzip:
-            if (self.base_path / "data_3d_semantics_indexed.zip").exists():
+            if (self.base_path / f"{seq}_semantics.zip").exists():
                 return
             result_path = Path(tempfile.mkdtemp())
             data_path = Path(tempfile.mkdtemp())
         else:
-            result_path = self.base_path / "data_3d_semantics" / seq / "indexed"
+            result_path = self.base_path / "data_3d_semantics" / seq
             data_path = self.base_path
-            if result_path.exists():
+            if (result_path / 'velodyne').exists():
                 return
-            result_path.mkdir()
+        velo_path = (result_path / 'velodyne')
+        sick_path = (result_path / 'sick')
+        velo_path.mkdir()
+        sick_path.mkdir()
 
-        _logger.info("Converting 3d semantic labels for sequence %s...", seq)
-        tstart = time.time()
+        try:
+            if self.inzip:
+                _logger.info("Extracting semantic labels of %s to %s...", seq, data_path)
+                with ZipFile(self.base_path / "data_3d_semantics.zip") as archive:
+                    files = [info for info in archive.infolist()
+                                if info.filename.startswith("data_3d_semantics/" + seq)
+                                and not info.is_dir()]
+                    for info in tqdm.tqdm(files, desc="Extracing semantic labels", leave=False):
+                        archive.extract(info, data_path)
 
-        # load poses for aligning point cloud
-        self._preload_poses(seq)
+            _logger.info("Converting 3d semantic labels for sequence %s...", seq)
+            tstart = time.time()
 
-        pool = NumberPool(nworkers)
-        for fspan in (data_path / "data_3d_semantics" / seq / "static").iterdir():
-            if fspan.suffix != ".ply":
-                continue
-            pool.apply_async(self._parse_semantic_ply, (seq, fspan, False, result_path, expand_frames))
-        for fspan in (data_path / "data_3d_semantics" / seq / "dynamic").iterdir():
-            if fspan.suffix != ".ply":
-                continue
-            pool.apply_async(self._parse_semantic_ply, (seq, fspan, True, result_path, expand_frames))
-        pool.close()
-        pool.join()
-        tend = time.time()
-        _logger.info("Conversion finished, consumed time: %.4fs", tend - tstart)
+            # load poses for aligning point cloud
+            self._preload_poses(seq)
 
-        # statistics on distance error
-        total_points = 0
-        unmatched_points = 0
-        for f in result_path.iterdir():
-            if f.suffix == ".npy":
-                d = np.load(f)
-                total_points += len(d)
-                unmatched_points += np.sum(d > 5)
-        _logger.debug("Unmatched ratio (distance > 5): %.2f%", unmatched_points / total_points * 100)
+            pool = NumberPool(nworkers)
+            for fspan in (data_path / "data_3d_semantics" / seq / "static").glob("*.ply"):
+                pool.apply_async(self._parse_semantic_ply, (seq, fspan, False, result_path, expand_frames))
+            for fspan in (data_path / "data_3d_semantics" / seq / "dynamic").glob("*.ply"):
+                pool.apply_async(self._parse_semantic_ply, (seq, fspan, True, result_path, expand_frames))
+            pool.close()
+            pool.join()
+            tend = time.time()
+            _logger.info("Conversion finished, consumed time: %.4fs", tend - tstart)
 
-        # clean up
-        if self.inzip:
-            _logger.info("Saving indexed semantic labels...")
-            with ZipFile(self.base_path / "data_3d_semantics_indexed.zip", "w") as archive:
-                for f in result_path.iterdir():
-                    if f.suffix != ".npz":
-                        continue
-                    archive.write(f, f"data_3d_semantics/{seq}/indexed/{f.name}")
+            # statistics on distance error
+            if stats_error:
+                total_points = unmatched_points = 0
+                for f in tqdm.tqdm(list(velo_path.glob("*.dist.npy")), desc="Revisiting velodyne distance arrays", leave=False):
+                    d = np.load(f)
+                    total_points += len(d)
+                    unmatched_points += np.sum(d > 5)
+                _logger.debug("Velodyne unmatched ratio (distance > 5): %.2f", unmatched_points / total_points * 100)
 
-            # remove temporary files
-            shutil.rmtree(result_path)
-            shutil.rmtree(data_path)
-            
-        else:
-            # remove distance files
-            for f in list(result_path.iterdir()):
-                if f.suffix == ".npy" or f.suffix == ".lock":
-                    f.unlink()
-        _logger.debug("Conversion clean up finished!")
+                total_points = unmatched_points = 0
+                for f in tqdm.tqdm(list(sick_path.glob("*.dist.npy")), desc="Revisiting sick distance arrays", leave=False):
+                    d = np.load(f)
+                    total_points += len(d)
+                    unmatched_points += np.sum(d > 5)
+                _logger.debug("Sick unmatched ratio (distance > 5): %.2f", unmatched_points / total_points * 100)
 
+            # save results into zipfile
+            if self.inzip:
+                _logger.info("Saving indexed semantic labels...")
+                with ZipFile(self.base_path / f"{seq}_semantics.zip", "w") as archive:
+                    for f in velo_path.glob("*.npz"):
+                        archive.write(f, f"data_3d_semantics/{seq}/velodyne/{f.name}")
+                    for f in sick_path.glob("*.npz"):
+                        archive.write(f, f"data_3d_semantics/{seq}/sick/{f.name}")
+
+        finally:
+            # clean up
+            if self.inzip:
+                # remove temporary files
+                shutil.rmtree(result_path)
+                shutil.rmtree(data_path)
+            else:
+                # remove distance files
+                for f in (list(velo_path.iterdir()) + list(sick_path.iterdir())):
+                    if f.suffix == ".npy" or f.suffix == ".lock":
+                        f.unlink()
+            _logger.debug("Conversion clean up finished!")
 
     @expand_idx
     def annotation_3dpoints(self, idx):
         seq_id, frame_idx = idx
         self._preload_3dsemantics(seq_id)
         
-        fname = Path("data_3d_semantics", seq_id, "indexed", "%010d.npz" % frame_idx)
+        fname = Path("data_3d_semantics", seq_id, "velodyne", "%010d.npz" % frame_idx)
         if self._return_file_path:
             return self.base_path / fname
 
         if self.inzip:
             fname = str(fname)
-            with PatchedZipFile("data_3d_semantics_indexed.zip", to_extract=fname) as ar:
-                return dict(np.load(BytesIO(ar.read(fname))))
+            with PatchedZipFile(f"{seq_id}_semantics.zip", to_extract=fname) as ar:
+                data = edict(np.load(BytesIO(ar.read(fname))))
         else:
-            return dict(np.load(self.base_path / fname))
+            data = edict(np.load(self.base_path / fname))
+
+        data.visible = np.unpackbits(data.visible, count=len(data.semantic)).astype(bool)
+        return data
 
     def annotation_2dpoints(self, idx):
         raise NotImplementedError()
@@ -481,6 +523,7 @@ class KITTI360Loader(TrackingDatasetBase):
     def _preload_timestamps(self, seq, name):
         if (seq, name) in self._timestamp_cache:
             return
+        assert seq in self.sequence_ids
 
         folder, subfolder, _, archive = self.FRAME_PATH_MAP[name]
         fname = Path(seq, subfolder, "timestamps.txt")
@@ -505,6 +548,7 @@ class KITTI360Loader(TrackingDatasetBase):
     def _preload_poses(self, seq):
         if seq in self._poses_idx:
             return
+        assert seq in self.sequence_ids
 
         fname = Path("data_poses", seq, "poses.txt")
         if self.inzip:
@@ -546,30 +590,77 @@ class KITTI360Loader(TrackingDatasetBase):
 
         return EgoPose(self._poses_t[seq_id][frame_idx], self._poses_r[seq_id][frame_idx])
 
-if __name__ == "__main__":
-    # loader = KITTI360Loader("/media/jacob/Storage/Datasets/kitti360-raw/", inzip=True)
-    loader = KITTI360Loader("/media/jacob/Storage/Datasets/kitti360", inzip=False, nframes=0)
-    # print(loader.camera_data(0))
-    # print(loader.lidar_data(0))
-    # for i in range(50):
-    #     print(loader.pose(i))
-    #     print(loader.annotation_3dobject(i))
-    # print(loader.timestamp(1))
-    # for obj in loader.annotation_3dobject(174):
-    #     print(obj.dimension, obj.tag)
-    # print(loader.annotation_3dobject(174))
-    import sys
-    import warnings
+    @expand_idx_name(['sick'])
+    def intermediate_data(self, idx, names='sick', ninter_frames=None, report_pose=True, report_semantic=True):
+        assert names == 'sick', "Only intermediate data for sick lidar is available in Kitti360!"
+        seq_id, frame_idx = idx
 
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.INFO)
-    formatter = logging.Formatter('[%(name)s][%(levelname)s] %(message)s')
-    handler.setFormatter(formatter)
-    _logger.addHandler(handler)
-    _logger.setLevel(logging.INFO)
-    warnings.simplefilter("ignore")
+        self._preload_timestamps(seq_id, names)
+        if report_semantic:
+            self._preload_3dsemantics(seq_id)
 
-    sem = loader.annotation_3dpoints(0)
-    print(np.sum(sem['semantic'] - sem['instance'] // 1000 > 0)/len(sem['semantic']))
+        # find the corresponding sick indices
+        ts_frame = "velo" # the frame used for timestamp extraction
+        self._preload_timestamps(seq_id, ts_frame)
+        key_ts_list = self._timestamp_cache[(seq_id, ts_frame)]
+        key_ts_prev = key_ts_list[frame_idx-1] if frame_idx != 0 else 0
+        key_ts = key_ts_list[frame_idx]
+        sick_ts_idxa = bisect_right(self._timestamp_cache[(seq_id, names)], key_ts_prev)
+        sick_ts_idxb = bisect_right(self._timestamp_cache[(seq_id, names)], key_ts)
+        
+        # do pose interpolation
+        if report_pose:
+            self._preload_poses(seq_id)
+            fpos = interp1d(key_ts_list, self._poses_t[seq_id], axis=0, fill_value="extrapolate")
+            frot = interp1d(key_ts_list, self._poses_r[seq_id].as_rotvec(), axis=0, fill_value="extrapolate")
+
+        # load corresponding sick data
+        sick_ts_list = self._timestamp_cache[(seq_id, names)]
+        sick_ts_idx_list = list(range(sick_ts_idxa, sick_ts_idxb))
+        if ninter_frames is not None:
+            sick_ts_idx_list = sick_ts_idx_list[-ninter_frames:]
+        result = []
+        for sick_idx in sick_ts_idx_list:
+            sick_ts = sick_ts_list[sick_idx]
+            item = edict(index=sick_idx, timestamp=sick_ts)
+            if report_pose:
+                position, rotation = fpos(sick_ts), frot(sick_ts)
+                rotation = Rotation.from_rotvec(rotation)
+                item.pose = EgoPose(position, rotation)
+
+            item.file = Path(seq_id, "sick_points", "data", '%010d.bin' % sick_idx)
+            if report_semantic:
+                item.semantic_file = Path("data_3d_semantics", seq_id, "sick", "%010d.npz" % sick_idx)
+            result.append(item)
+
+        if self.inzip:
+            namelist = [item.file for item in result]
+            with PatchedZipFile(self.base_path / f"{seq_id}_sick.zip", to_extract=namelist) as source:
+                for item in result:
+                    item.data = load_sick_scan(source, item.pop("file"))
+
+            if report_semantic:
+                namelist = [item.semantic_file for item in result]
+                with PatchedZipFile(self.base_path / f"{seq_id}_semantics.zip", to_extract=namelist) as source:
+                    for item in result:
+                        data_bin = source.read(str(item.pop("semantic_file")))
+                        data_dict = dict(np.load(BytesIO(data_bin)))
+                        item.update(data_dict)
+                        item.visible = np.unpackbits(item.visible, count=len(item.data)).astype(bool)
+        else:
+            for item in result:
+                if not self._return_file_path:
+                    item.data = load_sick_scan(self.base_path / "data_3d_raw", item.pop("file"))
+                else:
+                    item.file = self.base_path / "data_3d_raw" / item.file
+
+            if report_semantic:
+                for item in result:
+                    if not self._return_file_path:
+                        data_dict = dict(np.load(self.base_path / item.pop("semantic_file")))
+                        item.update(data_dict)
+                        item.visible = np.unpackbits(item.visible, count=len(item.data)).astype(bool)
+                    else:
+                        item.semantic_file = self.base_path / item.semantic_file
+
+        return result

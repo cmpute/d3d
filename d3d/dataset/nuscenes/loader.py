@@ -152,6 +152,12 @@ class NuscenesObjectClass(IntFlag):
     @property
     def pretty_name(self):
         return f"{self.category_name}[{self.attribute_name}]"
+    @property
+    def nuscenes_id(self):
+        try:
+            return self._get_nuscenes_id_table().index(self.category)
+        except ValueError:
+            return 0
 
     def to_detection(self):
         """
@@ -210,6 +216,7 @@ class NuscenesLoader(TrackingDatasetBase):
     VALID_CAM_NAMES = ["cam_front", "cam_front_left", "cam_front_right", "cam_back", "cam_back_left", "cam_back_right"]
     VALID_LIDAR_NAMES = ["lidar_top"]
     VALID_OBJ_CLASSES = NuscenesDetectionClass
+    VALID_PTS_CLASSES = NuscenesObjectClass._get_nuscenes_id_table()
 
     def __init__(self, base_path, inzip=False, phase="training", trainval_split=1, trainval_random=False, nframes=0):
         """
@@ -339,7 +346,7 @@ class NuscenesLoader(TrackingDatasetBase):
             return self._load_camera_data(seq_id, fname)
 
     @expand_idx_name(VALID_CAM_NAMES + VALID_LIDAR_NAMES)
-    def intermediate_data(self, idx, names=None, ninter_frames=1):
+    def intermediate_data(self, idx, names=None, ninter_frames=None):
         seq_id, frame_idx = idx
         fname = "intermediate/%03d/meta.json" % frame_idx
 

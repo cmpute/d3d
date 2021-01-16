@@ -36,6 +36,7 @@ Please consider siting my work if you find this library useful in your research 
 
 Installation requirements:
 - `python >= 3.6`
+- `numpy >= 1.17.0`
 - `pytorch == 1.4`
 - `scipy >= 1.4`
 - `addict`
