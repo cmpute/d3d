@@ -16,39 +16,40 @@ class KittiRawLoader(TrackingDatasetBase):
     """
     Load and parse raw data into a usable format, please organize the files into following structure
 
-    # Zip Files
-    - 2011_09_26_calib.zip [required]
-    - 2011_09_26_drive_0001_extract.zip
-    - ...
-    - 2011_09_26_drive_0001_sync.zip
-    - ...
-    - 2011_09_26_drive_0001_tracklets.zip
-    - ...
+    * Zip Files::
 
-    # Unzipped Structure
-    - <base_path directory>
-        - 2011_09_26
-            - calib_cam_to_cam.txt
-            - calib_imu_to_velo.txt
-            - calib_velo_to_cam.txt
-            - 2011_09_26_drive_0001_extract
-                - image_00
-                - image_01
-                - image_02
-                - image_03
-                - oxts
-                - velodyne_points
-            - ...
-            - 2011_09_26_drive_0001_sync
-                - image_00
-                - image_01
-                - image_02
-                - image_03
-                - oxts
-                - velodyne_points
-                - tracklet_labels.xml
-            - ...
-            - 
+        - 2011_09_26_calib.zip [required]
+        - 2011_09_26_drive_0001_extract.zip
+        - ...
+        - 2011_09_26_drive_0001_sync.zip
+        - ...
+        - 2011_09_26_drive_0001_tracklets.zip
+        - ...
+
+    * Unzipped Structure::
+
+        - <base_path directory>
+            - 2011_09_26
+                - calib_cam_to_cam.txt
+                - calib_imu_to_velo.txt
+                - calib_velo_to_cam.txt
+                - 2011_09_26_drive_0001_extract
+                    - image_00
+                    - image_01
+                    - image_02
+                    - image_03
+                    - oxts
+                    - velodyne_points
+                - ...
+                - 2011_09_26_drive_0001_sync
+                    - image_00
+                    - image_01
+                    - image_02
+                    - image_03
+                    - oxts
+                    - velodyne_points
+                    - tracklet_labels.xml
+                - ...
     """
 
     VALID_CAM_NAMES = ["cam0", "cam1", "cam2", "cam3"]

@@ -49,29 +49,31 @@ def parse_label(label: list, raw_calib: dict) -> Target3DArray:
 
 class KittiTrackingLoader(TrackingDatasetBase):
     """
-    Loader for KITTI multi-object tracking dataset, please organize the filed into following structure
+    Loader for KITTI multi-object tracking dataset, please organize the files into following structure
     
-    # Zip Files
-    - data_tracking_calib.zip
-    - data_tracking_image_2.zip
-    - data_tracking_image_3.zip
-    - data_tracking_label_2.zip
-    - data_tracking_velodyne.zip
-    - data_tracking_oxts.zip
+    * Zip Files::
 
-    # Unzipped Structure
-    - <base_path directory>
-        - training
-            - calib
-            - image_02
-            - label_02
-            - oxts
-            - velodyne
-        - testing
-            - calib
-            - image_02
-            - oxts
-            - velodyne
+        - data_tracking_calib.zip
+        - data_tracking_image_2.zip
+        - data_tracking_image_3.zip
+        - data_tracking_label_2.zip
+        - data_tracking_velodyne.zip
+        - data_tracking_oxts.zip
+
+    * Unzipped Structure::
+
+        - <base_path directory>
+            - training
+                - calib
+                - image_02
+                - label_02
+                - oxts
+                - velodyne
+            - testing
+                - calib
+                - image_02
+                - oxts
+                - velodyne
     """
 
     VALID_CAM_NAMES = ["cam2", "cam3"]

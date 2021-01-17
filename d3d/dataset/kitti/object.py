@@ -73,24 +73,26 @@ class KittiObjectLoader(DetectionDatasetBase):
     """
     Loader for KITTI object detection dataset, please organize the files into following structure
     
-    # Zip Files
-    - data_object_calib.zip
-    - data_object_image_2.zip
-    - data_object_image_3.zip
-    - data_object_label_2.zip
-    - data_object_velodyne.zip
+    * Zip Files::
 
-    # Unzipped Structure
-    - <base_path directory>
-        - training
-            - calib
-            - image_2
-            - label_2
-            - velodyne
-        - testing
-            - calib
-            - image_2
-            - velodyne
+        - data_object_calib.zip
+        - data_object_image_2.zip
+        - data_object_image_3.zip
+        - data_object_label_2.zip
+        - data_object_velodyne.zip
+
+    * Unzipped Structure::
+
+        - <base_path directory>
+            - training
+                - calib
+                - image_2
+                - label_2
+                - velodyne
+            - testing
+                - calib
+                - image_2
+                - velodyne
     """
 
     VALID_CAM_NAMES = ["cam2", "cam3"]
@@ -354,7 +356,7 @@ def execute_official_evaluator(exec_path, label_path, result_path, output_path, 
     Execute official evaluator from KITTI devkit
     :param model_name: unique name of your model. KITTI tool requires sha1 as model name, but that's not mandatory.
 
-    Note: to install prerequisites `sudo apt install gnuplot texlive-extra-utils
+    Note: to install prerequisites `sudo apt install gnuplot texlive-extra-utils`
     '''
     model_name = model_name or "noname"
 

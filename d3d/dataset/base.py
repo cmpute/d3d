@@ -64,6 +64,9 @@ def check_frames(names, valid):
     return unpack_result, names
 
 class DatasetBase:
+    """
+    This class acts as the base for all dataset loaders
+    """
     def __init__(self,
                  base_path: Union[str, Path],
                  inzip: bool = False,
@@ -229,8 +232,8 @@ class TrackingDatasetBase(DetectionDatasetBase):
                    ) -> Union[NdArray, List[NdArray], List[List[NdArray]]]:
         '''
         If multiple frames are requested, the results will be a list of list. Outer list corresponds to frame names and inner
-            list corresponds to time sequence. So names * frames data objects will be returned
-\
+            list corresponds to time sequence. So len(names) × len(frames) data objects will be returned
+
         :param names: name of requested lidar frames. The default frame is the first element in VALID_LIDAR_NAMES.
         :param idx: index of requested lidar frames
                     if single index is given, then the frame indexing is done on the whole dataset with trainval split
@@ -261,9 +264,9 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def intermediate_data(self, idx: Union[int, tuple], names: Optional[Union[str, List[str]]] = None, ninter_frames=1):
+    def intermediate_data(self, idx: Union[int, tuple], names: Optional[Union[str, List[str]]] = None, ninter_frames=1) -> dict:
         '''
-        Return the intermediate data between keyframes. For key frames data, please use lidar_data or camera_data to load them
+        Return the intermediate data (and annotations) between keyframes. For key frames data, please use corresponding function to load them
 
         :param idx: index of requested data frames
         :param names: name of requested data frames.
@@ -404,12 +407,14 @@ def expand_idx_name(valid_names):
 class NumberPool:
     '''
     This class is a utility for multiprocessing using tqdm, define the task as
-    ```
-    def task(ntqdm, ...):
-        ...
-        for data in tqdm(..., position=ntqdm, leave=False):
+
+    .. code-block:: python
+
+        def task(ntqdm, ...):
             ...
-    ```
+            for data in tqdm(..., position=ntqdm, leave=False):
+                ...
+
     Then the parallel progress bars will be displayed in place.
     '''
 
@@ -451,7 +456,7 @@ class NumberPool:
                                 )
 
     def wait_for_once(self, margin=0):
-        """ Wait for one available process """
+        """ Block current thread and wait for one available process """
         if self._nqueue >= len(self._npool) + margin: # only wait if the pool is full
             self._complete_event.wait()
         self._complete_event.clear()

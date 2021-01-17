@@ -33,32 +33,34 @@ class KITTI360Loader(TrackingDatasetBase):
     Load KITTI-360 dataset into a usable format.
     The dataset structure should follow the official documents.
 
-    # Zip Files
-    - calibration.zip
-    - data_3d_bboxes.zip
-    - data_3d_semantics.zip
-    - data_poses.zip
-    - data_timestamps_sick.zip
-    - data_timestamps_velodyne.zip
-    - 2013_05_28_drive_0000_sync_sick.zip
-    - 2013_05_28_drive_0000_sync_velodyne.zip
-    - ...
+    * Zip Files::
 
-    # Unzipped Structure
-    - <base_path directory>
-        - calibration
-        - data_2d_raw
-            - 2013_05_28_drive_0000_sync
-            - ...
-        - data_2d_semantics
-            - 2013_05_28_drive_0000_sync
-            - ...
-        - data_3d_raw
-            - 2013_05_28_drive_0000_sync
-            - ...
-        - data_3d_semantics
-            - 2013_05_28_drive_0000_sync
-            - ...
+        - calibration.zip
+        - data_3d_bboxes.zip
+        - data_3d_semantics.zip
+        - data_poses.zip
+        - data_timestamps_sick.zip
+        - data_timestamps_velodyne.zip
+        - 2013_05_28_drive_0000_sync_sick.zip
+        - 2013_05_28_drive_0000_sync_velodyne.zip
+        - ...
+
+    * Unzipped Structure::
+
+        - <base_path directory>
+            - calibration
+            - data_2d_raw
+                - 2013_05_28_drive_0000_sync
+                - ...
+            - data_2d_semantics
+                - 2013_05_28_drive_0000_sync
+                - ...
+            - data_3d_raw
+                - 2013_05_28_drive_0000_sync
+                - ...
+            - data_3d_semantics
+                - 2013_05_28_drive_0000_sync
+                - ...
     """
     VALID_CAM_NAMES = ['cam1', 'cam2', 'cam3', 'cam4'] # cam 1,2 are persective
     VALID_LIDAR_NAMES = ['velo'] # velo stands for velodyne

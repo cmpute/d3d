@@ -23,14 +23,15 @@ _logger = logging.getLogger("d3d")
 
 class NuscenesObjectClass(IntFlag):
     '''
-    Categories and attributes of an annotation in nuscenes
+    Categories and attributes of an annotation in Nuscenes dataset.
 
-    Encoded into 4bytes integer
-    0xFFFF
-      │││└: level0 category
-      ││└─: level1 category
-      │└──: level2 category
-      └───: attribute
+    The ids are encoded into 4bytes integer::
+
+        0xFFFF
+          │││└: level0 category
+          ││└─: level1 category
+          │└──: level2 category
+          └───: attribute
     '''
     unknown = 0x0000
     noise = 0x0010
@@ -187,6 +188,9 @@ class NuscenesObjectClass(IntFlag):
             return NuscenesDetectionClass[detection_mapping[self.category_name]]
 
 class NuscenesDetectionClass(Enum):
+    '''
+    Label classes for detection in Nuscenes dataset.
+    '''
     ignore = 0
     barrier = auto()
     bicycle = auto()
@@ -202,16 +206,18 @@ class NuscenesDetectionClass(Enum):
 class NuscenesLoader(TrackingDatasetBase):
     '''
     Load Nuscenes dataset into a usable format.
-    Please use the d3d_nuscenes_convert command (do not use --all-frames) to convert the dataset first into following formats
+    Please use the d3d_nuscenes_convert command to convert the dataset first into following formats
 
-    # Directory Structure
-    - <base_path directory>
-        - trainval
-            - scene_xxx.zip
-            - ...
-        - test
-            - scene_xxx.zip
-            - ...
+    * Directory Structure::
+
+        - <base_path directory>
+            - trainval
+                - scene_xxx(.zip)
+                - ...
+            - test
+                - scene_xxx(.zip)
+                - ...
+
     '''
     VALID_CAM_NAMES = ["cam_front", "cam_front_left", "cam_front_right", "cam_back", "cam_back_left", "cam_back_right"]
     VALID_LIDAR_NAMES = ["lidar_top"]

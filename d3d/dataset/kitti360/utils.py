@@ -10,12 +10,13 @@ from sklearn.neighbors import KDTree
 
 class Kitti360Class(IntFlag): # XXX: actually is CityscapeClass
     """
-    Categories and attributes of an annotation in nuscenes
+    Categories and attributes of an annotation in KITTI-360 dataset.
 
-    Encoded into 2bytes integer
-    0xFF
-      │└: category
-      └─: label
+    The ids are encoded into 2bytes integer::
+
+        0xFF
+          │└: category
+          └─: label
     """
        
     void                    = 0x00

@@ -12,12 +12,19 @@ from zipfile import (_CD_COMMENT_LENGTH, _CD_EXTRA_FIELD_LENGTH,
                      _ECD_SIGNATURE, _ECD_SIZE, _EndRecData, sizeCentralDir,
                      sizeEndCentDir64, sizeEndCentDir64Locator,
                      stringCentralDir, stringEndArchive64, structCentralDir, MAX_EXTRACT_VERSION)
+from typing import Union, List
 
 __all__ = ["PatchedZipFile"]
 
 class PatchedZipFile(ZipFile):
+    '''
+    This class is based on build-in ZipFile class, which is further patched for better reading speed. The
+    improvement is achieved by skip reading metadata of files not interested in.
+
+    :param to_extract: specify the path (inside zip) of files to be extracted
+    '''
     def __init__(self, file, mode="r", compression=ZIP_STORED, allowZip64=True,
-                 to_extract=[]):
+                 to_extract: Union[List[str], str] = []):
         if not isinstance(to_extract, (list, tuple, set)):
             to_extract = [to_extract]
         self.to_extract = set(str(p) for p in to_extract)
