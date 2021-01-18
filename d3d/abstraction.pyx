@@ -14,7 +14,7 @@ from cpython.list cimport PyList_GetItem, PyList_Size
 
 _logger = logging.getLogger("d3d")
 
-def _d3d_enum_mapping():
+def _d3d_enum_mapping(): # TODO: use class name to map, store as static variable
     import d3d.dataset as dd
     return {
         # 0 for non-built-in mapping
@@ -29,7 +29,8 @@ def _d3d_enum_lookup():
 
 cdef class ObjectTag:
     '''
-    This class stands for label tags associate with object target
+    This class stands for label tags associate with object target. This class can contains
+    multiple estimated classes with separate confidence scores.
     '''
     def __init__(self, labels, mapping=None, scores=None):
         if mapping is not None and not issubclass(mapping, enum.Enum):
@@ -74,13 +75,13 @@ cdef class ObjectTag:
         '''
         return (_d3d_enum_mapping()[self.mapping], self.labels, self.scores)
 
-    @staticmethod
-    def deserialize(data):
+    @classmethod
+    def deserialize(cls, data):
         '''
-        Deserialize this object to primitives
+        Deserialize data from python primitives
         '''
         mapping = _d3d_enum_lookup()[data[0]]
-        return ObjectTag(data[1], mapping, data[2])
+        return cls(data[1], mapping, data[2])
 
 cdef inline float[:] create_vector3(values):
     if len(values) != 3:
@@ -103,17 +104,16 @@ cdef inline bytes pack_ull(unsigned long long value):
 cdef class ObjectTarget3D:
     '''
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
+
+    :param position: Position of object center (x,y,z)
+    :param orientation: Object heading (direction of x-axis attached on body)
+        with regard to x-axis of the world at the object center.
+    :param dimension: Length of the object in 3 dimensions (lx,ly,lz)
+    :param tag: Classification information of the object
+    :param tid: ID of the object used for tracking (optional), 0 means no tracking id assigned
     '''
     def __init__(self, position, orientation, dimension, tag,
         tid=0, position_var=None, orientation_var=None, dimension_var=None):
-        '''
-        :param position: Position of object center (x,y,z)
-        :param orientation: Object heading (direction of x-axis attached on body)
-            with regard to x-axis of the world at the object center.
-        :param dimension: Length of the object in 3 dimensions (lx,ly,lz)
-        :param tag: Classification information of the object
-        :param tid: ID of the object used for tracking (optional), 0 means no tracking id assigned
-        '''
 
         self.position_ = create_vector3(position)
         self.dimension_ = create_vector3(dimension)
@@ -138,24 +138,36 @@ cdef class ObjectTarget3D:
     # exposes basic members
     @property
     def position(self):
+        '''
+        Position of the (center of) target
+        '''
         return np.asarray(self.position_)
     @position.setter
     def position(self, value):
         self.position_ = create_vector3(value)
     @property
     def position_var(self):
+        '''
+        Positional variance of the (center of) target
+        '''
         return np.asarray(self.position_var_)
     @position_var.setter
     def position_var(self, value):
         self.position_var_ = create_matrix33(value)
     @property
     def dimension(self):
+        '''
+        Dimension of the target
+        '''
         return np.asarray(self.dimension_)
     @dimension.setter
     def dimension(self, value):
         self.dimension_ = create_vector3(value)
     @property
     def dimension_var(self):
+        '''
+        Variance of dimension estimation of the target
+        '''
         return np.asarray(self.dimension_var_)
     @dimension_var.setter
     def dimension_var(self, value):
@@ -163,15 +175,16 @@ cdef class ObjectTarget3D:
 
     @property
     def tag_top(self):
+        '''
+        Return the object of the target's top tag
+        '''
         return self.tag.mapping(self.tag.labels[0])
-
     @property
     def tag_name(self):
         '''
         Return the name of the target's top tag
         '''
         return self.tag_top.name
-
     @property
     def tag_score(self):
         '''
@@ -210,6 +223,12 @@ cdef class ObjectTarget3D:
         return base64.b64encode(pack_ull(self.tid)).rstrip(b'=').decode()
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
+        '''
+        Convert the object to numpy array representation
+
+        :param box_type: The type of box representation
+            * ground: use the representation of bird's eye view 2D projection
+        '''
         cdef np.ndarray[float, ndim=1] arr = np.empty(9, dtype='f4')
         arr[0] = float(self.tag.labels[0])
         arr[1] = self.tag.scores[0]
@@ -223,6 +242,9 @@ cdef class ObjectTarget3D:
         return arr
 
     def serialize(self):
+        '''
+        Serialize this object to python primitives
+        '''
         return (
             np.asarray(self.position_).tolist(),
             np.ravel(self.position_var_).tolist(),
@@ -236,6 +258,9 @@ cdef class ObjectTarget3D:
 
     @classmethod
     def deserialize(cls, data):
+        '''
+        Deserialize data from python primitives
+        '''
         pos, pos_var, dim, dim_var, ori_data, ori_var, tid, tag_data = data
         ori = Rotation.from_quat(ori_data)
         tag = ObjectTag.deserialize(tag_data)
@@ -244,6 +269,10 @@ cdef class ObjectTarget3D:
         )
 
 cdef class TrackingTarget3D(ObjectTarget3D):
+    '''
+    This class stands for a tracked target in cartesian coordinate.
+    The body coordinate is FLU (front-left-up).
+    '''
     def __init__(self, position, orientation, dimension, velocity, angular_velocity, tag,
         tid=0, position_var=None, orientation_var=None, dimension_var=None,
         velocity_var=None, angular_velocity_var=None, history=None):
@@ -277,24 +306,36 @@ cdef class TrackingTarget3D(ObjectTarget3D):
     # exposes basic members
     @property
     def velocity(self):
+        '''
+        Velocity of the (center of) target
+        '''
         return np.asarray(self.velocity_)
     @velocity.setter
     def velocity(self, value):
         self.velocity_ = create_vector3(value)
     @property
     def velocity_var(self):
+        '''
+        Variance of velocity estimation of the target
+        '''
         return np.asarray(self.velocity_var_)
     @velocity_var.setter
     def velocity_var(self, value):
         self.velocity_var_ = create_matrix33(value)
     @property
     def angular_velocity(self):
+        '''
+        Angular velocity of the target
+        '''
         return np.asarray(self.angular_velocity_)
     @angular_velocity.setter
     def angular_velocity(self, value):
         self.angular_velocity_ = create_vector3(value)
     @property
     def angular_velocity_var(self):
+        '''
+        Variance of angular velocity estimation of the target
+        '''
         return np.asarray(self.angular_velocity_var_)
     @angular_velocity_var.setter
     def angular_velocity_var(self, value):
@@ -345,10 +386,12 @@ cdef class TrackingTarget3D(ObjectTarget3D):
         return arr
 
 cdef class Target3DArray(list):
+    '''
+    Target3DArray stores an array of ObjectTarget3D or TrackingTarget3D
+
+    :param frame: Frame that the box parameters used. None means base frame (in TransformSet)
+    '''
     def __init__(self, iterable=[], frame=None, timestamp=0):
-        '''
-        :param frame: Frame that the box parameters used. None means base frame (in TransformSet)
-        '''
         super().__init__(iterable)
         self.frame = frame
         self.timestamp = timestamp
@@ -369,17 +412,25 @@ cdef class Target3DArray(list):
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
         '''
-        :param box_type: Decide how to represent the box. {ground: box projected along z axis}
+        Convert the object array to numpy array representation
+
+        * ground: use the representation of bird's eye view 2D projection
         '''
         if len(self) == 0:
             return np.empty((0,), dtype=np.float32)
         return np.stack([box.to_numpy(box_type) for box in self])
 
     def to_torch(self, box_type="ground"):
+        '''
+        Convert the object array to PyTorch Tensor representation
+        '''
         import torch
         return torch.from_numpy(self.to_numpy(box_type))
 
     def serialize(self):
+        '''
+        Serialize this object to python primitives
+        '''
         if len(self) > 0:
             if any(type(obj) != type(self[0]) for obj in self):
                 raise ValueError("All elements are required to be the same type (ObjectTarget3D"
@@ -394,8 +445,11 @@ cdef class Target3DArray(list):
             type_code = 0
         return (self.frame, self.timestamp, type_code, [obj.serialize() for obj in self])
 
-    @staticmethod
-    def deserialize(data):
+    @classmethod
+    def deserialize(cls, data):
+        '''
+        Deserialize data from python primitives
+        '''
         if data[2] == 1:
             objs = [ObjectTarget3D.deserialize(obj) for obj in data[3]]
         elif data[2] == 2:
@@ -403,20 +457,30 @@ cdef class Target3DArray(list):
         else:
             assert data[2] == 0 and len(data[3]) == 0
             objs = []
-        return Target3DArray(objs, frame=data[0], timestamp=data[1])
+        return cls(objs, frame=data[0], timestamp=data[1])
 
     def dump(self, output):
+        '''
+        Serialize the array and dump it into file
+
+        :param output: output file path
+        '''
         import msgpack
         if isinstance(output, (str, Path)):
             with Path(output).open('wb') as fout:
                 fout.write(msgpack.packb(self.serialize(), use_single_float=True))
 
     @staticmethod
-    def load(output):
+    def load(cls, file):
+        '''
+        Load the array form a binary file created by dump()
+
+        :param file: path of input file to be loaded
+        '''
         import msgpack
-        if isinstance(output, (str, Path)):
-            with Path(output).open('rb') as fout:
-                return Target3DArray.deserialize(msgpack.unpackb(fout.read()))
+        if isinstance(file, (str, Path)):
+            with Path(file).open('rb') as fout:
+                return cls.deserialize(msgpack.unpackb(fout.read()))
 
     def __repr__(self):
         return "<Target3DArray with %d objects @ %s>" % (len(self), self.frame)
@@ -433,12 +497,17 @@ cdef class Target3DArray(list):
             tags = [tags]
         tags = [str(t) if not isinstance(t, str) else t for t in tags] # use tag name to filter
         tags = [t.lower() for t in tags]
-        return Target3DArray([box for box in self if box.tag_name.lower() in tags], self.frame)
+        return Target3DArray([box for box in self if box.tag_name.lower() in tags], self.frame, self.timestamp)
 
-class EgoPose:
+class EgoPose: # TODO: make this a extension class and put docstring in .pxd file
     '''
     This object is used to store dynamic state of ego vehicle. All value is represented
-        in earth-fixed coordinate (absolute coordinate).
+    in earth-fixed coordinate (absolute coordinate).
+
+    :param position: position of ego sensor, [x, y, z]
+    :param orientation: orientation of ego sensor, in format of [x, y, z, w] quaternion of scipy Rotation object
+    :param position_var: positional variance of ego sensor, [var_x, var_y, var_z]
+    :param orientation_var: orientation variance of ego sensor
     '''
     def __init__(self, position, orientation, position_var=None, orientation_var=None):
         
@@ -478,6 +547,15 @@ class EgoPose:
             (tuple(self.position.tolist()) + ypr[::-1])
 
 cdef class CameraMetadata:
+    '''
+    This class represents intrinsic parameters of a camera
+
+    :param width: Width of the image
+    :param height: Height of the image
+    :param distort_coeffs: Distortion coefficients
+    :param intri_matrix: Intrisic matrix of the camera
+    :param mirror_coeff: Mirror coefficient for stereo setup
+    '''
     def __init__(self, int width, int height, np.ndarray distort_coeffs, np.ndarray intri_matrix, float mirror_coeff):
         self.width = width
         self.height = height
@@ -486,14 +564,27 @@ cdef class CameraMetadata:
         self.mirror_coeff = mirror_coeff
 
 cdef class LidarMetadata:
+    '''
+    This class represents intrinsic parameters of a lidar
+    '''
     def __init__(self):
         pass
 
 cdef class RadarMetadata:
+    '''
+    This class represents intrinsic parameters of a radar
+    '''
     def __init__(self):
         pass
 
 cdef class PinMetadata:
+    '''
+    This class represents a ground-fixed coordinate. The coordinate can be
+    in WGS-84 or local UTM coordinate system.
+
+    :param lon: Longitude coordinate value
+    :param lat: Latitude coordinate value
+    '''
     def __init__(self, float lon, float lat):
         self.lon = lon
         self.lat = lat
@@ -503,11 +594,10 @@ cdef class TransformSet:
     This object load a collection of intrinsic and extrinsic parameters
     All extrinsic parameters are stored as transform from base frame to its frame
     In this class, we require all frames to use FLU coordinate including camera frame
+
+    :param base_frame: name of base frame used by extrinsics
     '''
     def __init__(self, str base_frame):
-        '''
-        :param base_frame: name of base frame used by extrinsics
-        '''
         self.base_frame = base_frame
         self.intrinsics = {} # projection matrics (mainly for camera)
         self.intrinsics_meta = {} # sensor metadata
@@ -539,8 +629,8 @@ cdef class TransformSet:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = metadata
 
-    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, bint rotate=True,
-        np.ndarray distort_coeffs=None, np.ndarray intri_matrix=None, mirror_coeff=float('nan')) except*:
+    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, tuple size, bint rotate=True,
+        distort_coeffs=None, np.ndarray intri_matrix=None, float mirror_coeff=float('nan')) except*:
         '''
         Set camera intrinsics
         :param size: (width, height)
@@ -558,8 +648,12 @@ cdef class TransformSet:
             ]))
 
         self.intrinsics[frame_id] = transform
-        self.intrinsics_meta[frame_id] = CameraMetadata(width, height,
-            distort_coeffs, intri_matrix, mirror_coeff)
+        self.intrinsics_meta[frame_id] = CameraMetadata(
+            width, height,
+            np.asarray(distort_coeffs),
+            intri_matrix,
+            mirror_coeff
+        )
 
     cpdef void set_intrinsic_lidar(self, str frame_id) except*:
         self.intrinsics[frame_id] = None
@@ -569,7 +663,8 @@ cdef class TransformSet:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = RadarMetadata()
 
-    cpdef void set_intrinsic_pinhole(self, str frame_id, size, cx, cy, fx, fy, s=0, distort_coeffs=[]) except*:
+    cpdef void set_intrinsic_pinhole(self, str frame_id, tuple size,
+        float cx, float cy, float fx, float fy, float s=0, distort_coeffs=[]) except*:
         '''
         Set camera intrinsics with pinhole model parameters
         :param s: skew coefficient
@@ -696,7 +791,8 @@ cdef class TransformSet:
         xyz = points[:, :3].dot(rt[:3, :3].T) + rt[:3, 3]
         return np.concatenate((xyz, points[:, 3:]), axis=1)
 
-    cpdef tuple project_points_to_camera(self, np.ndarray points, str frame_to, str frame_from=None, remove_outlier=True, return_dmask=False):
+    cpdef tuple project_points_to_camera(self, np.ndarray points, str frame_to, str frame_from=None,
+        bint remove_outlier=True, bint return_dmask=False):
         '''
         :param remove_outlier: If set to True, the mask will be applied, i.e. only points
             that fall into image view will be returned
@@ -754,12 +850,22 @@ cdef class TransformSet:
             return np.array([u, v]).T, mask
 
     def dump(self, output):
+        '''
+        Serialize the transform collection and dump it into file
+
+        :param output: output file path
+        '''
         if isinstance(output, (str, Path)):
             with Path(output).open('wb') as fout:
                 pickle.dump(self, fout)
 
     @staticmethod
-    def load(output):
-        if isinstance(output, (str, Path)):
-            with Path(output).open('rb') as fout:
+    def load(file):
+        '''
+        Load the transform collection form a binary file created by dump()
+
+        :param file: path of input file to be loaded
+        '''
+        if isinstance(file, (str, Path)):
+            with Path(file).open('rb') as fout:
                 return pickle.load(fout)

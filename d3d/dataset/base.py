@@ -231,8 +231,9 @@ class TrackingDatasetBase(DetectionDatasetBase):
                    names: Optional[Union[str, List[str]]] = None
                    ) -> Union[NdArray, List[NdArray], List[List[NdArray]]]:
         '''
-        If multiple frames are requested, the results will be a list of list. Outer list corresponds to frame names and inner
-            list corresponds to time sequence. So len(names) × len(frames) data objects will be returned
+        If multiple frames are requested, the results will be a list of list. Outer list
+        corresponds to frame names and inner list corresponds to time sequence. So
+        len(names) × len(frames) data objects will be returned
 
         :param names: name of requested lidar frames. The default frame is the first element in VALID_LIDAR_NAMES.
         :param idx: index of requested lidar frames
@@ -295,7 +296,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
     def pose(self, idx: Union[int, tuple], raw: Optional[bool] = False) -> EgoPose:
         '''
         Return (relative) pose of the vehicle for the frame. The base frame should be ground attached
-            which means the base frame will follow a East-North-Up axis order.
+        which means the base frame will follow a East-North-Up axis order.
 
         :param idx: index of requested frame
         '''

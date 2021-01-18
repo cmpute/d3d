@@ -40,14 +40,15 @@ class WaymoLoader(TrackingDatasetBase):
     Load Waymo dataset into a usable format.
     Please use the d3d_waymo_convert command to convert the dataset first into following formats
 
-    # Directory Structure
-    - <base_path directory>
-        - training
-            - xxxxxxxxxxxxxxxxxxxx_xxx_xxx_xxx_xxx.zip
-            - ...
-        - validation
-            - xxxxxxxxxxxxxxxxxxxx_xxx_xxx_xxx_xxx.zip
-            - ...
+    * Directory Structure::
+
+        - <base_path directory>
+            - training
+                - xxxxxxxxxxxxxxxxxxxx_xxx_xxx_xxx_xxx(.zip)
+                - ...
+            - validation
+                - xxxxxxxxxxxxxxxxxxxx_xxx_xxx_xxx_xxx(.zip)
+                - ...
     """
     VALID_CAM_NAMES = ["camera_front", "camera_front_left", "camera_front_right", "camera_side_left", "camera_side_right"]
     VALID_LIDAR_NAMES = ["lidar_top", "lidar_front", "lidar_side_left", "lidar_side_right", "lidar_rear"]

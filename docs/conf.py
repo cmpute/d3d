@@ -33,15 +33,35 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
+    'sphinx.ext.intersphinx',
     'sphinx.ext.autosectionlabel',
+    'sphinx.ext.autodoc.typehints',
     'recommonmark',
-    'sphinx_autodoc_typehints'
+    # 'autoapi.extension'
 ]
+
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3/', None),
+    'numpy': ('https://numpy.org/devdocs/', None),
+    'torch': ('https://pytorch.org/docs/stable', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None)
+}
 
 autodoc_mock_imports = [
     'cv2', 'matplotlib', 'PIL', 'scipy', 'sklearn'
 ]
+autodoc_typehints = 'description'
+autodoc_default_options = {
+    "show-inheritance": True
+}
 autosectionlabel_prefix_document = True
+
+# AutoApi related configurations
+# autoapi_type = 'python'
+# autoapi_dirs = ['../d3d']
+# autoapi_add_toctree_entry = False
+# autoapi_generate_api_docs = False
+# autoapi_ignore = ['*.py'] # only use autoapi to doc stub files
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

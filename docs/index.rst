@@ -18,11 +18,18 @@ D3D is a collections of tools built for 3D Machine Learning, currently it's main
    :caption: Functionalities
    :maxdepth: 2
 
+   abstraction.md
    datasets.md
+   operators.md
+   tracking.md
+   utils.md
 
 .. toctree::
    :caption: API Reference
+   :maxdepth: 2
 
+   apis/abstraction.rst
+   apis/box.rst
    apis/dataset.rst
    apis/dataset-kitti.rst
    apis/dataset-kitti360.rst
