@@ -24,11 +24,7 @@ cdef class ObjectTarget3D:
     # variables with underscore at the end are cython variable, python version is exposed as property
     cdef float[:] position_, dimension_
     cdef float[:, :] position_var_, dimension_var_
-
-    cdef public object orientation # TOD: directly store quaternion
-    '''
-    Orientation of the target
-    '''
+    cdef float[:] orientation_
 
     cdef public float orientation_var  # XXX: how to describe angle variance?
     '''
@@ -115,6 +111,24 @@ cdef class PinMetadata:
     cdef public float lat
     '''
     Latitude coordinate of the pin
+    '''
+
+cdef class EgoPose:
+    cdef public np.ndarray position
+    '''
+    The position of the ego sensor
+    '''
+
+    cdef float[:] orientation_
+
+    cdef public np.ndarray position_var
+    '''
+    Variance of the estimation of the sensor position
+    '''
+
+    cdef public np.ndarray orientation_var
+    '''
+    Variance of the estimation of the sensor orientation
     '''
 
 cdef class TransformSet:

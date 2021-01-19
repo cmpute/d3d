@@ -2,19 +2,18 @@
 
 import base64
 import enum
-import logging
 import pickle
 from collections import namedtuple
 from pathlib import Path
-from warnings import warn
 
 import numpy as np
 from scipy.spatial.transform import Rotation
+
+cimport cython
 from cpython.list cimport PyList_GetItem, PyList_Size
+from libc.math cimport atan2
 
-_logger = logging.getLogger("d3d")
-
-def _d3d_enum_mapping(): # TODO: use class name to map, store as static variable
+def _d3d_enum_mapping():
     import d3d.dataset as dd
     return {
         # 0 for non-built-in mapping
@@ -101,6 +100,21 @@ cdef inline bytes pack_ull(unsigned long long value):
         value = value // 256
     return bytes(result)
 
+@cython.boundscheck(False)
+cdef inline float quat2yaw(const float[:] q) nogil:
+    # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion
+    cdef float siny_cosp = 2 * (q[3] * q[2] + q[0] * q[1])
+    cdef float cosy_cosp = 1 - 2 * (q[1] * q[1] + q[2] * q[2])
+    return atan2(siny_cosp, cosy_cosp)
+
+def _parse_rotation(value):
+    if isinstance(value, Rotation):
+        return value.as_quat().astype(np.float32)
+    elif len(value) == 4:
+        return np.asarray(value, dtype=np.float32)
+    else:
+        raise ValueError("Unrecognized rotation format")
+
 cdef class ObjectTarget3D:
     '''
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
@@ -117,20 +131,12 @@ cdef class ObjectTarget3D:
 
         self.position_ = create_vector3(position)
         self.dimension_ = create_vector3(dimension)
+        self.orientation_ = _parse_rotation(orientation)
 
-        if isinstance(orientation, Rotation):
-            self.orientation = orientation
-        elif len(orientation) == 4:
-            self.orientation = Rotation.from_quat(orientation)
-        else:
-            raise ValueError("Invalid rotation format")
-
-        if isinstance(tag, ObjectTag):
-            self.tag = tag
-        else:
-            raise ValueError("Label should be of type ObjectTag")
-
+        assert isinstance(tag, ObjectTag), "Label should be of type ObjectTag"
+        self.tag = tag
         self.tid = tid
+
         self.position_var_ = create_matrix33(position_var)
         self.dimension_var_ = create_matrix33(dimension_var)
         self.orientation_var = 0 if orientation_var is None else orientation_var
@@ -172,6 +178,15 @@ cdef class ObjectTarget3D:
     @dimension_var.setter
     def dimension_var(self, value):
         self.dimension_var_ = create_matrix33(value)
+    @property
+    def orientation(self):        
+        '''
+        Orientation of the target
+        '''
+        return Rotation(self.orientation_)
+    @orientation.setter
+    def orientation(self, value):
+        self.orientation_ = _parse_rotation(value)
 
     @property
     def tag_top(self):
@@ -197,13 +212,7 @@ cdef class ObjectTarget3D:
         '''
         Return the rotation angle around z-axis (ignoring rotations in other two directions)
         '''
-        angles = self.orientation.as_euler("ZYX")
-        if abs(angles[1]) + abs(angles[2]) > 0.2:
-            message = "The roll (%.2f) and pitch(%.2f) angle in objects may be to large to ignore!" % \
-                (angles[2], angles[1])
-            _logger.warning(message)
-            warn(message)
-        return angles[0]
+        return quat2yaw(self.orientation_)
 
     @property
     def corners(self):
@@ -229,7 +238,7 @@ cdef class ObjectTarget3D:
         :param box_type: The type of box representation
             * ground: use the representation of bird's eye view 2D projection
         '''
-        cdef np.ndarray[float, ndim=1] arr = np.empty(9, dtype='f4')
+        cdef np.ndarray[float, ndim=1] arr = np.empty(9, dtype=np.float32)
         arr[0] = float(self.tag.labels[0])
         arr[1] = self.tag.scores[0]
         arr[2] = self.position_[0]
@@ -238,7 +247,7 @@ cdef class ObjectTarget3D:
         arr[5] = self.dimension_[0]
         arr[6] = self.dimension_[1]
         arr[7] = self.dimension_[2]
-        arr[8] = self.yaw
+        arr[8] = quat2yaw(self.orientation_)
         return arr
 
     def serialize(self):
@@ -246,9 +255,9 @@ cdef class ObjectTarget3D:
         Serialize this object to python primitives
         '''
         return (
-            np.asarray(self.position_).tolist(),
+            list(self.position_),
             np.ravel(self.position_var_).tolist(),
-            np.asarray(self.dimension_).tolist(),
+            list(self.dimension_),
             np.ravel(self.dimension_var_).tolist(),
             self.orientation.as_quat().tolist(),
             self.orientation_var,
@@ -279,21 +288,12 @@ cdef class TrackingTarget3D(ObjectTarget3D):
 
         self.position_ = create_vector3(position)
         self.dimension_ = create_vector3(dimension)
+        self.orientation_ = _parse_rotation(orientation)
         self.velocity_ = create_vector3(velocity)
         self.angular_velocity_ = create_vector3(angular_velocity)
 
-        if isinstance(orientation, Rotation):
-            self.orientation = orientation
-        elif len(orientation) == 4:
-            self.orientation = Rotation.from_quat(orientation)
-        else:
-            raise ValueError("Invalid rotation format")
-
-        if isinstance(tag, ObjectTag):
-            self.tag = tag
-        else:
-            raise ValueError("Label should be of type ObjectTag")
-
+        assert isinstance(tag, ObjectTag), "Label should be of type ObjectTag"
+        self.tag = tag
         self.tid = tid
         self.history = history or float('nan')
 
@@ -343,16 +343,16 @@ cdef class TrackingTarget3D(ObjectTarget3D):
 
     def serialize(self):
         return (
-            np.asarray(self.position_).tolist(),
+            list(self.position_),
             np.ravel(self.position_var_).tolist(),
-            np.asarray(self.dimension_).tolist(),
+            list(self.dimension_),
             np.ravel(self.dimension_var_).tolist(),
-            self.orientation.as_quat().tolist(),
+            list(self.orientation_),
             self.orientation_var,
-            np.asarray(self.velocity_).tolist(),
-            np.asarray(self.velocity_var_).tolist(),
-            np.asarray(self.angular_velocity_).tolist(),
-            np.asarray(self.angular_velocity_var_).tolist(),
+            list(self.velocity_),
+            list(self.velocity_var_),
+            list(self.angular_velocity_),
+            list(self.angular_velocity_var_),
             self.tid,
             self.tag.serialize(),
             self.history
@@ -370,7 +370,7 @@ cdef class TrackingTarget3D(ObjectTarget3D):
         )
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
-        cdef np.ndarray[float, ndim=1] arr = np.empty(12, dtype='f4')
+        cdef np.ndarray[float, ndim=1] arr = np.empty(12, dtype=np.float32)
         arr[0] = float(self.tag.labels[0])
         arr[1] = self.tag.scores[0]
         arr[2] = self.position_[0]
@@ -379,7 +379,7 @@ cdef class TrackingTarget3D(ObjectTarget3D):
         arr[5] = self.dimension_[0]
         arr[6] = self.dimension_[1]
         arr[7] = self.dimension_[2]
-        arr[8] = self.yaw
+        arr[8] = quat2yaw(self.orientation_)
         arr[9] = self.velocity_[0]
         arr[10] = self.velocity_[1]
         arr[11] = self.angular_velocity_[2]
@@ -499,7 +499,7 @@ cdef class Target3DArray(list):
         tags = [t.lower() for t in tags]
         return Target3DArray([box for box in self if box.tag_name.lower() in tags], self.frame, self.timestamp)
 
-class EgoPose: # TODO: make this a extension class and put docstring in .pxd file
+cdef class EgoPose:
     '''
     This object is used to store dynamic state of ego vehicle. All value is represented
     in earth-fixed coordinate (absolute coordinate).
@@ -512,17 +512,20 @@ class EgoPose: # TODO: make this a extension class and put docstring in .pxd fil
     def __init__(self, position, orientation, position_var=None, orientation_var=None):
         
         assert len(position) == 3, "Invalid position shape"
-        self.position = np.array(position)
-
-        if isinstance(orientation, Rotation):
-            self.orientation = orientation
-        elif len(orientation) == 4:
-            self.orientation = Rotation.from_quat(orientation)
-        else:
-            raise ValueError("Invalid rotation format")
-
+        self.position = np.asarray(position, dtype=np.float32)
+        self.orientation_ = _parse_rotation(orientation)
         self.position_var = np.zeros((3, 3)) if position_var is None else position_var
         self.orientation_var = np.zeros((3, 3)) if orientation_var is None else orientation_var
+
+    @property
+    def orientation(self):
+        '''
+        The orientation of the ego sensor
+        '''
+        return Rotation(self.orientation_)
+    @orientation.setter
+    def orientation(self, value):
+        self.orientation_ = _parse_rotation(value)
 
     def homo(self):
         '''

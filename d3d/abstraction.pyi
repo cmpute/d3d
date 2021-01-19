@@ -134,32 +134,13 @@ class EgoPose:
         ...
 
     @property
-    def position(self) -> numpy.ndarray:
-        '''
-        The position of the ego sensor
-        '''
-        ...
-
+    def position(self) -> numpy.ndarray: ...
     @property
-    def orientation(self) -> scipy.spatial.transform.Rotation:
-        '''
-        The orientation of the ego sensor
-        '''
-        ...
-
+    def orientation(self) -> scipy.spatial.transform.Rotation: ...
     @property
-    def position_var(self) -> numpy.ndarray:
-        '''
-        Variance of the estimation of the sensor position
-        '''
-        ...
-
+    def position_var(self) -> numpy.ndarray: ...
     @property
-    def orientation_var(self) -> numpy.ndarray:
-        '''
-        Variance of the estimation of the sensor orientation
-        '''
-        ...
+    def orientation_var(self) -> numpy.ndarray: ...
 
     def homo(self) -> numpy.ndarray: ...
 
