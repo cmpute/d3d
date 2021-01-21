@@ -4,20 +4,20 @@ import logging
 import os
 import zipfile
 from collections import OrderedDict
+from enum import Enum, IntFlag, auto
 from io import BytesIO
 from pathlib import Path
 
-import numpy as np
 import msgpack
+import numpy as np
 from addict import Dict as edict
-from PIL import Image
-from enum import Enum, IntFlag, auto
-from scipy.spatial.transform import Rotation
-
-from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
-                             TrackingTarget3D, TransformSet, EgoPose)
-from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval, expand_idx, expand_idx_name
+from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
+                             TrackingTarget3D, TransformSet)
+from d3d.dataset.base import (TrackingDatasetBase, expand_idx, expand_idx_name,
+                              split_trainval_seq)
 from d3d.dataset.zip import PatchedZipFile
+from PIL import Image
+from scipy.spatial.transform import Rotation
 
 _logger = logging.getLogger("d3d")
 
@@ -92,38 +92,39 @@ class NuscenesObjectClass(IntFlag):
         return cls[string.replace('.', '_')]
     @classmethod
     def _get_nuscenes_id_table(cls):
+        # order is loaded from lidarseg_category.json
         return [
             cls.noise, # 0
-            cls.vehicle_car,
-            cls.vehicle_truck,
-            cls.vehicle_bus_bendy,
-            cls.vehicle_bus_rigid,
-            cls.vehicle_construction, # 5
-            cls.vehicle_motorcycle,
-            cls.vehicle_bicycle,
-            cls.static_object_bicycle_rack,
-            cls.vehicle_trailer,
-            cls.vehicle_emergency_police, # 10
-            cls.vehicle_emergency_ambulance,
+            cls.animal,
             cls.human_pedestrian_adult,
             cls.human_pedestrian_child,
             cls.human_pedestrian_construction_worker,
-            cls.human_pedestrian_stroller, # 15
-            cls.human_pedestrian_wheelchair,
-            cls.human_pedestrian_personal_mobility,
+            cls.human_pedestrian_personal_mobility, # 5
             cls.human_pedestrian_police_officer,
-            cls.animal,
-            cls.movable_object_trafficcone, # 20
+            cls.human_pedestrian_stroller,
+            cls.human_pedestrian_wheelchair,
             cls.movable_object_barrier,
+            cls.movable_object_debris, # 10
             cls.movable_object_pushable_pullable,
-            cls.movable_object_debris,
+            cls.movable_object_trafficcone,
+            cls.static_object_bicycle_rack,
+            cls.vehicle_bicycle,
+            cls.vehicle_bus_bendy, # 15
+            cls.vehicle_bus_rigid,
+            cls.vehicle_car,
+            cls.vehicle_construction,
+            cls.vehicle_emergency_ambulance,
+            cls.vehicle_emergency_police, # 20
+            cls.vehicle_motorcycle,
+            cls.vehicle_trailer,
+            cls.vehicle_truck,
             cls.flat_driveable_surface,
-            cls.flat_sidewalk, # 25
+            cls.flat_other, # 25
+            cls.flat_sidewalk,
             cls.flat_terrain,
-            cls.flat_other,
             cls.static_manmade,
-            cls.static_vegetation,
-            cls.static_other, # 30
+            cls.static_other,
+            cls.static_vegetation, # 30
             cls.vehicle_ego,
         ]
 
@@ -218,19 +219,22 @@ class NuscenesLoader(TrackingDatasetBase):
                 - scene_xxx(.zip)
                 - ...
 
+    For description of constructor parameters, please refer to :class:`d3d.dataset.base.TrackingDatasetBase`
     '''
     VALID_CAM_NAMES = ["cam_front", "cam_front_left", "cam_front_right", "cam_back", "cam_back_left", "cam_back_right"]
     VALID_LIDAR_NAMES = ["lidar_top"]
     VALID_OBJ_CLASSES = NuscenesDetectionClass
     VALID_PTS_CLASSES = NuscenesObjectClass._get_nuscenes_id_table()
 
-    def __init__(self, base_path, inzip=False, phase="training", trainval_split=1, trainval_random=False, nframes=0):
+    def __init__(self, base_path, inzip=False, phase="training",
+                 trainval_split=0.8, trainval_random=False, trainval_byseq=False, nframes=0):
         """
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders
         """
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
-                         trainval_split=trainval_split, trainval_random=trainval_random)
+                         trainval_split=trainval_split, trainval_random=trainval_random,
+                         trainval_byseq=trainval_byseq)
 
         self.base_path = Path(base_path) / ("trainval" if phase in ["training", "validation"] else "test")
         self.inzip = inzip
@@ -240,8 +244,8 @@ class NuscenesLoader(TrackingDatasetBase):
         self._load_metadata()
 
         # split trainval
-        total_count = sum(v.nbr_samples for v in self._metadata.values()) - nframes * len(self._metadata)
-        self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
+        frames_counts = OrderedDict((k, v.nbr_samples) for k, v in self._metadata.items())
+        self.frames = split_trainval_seq(phase, frames_counts, trainval_split, trainval_random, trainval_byseq)
 
     def _load_metadata(self):
         meta_path = self.base_path / "metadata.msg"
@@ -284,8 +288,10 @@ class NuscenesLoader(TrackingDatasetBase):
                 cat_dict[item['index']] = NuscenesObjectClass.parse(item['name'])
             
             self._segmapping = np.empty(max(cat_dict.keys()) + 1, dtype='u4')
+            builtin_table = NuscenesObjectClass._get_nuscenes_id_table()
             for idx, clsobj in cat_dict.items():
                 self._segmapping[idx] = clsobj.value
+                assert builtin_table[idx] == clsobj, "Builtin Nuscenes-lidarseg table is incorrect!"
 
     def __len__(self):
         return len(self.frames)
@@ -447,7 +453,7 @@ class NuscenesLoader(TrackingDatasetBase):
         return outputs
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def annotation_3dpoints(self, idx, names='lidar_top', raw=False):
+    def annotation_3dpoints(self, idx, names='lidar_top', convert_tag=True):
         assert names == 'lidar_top'
         seq_id, frame_idx = idx
 
@@ -462,7 +468,7 @@ class NuscenesLoader(TrackingDatasetBase):
             buffer = (self.base_path / seq_id / fname).read_bytes()
         label = np.frombuffer(buffer, dtype='u1')
 
-        if raw:
+        if convert_tag:
             return label
         else:
             return self._segmapping[label]
@@ -537,7 +543,7 @@ class NuscenesLoader(TrackingDatasetBase):
         return tsdict[names]
 
     @expand_idx_name(VALID_LIDAR_NAMES + VALID_CAM_NAMES)
-    def pose(self, idx, names="lidar_top"):
+    def pose(self, idx, raw=False, names="lidar_top"):
         # Note that here pose always return the pose of the vehicle, names are for different timestamps
         seq_id, frame_idx = idx
         fname = "pose/%03d.json" % frame_idx
@@ -549,6 +555,9 @@ class NuscenesLoader(TrackingDatasetBase):
                 data = json.load(fin)
 
         data = data[names]
+        if raw:
+            return data
+
         r = Rotation.from_quat(data['rotation'][1:] + [data['rotation'][0]])
         t = r.inv().as_matrix().dot(np.array(data['translation']))
         return EgoPose(t, r)

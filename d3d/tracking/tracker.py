@@ -6,6 +6,19 @@ from d3d.tracking.filter import Pose_3DOF_UKF_CTRA, Box_KF
 from d3d.tracking.matcher import HungarianMatcher, DistanceTypes
 
 class VanillaTracker:
+    '''
+    Implementation of a vanilla tracker based on Kalman Filter
+
+    :param lost_time: determine the time length of a target being lost before it's removed from tracking
+    :param pose_tracker_factory: factory function to generate a new pose tracker, takes only initial detection as input
+    :param feature_tracker_factory: factory function to generate a new feature tracker, takes only initial detection as input
+    :param matcher_factory: factory function to generate a new target matcher
+    :param matcher_distance_type: distance type used to match targets
+    :param matcher_distance_threshold: distance threshold used in target matcher
+    :param default_position_var: default positional covariance assigned to targets (if not provided)
+    :param default_dimension_var: default dimensional covariance assigned to targets (if not provided)
+    :param default_orientation_var: default orientational covariance assigned to targets (if not provided)
+    '''
     def __init__(self,
         pose_tracker_factory=Pose_3DOF_UKF_CTRA,
         feature_tracker_factory=Box_KF,
@@ -17,17 +30,6 @@ class VanillaTracker:
         default_dimension_var=np.eye(3),
         default_orientation_var=1
     ):
-        '''
-        :param lost_time: determine the time length of a target being lost before it's removed from tracking
-        :param pose_tracker_factory: factory function to generate a new pose tracker, takes only initial detection as input
-        :param feature_tracker_factory: factory function to generate a new feature tracker, takes only initial detection as input
-        :param matcher_factory: factory function to generate a new target matcher
-        :param matcher_distance_type: distance type used to match targets
-        :param matcher_distance_threshold: distance threshold used in target matcher
-        :param default_position_var: default positional covariance assigned to targets (if not provided)
-        :param default_dimension_var: default dimensional covariance assigned to targets (if not provided)
-        :param default_orientation_var: default orientational covariance assigned to targets (if not provided)
-        '''
         self._tracked_poses = dict() # Object trackers
         self._tracked_features = dict() # Feature trackers (shape, class, etc)
         self._timer_track = dict() # Timer for frames tracked consecutively

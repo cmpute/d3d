@@ -44,7 +44,8 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/3/', None),
     'numpy': ('https://numpy.org/devdocs/', None),
     'torch': ('https://pytorch.org/docs/stable', None),
-    'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None)
+    'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
+    'PIL': ('https://pillow.readthedocs.io/en/stable/', None)
 }
 
 autodoc_mock_imports = [

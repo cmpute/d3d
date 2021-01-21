@@ -123,6 +123,13 @@ class Target3DArray(list):
     @classmethod
     def load(cls, input) -> Target3DArray: ...
     def filter_tag(self, tags: Union[str, Enum, List[str], List[Enum]]) -> Target3DArray: ...
+    def filter_score(self, score: float) -> Target3DArray: ...
+    def filter_position(self, x_min: float = float('nan'),
+                        x_max: float = float('nan'),
+                        y_min: float = float('nan'),
+                        y_max: float = float('nan'),
+                        z_min: float = float('nan'),
+                        z_max: float = float('nan')) -> Target3DArray: ...
 
 class EgoPose:
     def __init__(self,

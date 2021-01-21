@@ -5,8 +5,8 @@ from zipfile import ZipFile
 import numpy as np
 from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import (TrackingDatasetBase, check_frames, expand_idx,
-                              expand_idx_name, split_trainval)
+from d3d.dataset.base import (TrackingDatasetBase, expand_idx,
+                              expand_idx_name, split_trainval_seq)
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
 from d3d.dataset.zip import PatchedZipFile
@@ -74,16 +74,19 @@ class KittiTrackingLoader(TrackingDatasetBase):
                 - image_02
                 - oxts
                 - velodyne
+
+    For description of constructor parameters, please refer to :class:`d3d.dataset.base.TrackingDatasetBase`
     """
 
     VALID_CAM_NAMES = ["cam2", "cam3"]
     VALID_LIDAR_NAMES = ["velo"]
     VALID_OBJ_CLASSES = KittiObjectClass
 
-    # TODO: add option to split trainval dataset by sequence instead of overall index
-    def __init__(self, base_path, inzip=False, phase="training", trainval_split=0.8, trainval_random=False, nframes=0):
+    def __init__(self, base_path, inzip=False, phase="training",
+                 trainval_split=0.8, trainval_random=False, trainval_byseq=False, nframes=0):
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
-                         trainval_split=trainval_split, trainval_random=trainval_random)
+                         trainval_split=trainval_split, trainval_random=trainval_random,
+                         trainval_byseq=trainval_byseq)
         self.phase_path = 'training' if phase == 'validation' else phase
 
         # count total number of frames
@@ -119,8 +122,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
             raise ValueError("Cannot parse dataset, please check path, inzip option and file structure")
         self.frame_dict = OrderedDict(frame_count)
 
-        total_count = sum(frame_count.values()) - nframes * len(frame_count)
-        self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
+        self.frames = split_trainval_seq(phase, self.frame_dict, trainval_split, trainval_random, trainval_byseq)
         self._image_size_cache = {} # used to store the image size (for each sequence)
         self._label_cache = {} # used to store parsed label data
         self._calib_cache = {} # used to store parsed calibration data

@@ -14,8 +14,8 @@ import tqdm
 from addict import Dict as edict
 from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import (NumberPool, TrackingDatasetBase, check_frames,
-                              expand_idx, expand_idx_name, split_trainval)
+from d3d.dataset.base import (NumberPool, TrackingDatasetBase,
+                              expand_idx, expand_idx_name, split_trainval_seq)
 from d3d.dataset.kitti360.utils import (Kitti360Class, id2label, kittiId2label,
                                         load_bboxes, load_sick_scan)
 from d3d.dataset.kitti.utils import (load_calib_file, load_image,
@@ -61,6 +61,8 @@ class KITTI360Loader(TrackingDatasetBase):
             - data_3d_semantics
                 - 2013_05_28_drive_0000_sync
                 - ...
+
+    For description of constructor parameters, please refer to :class:`d3d.dataset.base.TrackingDatasetBase`
     """
     VALID_CAM_NAMES = ['cam1', 'cam2', 'cam3', 'cam4'] # cam 1,2 are persective
     VALID_LIDAR_NAMES = ['velo'] # velo stands for velodyne
@@ -76,13 +78,17 @@ class KITTI360Loader(TrackingDatasetBase):
     )
 
     def __init__(self, base_path, phase="training", inzip=False,
-                 trainval_split=1, trainval_random=False, nframes=0, interpolate_pose=True):
+                 trainval_split=1, trainval_random=False, trainval_byseq=False,
+                 nframes=0, interpolate_pose=True):
         """
         :param phase: training, validation or testing
         :param trainval_split: placeholder for interface compatibility with other loaders
+        :param interpolate_pose: Not all frames contain pose data in KITTI-360. The loader
+            returns interpolated pose if this param is set as True, otherwise returns None
         """
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
-                         trainval_split=trainval_split, trainval_random=trainval_random)
+                         trainval_split=trainval_split, trainval_random=trainval_random,
+                         trainval_byseq=trainval_byseq)
 
         if phase not in ['training', 'validation', 'testing']:
             raise ValueError("Invalid phase tag")
@@ -145,8 +151,7 @@ class KITTI360Loader(TrackingDatasetBase):
             raise ValueError("Cannot parse dataset, please check path, inzip option and file structure")
         self.frame_dict = OrderedDict(frame_count)
 
-        total_count = sum(frame_count.values()) - nframes * len(frame_count)
-        self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
+        self.frames = split_trainval_seq(phase, self.frame_dict, self.frame_dict, trainval_random, trainval_byseq)
         self._poses_idx = {} # store loaded poses indices
         self._poses_t = {} # pose translation
         self._poses_r = {} # pose rotation
@@ -579,21 +584,17 @@ class KITTI360Loader(TrackingDatasetBase):
         self._poses_r[seq] = Rotation.from_rotvec(rotations)
 
     @expand_idx
-    def pose(self, idx, interpolate=True):
-        """
-        :param interpolate: Not all frames contain pose data in KITTI-360. The loader
-            returns interpolated pose if this param is set as True, otherwise returns None
-        """
+    def pose(self, idx, raw=False):
         seq_id, frame_idx = idx
 
         self._preload_poses(seq_id)
-        if frame_idx not in self._poses_idx[seq_id] and not interpolate:
+        if frame_idx not in self._poses_idx[seq_id] and not self.interpolate_pose:
             return None
 
         return EgoPose(self._poses_t[seq_id][frame_idx], self._poses_r[seq_id][frame_idx])
 
     @expand_idx_name(['sick'])
-    def intermediate_data(self, idx, names='sick', ninter_frames=None, report_pose=True, report_semantic=True):
+    def intermediate_data(self, idx, names='sick', ninter_frames=None, report_semantic=True):
         assert names == 'sick', "Only intermediate data for sick lidar is available in Kitti360!"
         seq_id, frame_idx = idx
 
@@ -611,7 +612,7 @@ class KITTI360Loader(TrackingDatasetBase):
         sick_ts_idxb = bisect_right(self._timestamp_cache[(seq_id, names)], key_ts)
         
         # do pose interpolation
-        if report_pose:
+        if self.interpolate_pose:
             self._preload_poses(seq_id)
             fpos = interp1d(key_ts_list, self._poses_t[seq_id], axis=0, fill_value="extrapolate")
             frot = interp1d(key_ts_list, self._poses_r[seq_id].as_rotvec(), axis=0, fill_value="extrapolate")
@@ -625,7 +626,7 @@ class KITTI360Loader(TrackingDatasetBase):
         for sick_idx in sick_ts_idx_list:
             sick_ts = sick_ts_list[sick_idx]
             item = edict(index=sick_idx, timestamp=sick_ts)
-            if report_pose:
+            if self.interpolate_pose:
                 position, rotation = fpos(sick_ts), frot(sick_ts)
                 rotation = Rotation.from_rotvec(rotation)
                 item.pose = EgoPose(position, rotation)
