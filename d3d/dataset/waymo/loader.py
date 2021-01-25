@@ -49,6 +49,8 @@ class WaymoLoader(TrackingDatasetBase):
             - validation
                 - xxxxxxxxxxxxxxxxxxxx_xxx_xxx_xxx_xxx(.zip)
                 - ...
+
+    For description of constructor parameters, please refer to :class:`d3d.dataset.base.TrackingDatasetBase`
     """
     VALID_CAM_NAMES = ["camera_front", "camera_front_left", "camera_front_right", "camera_side_left", "camera_side_right"]
     VALID_LIDAR_NAMES = ["lidar_top", "lidar_front", "lidar_side_left", "lidar_side_right", "lidar_rear"]

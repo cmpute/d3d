@@ -4,12 +4,14 @@ d3d.dataset
 This module contains loaders for various datasets.
 
 .. automodule:: d3d.dataset.base
-    :members: DatasetBase, DetectionDatasetBase, TrackingDatasetBase
-
-.. autoclass:: d3d.dataset.base.NumberPool
     :members:
+    :private-members:
+    :exclude-members: NumberPool
 
-    .. automethod:: apply_async
+    .. autoclass:: NumberPool
+        :members:
+
+        .. automethod:: apply_async
 
 .. autoclass:: d3d.dataset.zip.PatchedZipFile
     :members:

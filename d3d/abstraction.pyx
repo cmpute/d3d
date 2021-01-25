@@ -499,6 +499,42 @@ cdef class Target3DArray(list):
         tags = [t.lower() for t in tags]
         return Target3DArray([box for box in self if box.tag_name.lower() in tags], self.frame, self.timestamp)
 
+    def filter_score(self, score):
+        '''
+        Filter the list by select only objects higher than certain score
+
+        :param score: The minimun score to tag_score field
+        '''
+        return Target3DArray([box for box in self if box.tag_score >= score], self.frame, self.timestamp)
+
+    def filter_position(self,
+                        float x_min=float('nan'), float x_max=float('nan'),
+                        float y_min=float('nan'), float y_max=float('nan'),
+                        float z_min=float('nan'), float z_max=float('nan')):
+        '''
+        Filter the list of objects by the center position
+
+        :param x_min: Minimum x coordinate
+        :param x_max: Maximum x coordinate
+        :param y_min: Minimum y coordinate
+        :param y_max: Maximum y coordinate
+        :param z_min: Minimum z coordinate
+        :param z_max: Maximum z coordinate
+        '''
+        result = self
+        if x_min is not float('nan'):
+            result = [box for box in result if box.position[0] >= x_min]
+        if x_max is not float('nan'):
+            result = [box for box in result if box.position[0] < x_max]
+        if y_min is not float('nan'):
+            result = [box for box in result if box.position[0] >= y_min]
+        if y_max is not float('nan'):
+            result = [box for box in result if box.position[0] < y_max]
+        if z_min is not float('nan'):
+            result = [box for box in result if box.position[0] >= z_min]
+        if z_max is not float('nan'):
+            result = [box for box in result if box.position[0] < z_max]
+
 cdef class EgoPose:
     '''
     This object is used to store dynamic state of ego vehicle. All value is represented

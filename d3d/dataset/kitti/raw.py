@@ -1,16 +1,18 @@
-import numpy as np
-from zipfile import ZipFile
-from pathlib import Path
+from collections import OrderedDict, defaultdict
 from itertools import chain
-from collections import defaultdict, OrderedDict
-from scipy.spatial.transform import Rotation
+from pathlib import Path
+from zipfile import ZipFile
 
+import numpy as np
 from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import TrackingDatasetBase, check_frames, split_trainval, expand_idx, expand_idx_name
+from d3d.dataset.base import (TrackingDatasetBase, expand_idx,
+                              expand_idx_name, split_trainval_seq)
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
 from d3d.dataset.zip import PatchedZipFile
+from scipy.spatial.transform import Rotation
+
 
 class KittiRawLoader(TrackingDatasetBase):
     """
@@ -50,6 +52,8 @@ class KittiRawLoader(TrackingDatasetBase):
                     - velodyne_points
                     - tracklet_labels.xml
                 - ...
+
+    For description of constructor parameters, please refer to :class:`d3d.dataset.base.TrackingDatasetBase`
     """
 
     VALID_CAM_NAMES = ["cam0", "cam1", "cam2", "cam3"]
@@ -60,11 +64,8 @@ class KittiRawLoader(TrackingDatasetBase):
         "velo": "velodyne_points", "imu": "oxts"
     }
 
-    def __init__(self, base_path, datatype='sync',
-        inzip=True, phase="training",
-        trainval_split=1, trainval_random=False,
-        nframes=0
-    ):
+    def __init__(self, base_path, datatype='sync', inzip=True, phase="training",
+                 trainval_split=1, trainval_random=False, trainval_byseq=False, nframes=0):
         """
         Set the path and pre-load calibration data and timestamps.
 
@@ -72,7 +73,8 @@ class KittiRawLoader(TrackingDatasetBase):
         :param datatype: 'sync' (synced) / 'extract' (unsynced)
         """
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
-                         trainval_split=trainval_split, trainval_random=trainval_random)
+                         trainval_split=trainval_split, trainval_random=trainval_random,
+                         trainval_byseq=trainval_byseq)
         self.datatype = datatype
 
         if phase == "testing":
@@ -108,8 +110,7 @@ class KittiRawLoader(TrackingDatasetBase):
             raise ValueError("Cannot parse dataset or empty dataset, please check path, inzip option and file structure")
         self.frame_dict = OrderedDict(frame_count)
 
-        total_count = sum(frame_count.values()) - nframes * len(frame_count)
-        self.frames = split_trainval(phase, total_count, trainval_split, trainval_random)
+        self.frames = split_trainval_seq(phase, self.frame_dict, trainval_split, trainval_random, trainval_byseq)
         self._label_cache = {} # used to store parsed label data
         self._calib_cache = {} # used to store parsed calibration data
         self._timestamp_cache = {} # used to store parsed timestamp
