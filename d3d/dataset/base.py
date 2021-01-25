@@ -543,9 +543,9 @@ def expand_idx_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
             results = []
             for name in names:
                 if self.nframes == 0 or bypass:
-                    results.append(func(self, (seq_id, frame_idx), name, **kwargs))
+                    results.append(func(self, (seq_id, frame_idx), names=name, **kwargs))
                 else:
-                    results.append([func(self, (seq_id, idx), name, **kwargs)
+                    results.append([func(self, (seq_id, idx), names=name, **kwargs)
                                     for idx in range(frame_idx, frame_idx + self.nframes + 1)])
             return results[0] if unpack_result else results
 

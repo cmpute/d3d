@@ -333,6 +333,7 @@ class NuscenesLoader(TrackingDatasetBase):
     @expand_idx_name(VALID_LIDAR_NAMES)
     def lidar_data(self, idx, names='lidar_top'):
         seq_id, frame_idx = idx
+        assert names == 'lidar_top', "Only lidar_top is valid in Nuscenes dataset"
         fname = "lidar_top/%03d.pcd" % frame_idx
 
         if self._return_file_path:
@@ -543,7 +544,7 @@ class NuscenesLoader(TrackingDatasetBase):
         return tsdict[names]
 
     @expand_idx_name(VALID_LIDAR_NAMES + VALID_CAM_NAMES)
-    def pose(self, idx, raw=False, names="lidar_top"):
+    def pose(self, idx, names="lidar_top", raw=False):
         # Note that here pose always return the pose of the vehicle, names are for different timestamps
         seq_id, frame_idx = idx
         fname = "pose/%03d.json" % frame_idx
