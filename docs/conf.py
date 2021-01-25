@@ -48,7 +48,7 @@ intersphinx_mapping = {
 }
 
 autodoc_mock_imports = [
-    'cv2', 'matplotlib', 'PIL', 'scipy', 'sklearn'
+    'cv2', 'matplotlib', 'PIL', 'scipy', 'sklearn', 'xviz_avs', 'pcl'
 ]
 autodoc_typehints = 'description'
 autodoc_default_options = {

@@ -71,11 +71,11 @@ def load_timestamps(basepath, file, formatted=False):
     else:  # assume ZipFile object
         fin = basepath.open(str(file))
 
-    tz_offset = np.timedelta64(1,'h') # convert German time to UTC time
+    tz_offset = np.timedelta64(1, 'h') # convert German time to UTC time
     with fin:
         if formatted:
             for line in fin.readlines():
-                timestamps.append(np.datetime64(line) - tz_offset)
+                timestamps.append(np.datetime64(line.strip()) - tz_offset)
             timestamps = np.asanyarray(timestamps)
         else:
             timestamps = (np.loadtxt(fin) * 1e9).astype("M8[ns]") - tz_offset

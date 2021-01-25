@@ -453,7 +453,7 @@ class NuscenesLoader(TrackingDatasetBase):
 
         fname = "lidar_top_seg/%03d.bin" % frame_idx
         if self._return_file_path:
-            return self.base_path / seq_id / fname
+            return edict(semantic=self.base_path / seq_id / fname)
 
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
@@ -463,9 +463,9 @@ class NuscenesLoader(TrackingDatasetBase):
         label = np.frombuffer(buffer, dtype='u1')
 
         if raw:
-            return label
+            return edict(semantic=label)
         else:
-            return self._segmapping[label]
+            return edict(semantic=self._segmapping[label])
 
     @expand_idx
     def metadata(self, idx):

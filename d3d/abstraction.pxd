@@ -143,10 +143,10 @@ cdef class TransformSet:
 
     cpdef void set_intrinsic_general(self, str frame_id, object metadata=*) except*
     cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform,
-        tuple size, bint rotate=*, distort_coeffs=*, np.ndarray intri_matrix=*, float mirror_coeff=*) except*
+        size, bint rotate=*, distort_coeffs=*, np.ndarray intri_matrix=*, float mirror_coeff=*) except*
     cpdef void set_intrinsic_lidar(self, str frame_id) except*
     cpdef void set_intrinsic_radar(self, str frame_id) except*
-    cpdef void set_intrinsic_pinhole(self, str frame_id, tuple size, float cx, float cy,
+    cpdef void set_intrinsic_pinhole(self, str frame_id, size, float cx, float cy,
         float fx, float fy, float s=*, distort_coeffs=*) except*
     cpdef void set_intrinsic_map_pin(self, str frame_id, lon=*, lat=*) except*
     cpdef void set_extrinsic(self, transform, str frame_to=*, str frame_from=*) except*

@@ -33,12 +33,10 @@ if (TARGET torch_cpu)
         set_target_properties(torch_cuda PROPERTIES INTERFACE_LINK_LIBRARIES "${TORCH_INTERFACE_LIB}")
     endif()
 else ()
-    if (BUILD_WITH_CUDA)
-        # this case is for pytorch 1.4
-        get_target_property(TORCH_INTERFACE_LIB torch INTERFACE_LINK_LIBRARIES)
-        string(REPLACE "/usr/local/cuda" ${CUDA_TOOLKIT_ROOT_DIR} TORCH_INTERFACE_LIB "${TORCH_INTERFACE_LIB}")
-        set_target_properties(torch PROPERTIES INTERFACE_LINK_LIBRARIES "${TORCH_INTERFACE_LIB}")
-    endif()
+    # this case is for pytorch 1.4
+    get_target_property(TORCH_INTERFACE_LIB torch INTERFACE_LINK_LIBRARIES)
+    string(REPLACE "/usr/local/cuda" ${CUDA_TOOLKIT_ROOT_DIR} TORCH_INTERFACE_LIB "${TORCH_INTERFACE_LIB}")
+    set_target_properties(torch PROPERTIES INTERFACE_LINK_LIBRARIES "${TORCH_INTERFACE_LIB}")
 endif ()
 
 # Cython related dependencies

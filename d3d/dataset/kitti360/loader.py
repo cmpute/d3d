@@ -7,7 +7,7 @@ from collections import OrderedDict
 from io import BytesIO
 from itertools import chain
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import ZipFile, ZIP_STORED
 
 import numpy as np
 import tqdm
@@ -76,10 +76,12 @@ class KITTI360Loader(TrackingDatasetBase):
     )
 
     def __init__(self, base_path, phase="training", inzip=False,
-                 trainval_split=1, trainval_random=False, nframes=0, interpolate_pose=True):
+                 trainval_split=1, trainval_random=False, nframes=0,
+                 interpolate_pose=True, compression=ZIP_STORED):
         """
-        :param phase: training, validation or testing
-        :param trainval_split: placeholder for interface compatibility with other loaders
+        :param interpolate: Not all frames contain pose data in KITTI-360. The loader
+            returns interpolated pose if this param is set as True, otherwise returns None
+        :param compression: The compression type of the created zip for semantic files
         """
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
                          trainval_split=trainval_split, trainval_random=trainval_random)
@@ -92,6 +94,7 @@ class KITTI360Loader(TrackingDatasetBase):
         self.phase = phase
         self.nframes = nframes
         self.interpolate_pose = interpolate_pose
+        self.compression = compression
 
         # count total number of frames
         frame_count = dict()
@@ -316,7 +319,7 @@ class KITTI360Loader(TrackingDatasetBase):
     def calibration_data(self, idx):
         return self._calibration
 
-    # TODO: fix the points (with large distance?) with bounding box
+    # XXX: fix the points (with large distance?) with bounding box
     def _parse_semantic_ply(self, ntqdm, seq: str, fname: Path, dynamic: bool, result_path: Path, expand_frames: int):
         # match point cloud in aggregated semantic point clouds
         import pcl
@@ -412,6 +415,8 @@ class KITTI360Loader(TrackingDatasetBase):
                 cloud = cloud.dot(item.pose.orientation.as_matrix().T) + item.pose.position
                 update_semantics(cloud, 'sick', item.index)
 
+    _semantic_dtypes = dict(rgb='3u1', semantic='u1', instance='u2', visible='u1')
+
     def _preload_3dsemantics(self, seq, nworkers=7, expand_frames=150, stats_error=False):
         """
         This method will convert the combined semantic point cloud back in to frames
@@ -478,14 +483,31 @@ class KITTI360Loader(TrackingDatasetBase):
                     unmatched_points += np.sum(d > 5)
                 _logger.debug("Sick unmatched ratio (distance > 5): %.2f", unmatched_points / total_points * 100)
 
-            # save results into zipfile
+            _logger.info("Saving indexed semantic labels...")
+            velo_files = ((f, 'velodyne') for f in velo_path.glob("*.npz"))
+            sick_files = ((f, 'sick') for f in sick_path.glob("*.npz"))
             if self.inzip:
-                _logger.info("Saving indexed semantic labels...")
-                with ZipFile(self.base_path / f"{seq}_semantics.zip", "w") as archive:
-                    for f in velo_path.glob("*.npz"):
-                        archive.write(f, f"data_3d_semantics/{seq}/velodyne/{f.name}")
-                    for f in sick_path.glob("*.npz"):
-                        archive.write(f, f"data_3d_semantics/{seq}/sick/{f.name}")
+                # save results into zipfile
+                with ZipFile(self.base_path / f"{seq}_semantics.zip", "w", compression=self.compression) as archive:
+                    for f, sensor in chain(velo_files, sick_files):
+                        labels = np.load(f)
+                        name_out = f.stem + '.bin'
+                        for key in labels:
+                            archive.writestr(f"data_3d_semantics/{seq}/{sensor}/{key}/{name_out}",
+                                            labels[key].tobytes())
+
+            else:
+                # save results into separate binary files
+                for key in self._semantic_dtypes:
+                    (result_path / 'velodyne' / key).mkdir()
+                    (result_path / 'sick' / key).mkdir()
+
+                for f, sensor in chain(velo_files, sick_files):
+                    labels = np.load(f)
+                    name_out = f.stem + '.bin'
+                    for key in labels:
+                        labels[key].tofile(result_path / sensor / key / name_out)
+                    f.unlink()
 
         finally:
             # clean up
@@ -505,16 +527,21 @@ class KITTI360Loader(TrackingDatasetBase):
         seq_id, frame_idx = idx
         self._preload_3dsemantics(seq_id)
         
-        fname = Path("data_3d_semantics", seq_id, "velodyne", "%010d.npz" % frame_idx)
+        fnames = {}
+        for key in self._semantic_dtypes:
+            fnames[key] = Path("data_3d_semantics", seq_id, "velodyne", key, "%010d.bin" % frame_idx)
         if self._return_file_path:
-            return self.base_path / fname
+            return edict({k: self.base_path / v for k, v in fnames.items()})
 
+        data = edict()
         if self.inzip:
-            fname = str(fname)
-            with PatchedZipFile(f"{seq_id}_semantics.zip", to_extract=fname) as ar:
-                data = edict(np.load(BytesIO(ar.read(fname))))
+            with PatchedZipFile(self.base_path / f"{seq_id}_semantics.zip",
+                                to_extract=[str(v) for v in fnames.values()]) as ar:
+                for k, v in fnames.items():
+                    data[k] = np.frombuffer(ar.read(str(v)), dtype=self._semantic_dtypes[k])
         else:
-            data = edict(np.load(self.base_path / fname))
+            for k, v in fnames.items():
+                data[k] = np.fromfile(self.base_path / v, dtype=self._semantic_dtypes[k])
 
         data.visible = np.unpackbits(data.visible, count=len(data.semantic)).astype(bool)
         return data
@@ -579,15 +606,11 @@ class KITTI360Loader(TrackingDatasetBase):
         self._poses_r[seq] = Rotation.from_rotvec(rotations)
 
     @expand_idx
-    def pose(self, idx, interpolate=True):
-        """
-        :param interpolate: Not all frames contain pose data in KITTI-360. The loader
-            returns interpolated pose if this param is set as True, otherwise returns None
-        """
+    def pose(self, idx):
         seq_id, frame_idx = idx
 
         self._preload_poses(seq_id)
-        if frame_idx not in self._poses_idx[seq_id] and not interpolate:
+        if frame_idx not in self._poses_idx[seq_id] and not self.interpolate_pose:
             return None
 
         return EgoPose(self._poses_t[seq_id][frame_idx], self._poses_r[seq_id][frame_idx])
@@ -611,7 +634,7 @@ class KITTI360Loader(TrackingDatasetBase):
         sick_ts_idxb = bisect_right(self._timestamp_cache[(seq_id, names)], key_ts)
         
         # do pose interpolation
-        if report_pose:
+        if report_pose and self.interpolate_pose:
             self._preload_poses(seq_id)
             fpos = interp1d(key_ts_list, self._poses_t[seq_id], axis=0, fill_value="extrapolate")
             frot = interp1d(key_ts_list, self._poses_r[seq_id].as_rotvec(), axis=0, fill_value="extrapolate")
@@ -625,14 +648,15 @@ class KITTI360Loader(TrackingDatasetBase):
         for sick_idx in sick_ts_idx_list:
             sick_ts = sick_ts_list[sick_idx]
             item = edict(index=sick_idx, timestamp=sick_ts)
-            if report_pose:
+            if report_pose and self.interpolate_pose:
                 position, rotation = fpos(sick_ts), frot(sick_ts)
                 rotation = Rotation.from_rotvec(rotation)
                 item.pose = EgoPose(position, rotation)
 
             item.file = Path(seq_id, "sick_points", "data", '%010d.bin' % sick_idx)
             if report_semantic:
-                item.semantic_file = Path("data_3d_semantics", seq_id, "sick", "%010d.npz" % sick_idx)
+                for key in self._semantic_dtypes:
+                    item[key] = Path("data_3d_semantics", seq_id, "sick", key, "%010d.bin" % sick_idx)
             result.append(item)
 
         if self.inzip:
@@ -642,12 +666,15 @@ class KITTI360Loader(TrackingDatasetBase):
                     item.data = load_sick_scan(source, item.pop("file"))
 
             if report_semantic:
-                namelist = [item.semantic_file for item in result]
+                namelist = [] # gather all files to read in advance
+                for item in result:
+                    for key in self._semantic_dtypes:
+                        namelist.append(item[key])
+
                 with PatchedZipFile(self.base_path / f"{seq_id}_semantics.zip", to_extract=namelist) as source:
                     for item in result:
-                        data_bin = source.read(str(item.pop("semantic_file")))
-                        data_dict = dict(np.load(BytesIO(data_bin)))
-                        item.update(data_dict)
+                        for key in self._semantic_dtypes:
+                            item[key] = np.frombuffer(source.read(str(item[key])), dtype=self._semantic_dtypes[key])
                         item.visible = np.unpackbits(item.visible, count=len(item.data)).astype(bool)
         else:
             for item in result:
@@ -659,10 +686,11 @@ class KITTI360Loader(TrackingDatasetBase):
             if report_semantic:
                 for item in result:
                     if not self._return_file_path:
-                        data_dict = dict(np.load(self.base_path / item.pop("semantic_file")))
-                        item.update(data_dict)
+                        for key in self._semantic_dtypes:
+                            item[key] = np.fromfile(self.base_path / item[key], dtype=self._semantic_dtypes[key])
                         item.visible = np.unpackbits(item.visible, count=len(item.data)).astype(bool)
                     else:
-                        item.semantic_file = self.base_path / item.semantic_file
+                        for key in self._semantic_dtypes:
+                            item[key] = self.base_path / item[key]
 
         return result

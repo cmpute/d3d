@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import Iterable, List, Type, Union
+from typing import Iterable, List, Type, Union, Tuple
 
 import numpy
 import scipy.spatial.transform
@@ -177,7 +177,7 @@ class TransformSet:
 
     def set_intrinsic_camera(self, frame_id: str,
                              transform: numpy.ndarray,
-                             size: tuple,
+                             size: Tuple[int, int],
                              rotate: bool,
                              distort_coeffs: Union[numpy.ndarray, List[float]],
                              intri_matrix: numpy.ndarray,
@@ -188,7 +188,7 @@ class TransformSet:
     def set_intrinsic_radar(self, frame_id: str): ...
 
     def set_intrinsic_pinhole(self, frame_id: str,
-                              size: tuple,
+                              size: Tuple[int, int],
                               cx: float,
                               cy: float,
                               fx: float,

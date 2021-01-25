@@ -417,16 +417,21 @@ class NumberPool:
                 ...
 
     Then the parallel progress bars will be displayed in place.
+    Additionally if processes < 1, then functions will be executed in current thread.
     '''
 
     def __init__(self, processes, offset=0, *args, **kargs):
-        self._ppool = Pool(processes, initializer=tqdm.set_lock, # pool of processes
-                           initargs=(tqdm.get_lock(),), *args, **kargs)
-        self._npool = Manager().Array('B', [0] * processes) # pool of position number
-        self._nlock = Manager().Lock() # lock for self._npool
-        self._nqueue = 0 # number of tasks in pool
-        self._offset = offset
-        self._complete_event = Event()
+        if processes == 0:
+            self._single_thread = True
+        else:
+            self._single_thread = False
+            self._ppool = Pool(processes, initializer=tqdm.set_lock, # pool of processes
+                            initargs=(tqdm.get_lock(),), *args, **kargs)
+            self._npool = Manager().Array('B', [0] * processes) # pool of position number
+            self._nlock = Manager().Lock() # lock for self._npool
+            self._nqueue = 0 # number of tasks in pool
+            self._offset = offset
+            self._complete_event = Event()
 
     @staticmethod
     def _wrap_func(func, args, pool, nlock, offset):
@@ -438,6 +443,12 @@ class NumberPool:
         return (n, ret)
 
     def apply_async(self, func, args=(), callback=None):
+        if self._single_thread:
+            result = func(0, *args)
+            if callback is not None:
+                callback(result)
+            return result
+
         def _wrap_cb(ret):
             n, oret = ret
             with self._nlock:

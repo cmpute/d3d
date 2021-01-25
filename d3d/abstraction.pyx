@@ -632,7 +632,7 @@ cdef class TransformSet:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = metadata
 
-    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, tuple size, bint rotate=True,
+    cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, bint rotate=True,
         distort_coeffs=None, np.ndarray intri_matrix=None, float mirror_coeff=float('nan')) except*:
         '''
         Set camera intrinsics
@@ -666,7 +666,7 @@ cdef class TransformSet:
         self.intrinsics[frame_id] = None
         self.intrinsics_meta[frame_id] = RadarMetadata()
 
-    cpdef void set_intrinsic_pinhole(self, str frame_id, tuple size,
+    cpdef void set_intrinsic_pinhole(self, str frame_id, size,
         float cx, float cy, float fx, float fy, float s=0, distort_coeffs=[]) except*:
         '''
         Set camera intrinsics with pinhole model parameters
