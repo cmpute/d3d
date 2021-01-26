@@ -75,7 +75,8 @@ class KittiTrackingLoader(TrackingDatasetBase):
                 - oxts
                 - velodyne
 
-    For description of constructor parameters, please refer to :class:`d3d.dataset.base.TrackingDatasetBase`
+    For description of constructor parameters, please refer to :class:`d3d.dataset.base.TrackingDatasetBase`.
+    Note that the 3d objects labelled as `DontCare` are removed from the result of :meth:`annotation_3dobject`.
     """
 
     VALID_CAM_NAMES = ["cam2", "cam3"]
@@ -292,11 +293,6 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
     @expand_idx
     def annotation_3dobject(self, idx, raw=False):
-        '''
-        Return list of converted ground truth targets in lidar frame.
-
-        Note that objects labelled as `DontCare` are removed
-        '''
         assert not self._return_file_path, "The annotation is not stored in single file!"
         assert self.phase_path != "testing", "Testing dataset doesn't contain label data"
         seq_id, frame_idx = idx

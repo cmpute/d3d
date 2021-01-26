@@ -47,6 +47,10 @@ OxtData = namedtuple("OxtData", [
 ])
 
 class KittiObjectClass(Enum):
+    '''
+    Category of objects in KITTI dataset
+    '''
+
     DontCare = 0
     Car = auto()
     Van = auto()

@@ -769,6 +769,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
     def tracked_ratio(self, float score=NAN, float frame_ratio_threshold=0.8, bint return_all=False):
         '''
         Return the ratio of mostly tracked trajectories.
+
         :param frame_ratio_threshold: The threshold of ratio of tracked frames over total frames.
             A trajectory with higher tracked frames ratio will be counted as mostly tracked
         '''
@@ -777,6 +778,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
     def lost_ratio(self, float score=NAN, float frame_ratio_threshold=0.2, bint return_all=False):
         '''
         Return the ratio of mostly lost trajectories.
+
         :param frame_ratio_threshold: The threshold of ratio of tracked frames over total frames.
             A trajectory with lower tracked frames ratio will be counted as mostly tracked
         '''

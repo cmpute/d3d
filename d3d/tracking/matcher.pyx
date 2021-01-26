@@ -109,6 +109,9 @@ cdef class BaseMatcher:
         return self._src_assignment.size()
 
 cdef class ScoreMatcher:
+    """
+    This matcher select target correspondences from highest score to lowest score
+    """
     cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*:
         # sort src boxes by their score, and sort dst boxes by its distance to src boxes
         cdef list src_list = src_subset, dst_list = dst_subset
@@ -132,6 +135,9 @@ cdef class ScoreMatcher:
         self.match_by_order(src_indices, dst_indices, distance_threshold)
 
 cdef class NearestNeighborMatcher:
+    """
+    This matcher select target correspondences from closest pair to farthest pair
+    """
     cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*:
         # sort the match pairs by distance
         cdef list src_list = src_subset, dst_list = dst_subset
@@ -153,6 +159,9 @@ cdef class NearestNeighborMatcher:
         self.match_by_order(src_indices, dst_indices, distance_threshold)
 
 cdef class HungarianMatcher:
+    """
+    This matcher select target correspondences using the Hungarian Algorithm
+    """
     cpdef void match(self, vector[int] src_subset, vector[int] dst_subset, unordered_map[int, float] distance_threshold) except*:
         # split the input by categories
         cdef dict src_classes = {}, dst_classes = {}

@@ -63,6 +63,13 @@ class KITTI360Loader(TrackingDatasetBase):
                 - ...
 
     For description of constructor parameters, please refer to :class:`d3d.dataset.base.TrackingDatasetBase`
+    
+    :param interpolate_pose: Not all frames contain pose data in KITTI-360. The loader
+        returns interpolated pose if this param is set as True, otherwise returns None
+    :type interpolate_pose: bool
+    :param compression: The compression type of the created zip for semantic files. It should be one of the
+        compression types specified in :mod:`zipfile` module.
+    :type compression: int 
     """
     VALID_CAM_NAMES = ['cam1', 'cam2', 'cam3', 'cam4'] # cam 1,2 are persective
     VALID_LIDAR_NAMES = ['velo'] # velo stands for velodyne
@@ -80,11 +87,6 @@ class KITTI360Loader(TrackingDatasetBase):
     def __init__(self, base_path, phase="training", inzip=False,
                  trainval_split=1, trainval_random=False, trainval_byseq=False,
                  nframes=0, interpolate_pose=True, compression=ZIP_STORED):
-        """
-        :param interpolate: Not all frames contain pose data in KITTI-360. The loader
-            returns interpolated pose if this param is set as True, otherwise returns None
-        :param compression: The compression type of the created zip for semantic files
-        """
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
                          trainval_split=trainval_split, trainval_random=trainval_random,
                          trainval_byseq=trainval_byseq)

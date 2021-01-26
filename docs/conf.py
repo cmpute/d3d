@@ -55,6 +55,7 @@ autodoc_typehints = 'description'
 autodoc_default_options = {
     "show-inheritance": True
 }
+autoclass_content = 'both'
 autosectionlabel_prefix_document = True
 
 # AutoApi related configurations

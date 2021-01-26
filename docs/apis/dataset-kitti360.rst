@@ -2,4 +2,8 @@ d3d.dataset.kitti360
 ====================
 
 .. automodule:: d3d.dataset.kitti360
-    :members: Kitti360Class, KITTI360Loader
+    :members: KITTI360Loader
+
+.. autoclass:: d3d.dataset.kitti360.Kitti360Class
+    :members:
+    :undoc-members:

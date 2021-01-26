@@ -29,6 +29,9 @@ from d3d.dataset.base import TrackingDatasetBase, check_frames, expand_idx, expa
 _logger = logging.getLogger("d3d")
 
 class WaymoObjectClass(Enum):
+    '''
+    Category of objects in KITTI dataset
+    '''
     Unknown = 0
     Vehicle = auto()
     Pedestrian = auto()
@@ -110,12 +113,7 @@ class WaymoLoader(TrackingDatasetBase):
 
     @expand_idx_name(VALID_LIDAR_NAMES)
     def lidar_data(self, idx, names=None):
-        """
-        :param names: frame names of lidar to be loaded
-        :param concat: concatenate the points together. If concatenated, point cloud will be in vehicle frame (FLU)
-
-        XXX: support return ri2 data
-        """
+        # XXX: support return ri2 data
         seq_id, frame_idx = idx
 
         fname = "%s/%04d.bin" % (names, frame_idx)

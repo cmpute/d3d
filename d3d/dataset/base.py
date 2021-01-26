@@ -1,11 +1,10 @@
 import functools
 import inspect
-from collections import OrderedDict
 from enum import Enum
 from multiprocessing import Manager, Pool
 from pathlib import Path
 from threading import Event
-from typing import (Any, Callable, Dict, List, Optional, OrderedDict, Tuple,
+from typing import (Any, Callable, Dict, List, Optional, Dict, Tuple,
                     Union, ContextManager)
 
 import numpy as np
@@ -15,6 +14,10 @@ from numpy import ndarray as NdArray
 from PIL.Image import Image
 from tqdm import tqdm
 
+try:
+    from typing import OrderedDict
+except ImportError: # in version < 3.7.2
+    OrderedDict = Dict
 
 def split_trainval(phase: str,
                    total_count: int,
@@ -59,7 +62,7 @@ def split_trainval(phase: str,
     return frames
 
 def split_trainval_seq(phase: str,
-                       seq_counts: OrderedDict[Any, int],
+                       seq_counts: Dict[Any, int],
                        trainval_split: Union[float, List[int]],
                        trainval_random: Union[bool, int, str],
                        by_seq: bool = False):
@@ -153,14 +156,6 @@ def check_frames(names: Union[List[str], str], valid: List[str]):
 class DatasetBase:
     """
     This class acts as the base for all dataset loaders
-
-    :param base_path: directory containing the zip files, or the required data
-    :param inzip: whether the dataset is store in original zip archives or unzipped
-    :param phase: training, validation or testing
-    :param trainval_split: the ratio to split training dataset. See
-                           documentation of :func:`split_trainval` for detail.
-    :param trainval_random: whether select the train/val split randomly. See
-                           documentation of :func:`split_trainval` for detail.
     """
     def __init__(self,
                  base_path: Union[str, Path],
@@ -168,6 +163,15 @@ class DatasetBase:
                  phase: str = "training",
                  trainval_split: Union[float, List[int]] = 1.,
                  trainval_random: Union[bool, int, str] = False):
+        """
+        :param base_path: directory containing the zip files, or the required data
+        :param inzip: whether the dataset is store in original zip archives or unzipped
+        :param phase: training, validation or testing
+        :param trainval_split: the ratio to split training dataset. See
+                            documentation of :func:`split_trainval` for detail.
+        :param trainval_random: whether select the train/val split randomly. See
+                            documentation of :func:`split_trainval` for detail.
+        """
         self.base_path = Path(base_path)
         self.inzip = inzip
         self.phase = phase
@@ -198,14 +202,6 @@ class DatasetBase:
 class DetectionDatasetBase(DatasetBase):
     """
     This class defines basic interface for object detection
-
-    :param base_path: directory containing the zip files, or the required data
-    :param inzip: whether the dataset is store in original zip archives or unzipped
-    :param phase: training, validation or testing
-    :param trainval_split: the ratio to split training dataset. See
-                           documentation of :func:`split_trainval` for detail.
-    :param trainval_random: whether select the train/val split randomly. See
-                           documentation of :func:`split_trainval` for detail.
     """
     VALID_CAM_NAMES: list
     '''
@@ -228,6 +224,15 @@ class DetectionDatasetBase(DatasetBase):
                  phase: str = "training",
                  trainval_split: Union[float, List[int]] = 1.,
                  trainval_random: Union[bool, int, str] = False):
+        """
+        :param base_path: directory containing the zip files, or the required data
+        :param inzip: whether the dataset is store in original zip archives or unzipped
+        :param phase: training, validation or testing
+        :param trainval_split: the ratio to split training dataset. See
+                            documentation of :func:`split_trainval` for detail.
+        :param trainval_random: whether select the train/val split randomly. See
+                            documentation of :func:`split_trainval` for detail.
+        """
         super().__init__(base_path, inzip=inzip, phase=phase,
                          trainval_split=trainval_split, trainval_random=trainval_random)
 
@@ -294,20 +299,6 @@ class TrackingDatasetBase(DetectionDatasetBase):
     Tracking dataset is similarly defined with detection dataset. The two major differences are
     1. Tracking dataset use (sequence_id, frame_id) as identifier.
     2. Tracking dataset provide unique object id across time frames.
-
-    :param base_path: directory containing the zip files, or the required data
-    :param inzip: whether the dataset is store in original zip archives or unzipped
-    :param phase: training, validation or testing
-    :param trainval_split: the ratio to split training dataset. See
-                           documentation of :func:`split_trainval` for detail.
-    :param trainval_random: whether select the train/val split randomly. See
-                           documentation of :func:`split_trainval` for detail.
-    :param nframes: number of consecutive frames returned from the accessors
-
-        * If it's a positive number, then it returns adjacent frames with total number reduced
-        * If it's a negative number, absolute value of it is consumed
-        * If it's zero, then it act like object detection dataset, which means the methods will return unpacked data
-    :param trainval_byseq: Whether split trainval partitions by sequences instead of frames
     """
 
     def __init__(self,
@@ -318,6 +309,21 @@ class TrackingDatasetBase(DetectionDatasetBase):
                  trainval_random: Union[bool, int, str] = False,
                  trainval_byseq = False,
                  nframes: int = 0):
+        """
+        :param base_path: directory containing the zip files, or the required data
+        :param inzip: whether the dataset is store in original zip archives or unzipped
+        :param phase: training, validation or testing
+        :param trainval_split: the ratio to split training dataset. See
+                            documentation of :func:`split_trainval` for detail.
+        :param trainval_random: whether select the train/val split randomly. See
+                            documentation of :func:`split_trainval` for detail.
+        :param nframes: number of consecutive frames returned from the accessors
+
+            * If it's a positive number, then it returns adjacent frames with total number reduced
+            * If it's a negative number, absolute value of it is consumed
+            * If it's zero, then it act like object detection dataset, which means the methods will return unpacked data
+        :param trainval_byseq: Whether split trainval partitions by sequences instead of frames
+        """
         super().__init__(base_path, inzip=inzip, phase=phase,
                          trainval_split=trainval_split, trainval_random=trainval_random)
         self.nframes = abs(nframes)
@@ -565,17 +571,18 @@ class NumberPool:
                 ...
 
     Then the parallel progress bars will be displayed in place.
-
-    :param processes: Number of processes available in the pool. If processes < 1,
-                      then functions will be executed in current thread.
-    :param offset: The offset added to the `ntqdm` value of all process. This is useful
-                   when you want to display a progress bar in outer loop.
     '''
 
     def __init__(self,
                  processes: int,
                  offset: int = 0,
                  *args, **kargs):
+        """
+        :param processes: Number of processes available in the pool. If processes < 1,
+                        then functions will be executed in current thread.
+        :param offset: The offset added to the `ntqdm` value of all process. This is useful
+                    when you want to display a progress bar in outer loop.
+        """
         if processes == 0:
             self._single_thread = True
         else:

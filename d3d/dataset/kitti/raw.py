@@ -54,24 +54,22 @@ class KittiRawLoader(TrackingDatasetBase):
                 - ...
 
     For description of constructor parameters, please refer to :class:`d3d.dataset.base.TrackingDatasetBase`
+    Note that the 3d objects labelled as `DontCare` are removed from the result of :meth:`annotation_3dobject`.
+
+    :param datatype: 'sync' (synced) / 'extract' (unsynced)
+    :type datatype: str
     """
 
     VALID_CAM_NAMES = ["cam0", "cam1", "cam2", "cam3"]
     VALID_LIDAR_NAMES = ["velo"]
     VALID_OBJ_CLASSES = KittiObjectClass
-    FRAME2FOLDER = {
+    _frame2folder = {
         "cam0": "image_00", "cam1": "image_01", "cam2": "image_02", "cam3": "image_03",
         "velo": "velodyne_points", "imu": "oxts"
     }
 
-    def __init__(self, base_path, datatype='sync', inzip=True, phase="training",
+    def __init__(self, base_path, datatype: str = 'sync', inzip=True, phase="training",
                  trainval_split=1, trainval_random=False, trainval_byseq=False, nframes=0):
-        """
-        Set the path and pre-load calibration data and timestamps.
-
-        # Parameters
-        :param datatype: 'sync' (synced) / 'extract' (unsynced)
-        """
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
                          trainval_split=trainval_split, trainval_random=trainval_random,
                          trainval_byseq=trainval_byseq)
@@ -230,7 +228,7 @@ class KittiRawLoader(TrackingDatasetBase):
             return
 
         tsdict = {}
-        for frame, folder in self.FRAME2FOLDER.items():
+        for frame, folder in self._frame2folder.items():
             fname = Path(date, seq_id, folder, "timestamps.txt")
             if self.inzip:
                 with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as data:
@@ -241,11 +239,6 @@ class KittiRawLoader(TrackingDatasetBase):
 
     @expand_idx_name(VALID_CAM_NAMES + VALID_LIDAR_NAMES)
     def timestamp(self, idx, names="velo"):
-        '''
-        Get the timestamp of the data.
-
-        :param names: specify the data source of timestamp. Options include {cam0-3, velo, imu}
-        '''
         assert not self._return_file_path, "The timestamp is not stored in single file!"
         seq_id, frame_idx = idx
         self._preload_timestamp(seq_id)
@@ -305,7 +298,7 @@ class KittiRawLoader(TrackingDatasetBase):
         seq_id, frame_idx = idx
         date = self._get_date(seq_id)
 
-        fname = Path(date, seq_id, self.FRAME2FOLDER[names], 'data', '%010d.png' % frame_idx)
+        fname = Path(date, seq_id, self._frame2folder[names], 'data', '%010d.png' % frame_idx)
         if self._return_file_path:
             return self.base_path / fname
 

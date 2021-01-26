@@ -88,7 +88,10 @@ class NuscenesObjectClass(IntFlag):
     pedestrian_moving = 0x8000
 
     @classmethod
-    def parse(cls, string):
+    def parse(cls, string: str):
+        '''
+        Parse the Nuscenes class from string
+        '''
         return cls[string.replace('.', '_')]
     @classmethod
     def _get_nuscenes_id_table(cls):
@@ -129,17 +132,23 @@ class NuscenesObjectClass(IntFlag):
         ]
 
     @classmethod
-    def from_nuscenes_id(cls, nid):
+    def from_nuscenes_id(cls, nid: int):
+        '''
+        Get Nuscenes class object from Nuscenes ID
+        '''
         return cls._get_nuscenes_id_table()[nid]
 
     @property
     def category(self):
+        ''' The category of the label '''
         return self & 0x0fff
     @property
     def attribute(self):
+        ''' The attribute of the label '''
         return self & 0xf000
     @property
     def category_name(self):
+        ''' Name of the category of the label '''
         name = self.category.name
         name = name.replace("icle_", "icle.").replace("an_", "an.")
         name = name.replace("t_", "t.").replace("s_", "s.")
@@ -147,15 +156,18 @@ class NuscenesObjectClass(IntFlag):
         return name
     @property
     def attribute_name(self):
+        ''' Name of the attribute of the label '''
         name = self.attribute.name
         name = name.replace("e_", "e.")
         name = name.replace("n_", "n.")
         return name
     @property
     def pretty_name(self):
+        ''' Get the full name of the label with category and attribute '''
         return f"{self.category_name}[{self.attribute_name}]"
     @property
     def nuscenes_id(self):
+        ''' Get the Nuscenes ID of the label '''
         try:
             return self._get_nuscenes_id_table().index(self.category)
         except ValueError:
@@ -163,7 +175,7 @@ class NuscenesObjectClass(IntFlag):
 
     def to_detection(self):
         """
-        Convert the class to class for detection
+        Convert the label to the class for detection
         """
         # following table is copied from nuscenes definition
         detection_mapping = {

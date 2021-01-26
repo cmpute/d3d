@@ -1,0 +1,18 @@
+# for creating conda environment for building d3d
+name: null
+
+channels:
+  - pytorch
+  - defaults
+
+dependencies:
+  - python
+  - pip
+  - setuptools_scm
+  - scikit-build
+  - cython
+  - cpuonly
+  - pytorch
+  - scipy>=1.4
+  - addict
+  - pillow
