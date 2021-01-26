@@ -21,7 +21,7 @@ from d3d.dataset.kitti360.utils import (Kitti360Class, id2label, kittiId2label,
 from d3d.dataset.kitti.utils import (load_calib_file, load_image,
                                      load_timestamps, load_velo_scan)
 from d3d.dataset.zip import PatchedZipFile
-from filelock import FileLock
+
 from PIL import Image
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation, Slerp
@@ -325,9 +325,10 @@ class KITTI360Loader(TrackingDatasetBase):
 
     # XXX: fix the points (with large distance?) with bounding box
     def _parse_semantic_ply(self, ntqdm, seq: str, fname: Path, dynamic: bool, result_path: Path, expand_frames: int):
-        # match point cloud in aggregated semantic point clouds
+        ''' match point cloud in aggregated semantic point clouds '''
         import pcl
         from sklearn.neighbors import KDTree
+        from filelock import FileLock
 
         fstart, fend = fname.stem.split('_')
         fstart, fend = int(fstart), int(fend)

@@ -1,0 +1,15 @@
+# runtime dependencies
+numpy >= 1.17.0
+torch >= 1.4
+scipy >= 1.4
+addict
+pillow
+tqdm
+msgpack
+filterpy
+
+# build dependencies
+cmake >= 3.12
+cython >= 0.29.16
+scikit-build
+setuptools-scm

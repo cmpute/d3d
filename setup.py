@@ -51,6 +51,11 @@ def full_version(): # get
 
     return {'local_scheme': full_scheme}
 
+extras = {
+    'doc': ['sphinx', 'recommonmark', 'sphinx_rtd_theme'],
+    'test': ['pytest']
+}
+
 setup(
     name="d3d",
     use_scm_version=full_version,
@@ -64,7 +69,7 @@ setup(
     packages=find_packages(),
     install_requires=['numpy', 'torch', 'scipy>=1.4', 'addict', 'pillow'],
     setup_requires=['scikit-build', 'setuptools_scm', 'cython>=0.29.16'],
-    extras_require={'test': ['pytest']},
+    extras_require=extras,
     classifiers=[
         'Programming Language :: C++',
         'Programming Language :: Cython',
@@ -82,5 +87,8 @@ setup(
             'd3d_kitti_parse_result = d3d.dataset.kitti.object:parse_detection_output',
         ],
     },
-    cmake_args=[f'-DCMAKE_PREFIX_PATH={torch_root}', '-DBUILD_WITH_CUDA=%s' % ("ON" if use_cuda else "OFF")] if torch_root else []
+    cmake_args=[
+        f'-DCMAKE_PREFIX_PATH={torch_root}',
+        '-DBUILD_WITH_CUDA=%s' % ("ON" if use_cuda else "OFF")
+    ] if torch_root else []
 )

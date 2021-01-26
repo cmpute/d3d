@@ -5,8 +5,6 @@ from pathlib import Path
 
 import numpy as np
 from addict import Dict as edict
-from intervaltree import Interval, IntervalTree
-from sklearn.neighbors import KDTree
 
 class Kitti360Class(IntFlag): # XXX: actually is CityscapeClass
     """
@@ -186,11 +184,13 @@ def load_sick_scan(basepath, file):
     return scan.reshape((-1, 2))
 
 
-def load_bboxes(basepath, file, estimate_velocity=True): # TODO: add velocity information
+def load_bboxes(basepath, file):
     """
     :param poses: if poses are provided, static objects will be filtered if it's out
         of visible_range
-    """
+    """    
+    from intervaltree import Interval, IntervalTree
+
     if isinstance(basepath, (str, Path)):
         tree = ET.parse(Path(basepath, file))
         root = tree.getroot()

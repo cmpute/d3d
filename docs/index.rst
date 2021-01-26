@@ -8,6 +8,17 @@ D3D: Devkit for 3D Machine Learning
 
 D3D is a collections of tools built for 3D Machine Learning, currently it's mainly designed for 3D object detection and tracking tasks.
 
+Please consider siting my work if you find this library useful in your research :)
+
+.. code-block:: bibtex
+
+   @article{zhong2020uncertainty,
+     title={Uncertainty-Aware Voxel based 3D Object Detection and Tracking with von-Mises Loss},
+     author={Zhong, Yuanxin and Zhu, Minghan and Peng, Huei},
+     journal={arXiv preprint arXiv:2011.02553},
+     year={2020}
+   }
+
 .. toctree::
    :caption: Get Started
    :maxdepth: 2

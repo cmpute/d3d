@@ -3,10 +3,13 @@
 Installation requirements:
 - `python >= 3.6`
 - `numpy >= 1.17.0`
-- `pytorch == 1.4`
+- `pytorch >= 1.4`
 - `scipy >= 1.4`
 - `addict`
 - `pillow`
+- `tqdm`
+- `msgpack`
+- `filterpy`
 
 Build requirements:
 - `cython >= 0.29.16`
@@ -18,11 +21,10 @@ Optional requirements:
 - `pcl.py`: support visualization in PCL
 - `matplotlib`: support visualization in 2D figures
 - `waymo_open_dataset`: support converting Waymo Dataset
-- `msgpack`: support serialization/deserialization
-- `filterpy`: support KF tracking
 - `intervaltree`: support indexing in some datasets
 - `pyyaml`: support calibration loading in some datasets
 - `filelock`: support indexing in some datasets
+- `scikit-learn`: support indexing in some datasets
 
 # Build
 
@@ -39,3 +41,27 @@ Some tips about building the library in a cluster: The default behavior of build
 ## Wheels
 
 Prebuilt wheels will be distributed in the future, through either release page or conda channel. Only source distribution will be uploaded to PyPI.
+
+## Versioning
+- Major version will be increased when big feature is added
+- Minor version will be increased when API compatibility is broken
+- Patch version will be increased when new feature is completed.
+
+# Features
+- Unified data representation
+- Support loading KITTI, Waymo, Nuscenes dataset
+- Rotated 2D IoU, NMS with clear CUDA implementations
+- Point Cloud Voxelization
+- Visualization
+- Benchmarking
+
+## Package structure
+
+- `d3d.abstraction`: Common interface definitions
+- `d3d.benchmark`: Implementation of benchmarks
+- `d3d.box`: Modules for bounding box related calculations
+- `d3d.dataset`: Modules for dataset loading
+- `d3d.math`: Implementation of some special math functions
+- `d3d.point`: Modules for point array related components
+- `d3d.vis`: Modules for visualizations
+- `d3d.voxel`: Moduels for voxel related components

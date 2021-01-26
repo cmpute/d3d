@@ -12,8 +12,8 @@
 #
 import os
 import sys
-from setuptools_scm import get_version
-sys.path.insert(0, os.path.abspath('..'))
+# from setuptools_scm import get_version
+# sys.path.insert(0, os.path.abspath('..'))
 
 
 # -- Project information -----------------------------------------------------
@@ -21,8 +21,11 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'd3d'
 copyright = '2020-2021, Jacob Zhong'
 author = 'Jacob Zhong'
-here = os.path.dirname(os.path.abspath(__file__))
-release = get_version(os.path.dirname(here))
+
+from pkg_resources import get_distribution
+version = get_distribution('d3d').version
+public_ver = version.split('+')[0]
+release = public_ver
 
 # -- General configuration ---------------------------------------------------
 

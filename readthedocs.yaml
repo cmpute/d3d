@@ -3,8 +3,17 @@ version: 2
 sphinx:
   configuration: docs/conf.py
 
+submodules:
+  include: all
+  recursive: true
+
+python:
+  version: 3.7
+  install:
+    - requirements: docs/requirements.txt
+    - requirements: requirements.txt
+    - method: setuptools
+      path: .
+
 formats:
   - pdf
-
-conda:
-  environment: conda/env-dev-cpu.yaml
