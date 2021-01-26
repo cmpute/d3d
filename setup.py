@@ -88,7 +88,8 @@ setup(
         ],
     },
     cmake_args=[
-        f'-DCMAKE_PREFIX_PATH={torch_root}',
-        '-DBUILD_WITH_CUDA=%s' % ("ON" if use_cuda else "OFF")
+        '-DCMAKE_PREFIX_PATH=%s' % torch_root,
+        '-DBUILD_WITH_CUDA=%s' % ("ON" if use_cuda else "OFF"),
+        '-DCYTHON_WITH_NO_DOCSTRINGS_ARG=FALSE',
     ] if torch_root else []
 )
