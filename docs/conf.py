@@ -24,7 +24,12 @@ author = 'Jacob Zhong'
 
 from pkg_resources import get_distribution
 version = get_distribution('d3d').version
-public_ver = version.split('+')[0]
+if '+' in version:
+    public_ver = version.split('+', 1)[0]
+if '-' in version:
+    public_ver = version.split('-', 1)[0]
+else:
+    public_ver = version
 release = public_ver
 
 # -- General configuration ---------------------------------------------------

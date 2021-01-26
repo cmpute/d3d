@@ -1,6 +1,6 @@
 # specific version for required libraries
 https://download.pytorch.org/whl/cpu/torch-1.5.0%2Bcpu-cp37-cp37m-linux_x86_64.whl
--e git://github.com/bdice/scikit-build.git@68c3348b90ec6918f5ed27509eb02081daf81b5c
+git+git://github.com/bdice/scikit-build.git@68c3348b90ec6918f5ed27509eb02081daf81b5c
 
 # dependencies for building the docs
 sphinx
