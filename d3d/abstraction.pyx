@@ -115,6 +115,7 @@ def _parse_rotation(value):
     else:
         raise ValueError("Unrecognized rotation format")
 
+# TODO: manually support and test pickle serialization
 cdef class ObjectTarget3D:
     '''
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
@@ -349,10 +350,10 @@ cdef class TrackingTarget3D(ObjectTarget3D):
             np.ravel(self.dimension_var_).tolist(),
             list(self.orientation_),
             self.orientation_var,
-            list(self.velocity_),
-            list(self.velocity_var_),
-            list(self.angular_velocity_),
-            list(self.angular_velocity_var_),
+            np.ravel(self.velocity_).tolist(),
+            np.ravel(self.velocity_var_).tolist(),
+            np.ravel(self.angular_velocity_).tolist(),
+            np.ravel(self.angular_velocity_var_).tolist(),
             self.tid,
             self.tag.serialize(),
             self.history
