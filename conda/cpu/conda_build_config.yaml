@@ -1,0 +1,14 @@
+python:
+- '3.6'
+pytorch:
+# - '1.4.0'
+- '1.5.0'
+# - '1.5.1'
+
+pin_run_as_build:
+  python:
+    min_pin: x.x
+    max_pin: x.x
+  pytorch:
+    min_pin: x.x.x
+    max_pin: x.x.x

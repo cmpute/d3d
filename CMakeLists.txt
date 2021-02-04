@@ -14,7 +14,7 @@ endif()
 find_package(Torch REQUIRED)
 find_package(PythonExtensions REQUIRED)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS})
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 if (TARGET torch_cpu)
     # tweak torch compiling flags, see https://github.com/pytorch/pytorch/pull/36021
@@ -33,10 +33,12 @@ if (TARGET torch_cpu)
         set_target_properties(torch_cuda PROPERTIES INTERFACE_LINK_LIBRARIES "${TORCH_INTERFACE_LIB}")
     endif()
 else ()
-    # this case is for pytorch 1.4
-    get_target_property(TORCH_INTERFACE_LIB torch INTERFACE_LINK_LIBRARIES)
-    string(REPLACE "/usr/local/cuda" ${CUDA_TOOLKIT_ROOT_DIR} TORCH_INTERFACE_LIB "${TORCH_INTERFACE_LIB}")
-    set_target_properties(torch PROPERTIES INTERFACE_LINK_LIBRARIES "${TORCH_INTERFACE_LIB}")
+    if (BUILD_WITH_CUDA)
+        # this case is for pytorch 1.4
+        get_target_property(TORCH_INTERFACE_LIB torch INTERFACE_LINK_LIBRARIES)
+        string(REPLACE "/usr/local/cuda" ${CUDA_TOOLKIT_ROOT_DIR} TORCH_INTERFACE_LIB "${TORCH_INTERFACE_LIB}")
+        set_target_properties(torch PROPERTIES INTERFACE_LINK_LIBRARIES "${TORCH_INTERFACE_LIB}")
+    endif()
 endif ()
 
 # Cython related dependencies

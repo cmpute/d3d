@@ -1,0 +1,47 @@
+{% set version = "0.5.0a" %}
+
+package:
+  name: d3d
+  version: {{ version }}
+
+source:
+  # path: ..
+  git_url: https://github.com/cmpute/d3d.git
+  git_rev: v{{ version }}
+
+build:
+  number: 0
+  skip: True  # [win]
+  script:
+    # - {{ PYTHON }} -m pip install . -vv
+    - CMAKE_GENERATOR=Ninja {{ PYTHON }} setup.py install -v
+    # - {{ PYTHON }} setup.py install -v
+
+requirements:
+  build:
+    - {{ compiler('cxx') }}
+    - cmake
+    - ninja
+    - make  # [unix]
+  host:
+    - python {{ python }}
+    - setuptools
+    - setuptools-scm
+    - pytorch {{ pytorch }}
+    - cpuonly
+    - scikit-build
+    - cython
+  run:
+    - python
+    - pytorch
+    - cpuonly
+    - scipy
+
+about:
+  home: https://github.com/cmpute/d3d
+  summary: Devkit for 3D object detection and tracking
+  dev_url: https://github.com/cmpute/d3d
+
+extra:
+  recipe-maintainers:
+    - cmpute

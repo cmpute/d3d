@@ -1,4 +1,4 @@
-{% set version = "0.0.4c" %}
+{% set version = "0.5.0a" %}
 
 package:
   name: d3d
@@ -13,21 +13,22 @@ build:
   number: 0
   skip: True  # [win]
   script:
-    - {{ PYTHON }} -m pip install . -vv
+    # - {{ PYTHON }} -m pip install . -vv
+    - {{ PYTHON }} setup.py install -v
 
 requirements:
   build:
-    - {{ compiler('c') }}
     - {{ compiler('cxx') }}
-    - {{ compiler('cuda') }}  # [linux64 and cuda_compiler_version != "None"]
     - cmake
+    - ninja # [win]
+    - make  # [unix]
   host:
+    - python {{ python }}
     - setuptools
     - setuptools-scm
-    - python {{ python }}
     - pytorch {{ pytorch }}
-    - cudatoolkit-dev
-    - cudnn
+    - cudatoolkit-dev {{ cudatoolkit }}
+    - cudnn {{ cudnn }}
     - scikit-build
     - cython
   run:
