@@ -6,6 +6,7 @@ import pickle
 from collections import namedtuple
 from pathlib import Path
 
+import msgpack
 import numpy as np
 from scipy.spatial.transform import Rotation
 
@@ -286,6 +287,9 @@ cdef class ObjectTarget3D:
             position_var=pos_var, orientation_var=ori_var, dimension_var=dim_var
         )
 
+    def __reduce__(self):
+        return ObjectTarget3D.deserialize, (self.serialize(),)
+
 cdef class TrackingTarget3D(ObjectTarget3D):
     '''
     This class stands for a tracked target in cartesian coordinate.
@@ -364,9 +368,9 @@ cdef class TrackingTarget3D(ObjectTarget3D):
             np.ravel(self.dimension_var_).tolist(),
             list(self.orientation_),
             self.orientation_var,
-            np.ravel(self.velocity_).tolist(),
+            list(self.velocity_),
             np.ravel(self.velocity_var_).tolist(),
-            np.ravel(self.angular_velocity_).tolist(),
+            list(self.angular_velocity_),
             np.ravel(self.angular_velocity_var_).tolist(),
             self.tid,
             self.tag.serialize(),
@@ -399,6 +403,9 @@ cdef class TrackingTarget3D(ObjectTarget3D):
         arr[10] = self.velocity_[1]
         arr[11] = self.angular_velocity_[2]
         return arr
+
+    def __reduce__(self):
+        return TrackingTarget3D.deserialize, (self.serialize(),)
 
 cdef class Target3DArray(list):
     '''
@@ -481,27 +488,37 @@ cdef class Target3DArray(list):
         '''
         Serialize the array and dump it into file
 
-        :param output: output file path
+        :param output: output file-like object or file path
         '''
-        import msgpack
+        data = msgpack.packb(self.serialize(), use_single_float=True)
         if isinstance(output, (str, Path)):
             with Path(output).open('wb') as fout:
-                fout.write(msgpack.packb(self.serialize(), use_single_float=True))
+                fout.write(data)
+        elif hasattr(output, 'write'):
+            output.write(data)
+        else:
+            raise ValueError("Invalid output object!")
 
-    @staticmethod
+    @classmethod
     def load(cls, file):
         '''
         Load the array form a binary file created by dump()
 
-        :param file: path of input file to be loaded
+        :param file: path of input file or file-like object to be loaded
         '''
-        import msgpack
         if isinstance(file, (str, Path)):
             with Path(file).open('rb') as fout:
                 return cls.deserialize(msgpack.unpackb(fout.read()))
+        elif hasattr(file, 'read'):
+            return cls.deserialize(msgpack.unpackb(file.read()))
+        else:
+            raise ValueError("Invalid input object!")
 
     def __repr__(self):
         return "<Target3DArray with %d objects @ %s>" % (len(self), self.frame)
+
+    def __reduce__(self):
+        return Target3DArray.deserialize, (self.serialize(),)
 
     def filter_tag(self, tags):
         '''
@@ -910,19 +927,27 @@ cdef class TransformSet:
         '''
         Serialize the transform collection and dump it into file
 
-        :param output: output file path
+        :param output: output file-like object or file path
         '''
         if isinstance(output, (str, Path)):
             with Path(output).open('wb') as fout:
                 pickle.dump(self, fout)
+        elif hasattr(output, 'write'):
+            pickle.dump(self, output)
+        else:
+            raise ValueError("Invalid output object!")
 
-    @staticmethod
-    def load(file):
+    @classmethod
+    def load(cls, file):
         '''
         Load the transform collection form a binary file created by dump()
 
-        :param file: path of input file to be loaded
+        :param file: path of input file or file-like object to be loaded
         '''
         if isinstance(file, (str, Path)):
             with Path(file).open('rb') as fout:
                 return pickle.load(fout)
+        elif hasattr(file, 'read'):
+            return pickle.load(file)
+        else:
+            raise ValueError("Invalid input object!")

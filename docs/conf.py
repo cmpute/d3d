@@ -53,7 +53,8 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/devdocs/', None),
     'torch': ('https://pytorch.org/docs/stable', None),
     'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
-    'PIL': ('https://pillow.readthedocs.io/en/stable/', None)
+    'PIL': ('https://pillow.readthedocs.io/en/stable/', None),
+    'matplotlib': ('https://matplotlib.org/stable', None)
 }
 
 autodoc_mock_imports = [
