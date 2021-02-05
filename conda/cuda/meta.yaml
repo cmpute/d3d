@@ -1,33 +1,35 @@
-{% set version = "0.5.0a" %}
-
 package:
   name: d3d
-  version: {{ version }}
+  version: {{ VERSION }}
 
 source:
-  # path: ..
-  git_url: https://github.com/cmpute/d3d.git
-  git_rev: v{{ version }}
+  path: ../..
+  # git_url: https://github.com/cmpute/d3d.git
+  # git_rev: v{{ VERSION }}
 
 build:
   number: 0
+  string: "py{{ py }}_{{ PKG_BUILDNUM }}_torch{{ pytorch }}_cuda{{ cuda }}"
   skip: True  # [win]
   script:
-    # - {{ PYTHON }} -m pip install . -vv
-    - {{ PYTHON }} setup.py install -v
+    - export CMAKE_GENERATOR=Ninja # [unix]
+    - export USE_CUDA=1 # [unix]
+    - set USE_CUDA=1 # [win] 
+    - {{ PYTHON }} -m pip install . -vv
 
 requirements:
   build:
     - {{ compiler('cxx') }}
     - cmake
-    - ninja # [win]
+    - ninja
     - make  # [unix]
   host:
     - python {{ python }}
     - setuptools
     - setuptools-scm
     - pytorch {{ pytorch }}
-    - cudatoolkit-dev {{ cudatoolkit }}
+    - cudatoolkit {{ cuda }}
+    - cudatoolkit-dev {{ cuda }}
     - cudnn {{ cudnn }}
     - scikit-build
     - cython
@@ -36,6 +38,15 @@ requirements:
     - pytorch
     - cudatoolkit
     - scipy
+    - addict
+    - pillow
+    - tqdm
+    - msgpack-python
+    - filterpy
+
+test:
+  imports:
+    - d3d
 
 about:
   home: https://github.com/cmpute/d3d

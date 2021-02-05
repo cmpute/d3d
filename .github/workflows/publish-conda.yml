@@ -1,0 +1,84 @@
+name: Publish Python Package to Anaconda
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-linux-cpu:
+    name: Build Linux packages
+    # runs-on: ubuntu-latest
+    runs-on: self-hosted
+
+    steps:
+    - id: get_version
+      uses: battila7/get-version-action@v2
+    - uses: actions/checkout@v2
+    - name: Add conda to system path
+      run: |
+        # $CONDA is an environment variable pointing to the root of the miniconda directory
+        echo $CONDA/bin >> $GITHUB_PATH
+    - name: Install conda dependencies
+      run: |
+        conda install -y conda-build conda-verify anaconda-client
+    - name: Build conda packages
+      working-directory: ./conda/cpu
+      env:
+        VERSION: ${{ steps.get_version.outputs.version }}
+      run: |
+        conda build -c conda-forge -c pytorch --output-folder /build .
+    - name: Upload to Anaconda
+      run: |
+        ls /build/linux-64
+        anaconda -v -t ${{ secrets.ANACONDA_TOKEN }} upload -l main /build/linux-64/*.tar.bz2
+
+  build-linux-cuda:
+    name: Build Linux packages with CUDA
+    # runs-on: ubuntu-latest
+    runs-on: self-hosted
+
+    steps:
+    - id: get_version
+      uses: battila7/get-version-action@v2
+    - uses: actions/checkout@v2
+    - name: Add conda to system path
+      run: |
+        # $CONDA is an environment variable pointing to the root of the miniconda directory
+        echo $CONDA/bin >> $GITHUB_PATH
+    - name: Install conda dependencies
+      run: |
+        conda install -y conda-build conda-verify anaconda-client
+    - name: Build conda packages
+      working-directory: ./conda/cuda
+      env:
+        VERSION: ${{ steps.get_version.outputs.version }}
+      run: |
+        conda build -c conda-forge -c pytorch --output-folder /build .
+    - name: Upload to Anaconda
+      run: |
+        ls /build/linux-64
+        anaconda -v -t ${{ secrets.ANACONDA_TOKEN }} upload -l main /build/linux-64/*.tar.bz2
+
+  build-windows-cpu:
+    name: Build Windows packages
+    runs-on: windows-2016
+
+    steps:
+    - id: get_version
+      uses: battila7/get-version-action@v2
+    - uses: actions/checkout@v2
+    - name: Add conda to system path
+      uses: s-weigand/setup-conda@v1
+    - name: Install conda dependencies
+      run: |
+        conda install -y conda-build conda-verify anaconda-client
+    - name: Build conda packages
+      working-directory: ./conda/cpu
+      env:
+        VERSION: ${{ steps.get_version.outputs.version }}
+      run: |
+        conda build -c conda-forge -c pytorch --output-folder C:/build .
+    - name: Upload to Anaconda
+      run: |
+        ls C:/build/win-64
+        anaconda -v -t ${{ secrets.ANACONDA_TOKEN }} upload -l main C:/build/win-64/*.tar.bz2

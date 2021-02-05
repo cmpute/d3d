@@ -5,4 +5,5 @@ RUN apt update
 RUN apt install -y build-essential
 
 COPY . /d3d
-RUN conda build /d3d/conda -c pytorch -c conda-forge
+WORKDIR /d3d/conda/cpu
+RUN conda build -c conda-forge --output-folder . .
