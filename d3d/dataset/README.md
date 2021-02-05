@@ -6,6 +6,7 @@
 - [x] [Waymo](https://waymo.com/open/data/): Full support
 - [x] [NuScenes](https://www.nuscenes.org/): Full support
 - [x] [KITTI-360](http://www.cvlibs.net/datasets/kitti-360/): Full Support
+- [x] [Livox](https://www.livoxtech.com/cn/dataset): To be added
 - [ ] [SemanticPOSS](https://arxiv.org/pdf/2002.09147.pdf): To be added
 - [ ] [Lyft L5](https://level5.lyft.com/dataset/): To be added
 - [ ] [ApolloScape](http://apolloscape.auto/): To be added

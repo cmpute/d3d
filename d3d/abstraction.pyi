@@ -9,7 +9,7 @@ import torch
 
 class ObjectTag:
     def __init__(self,
-                 labels: Union[Enum, Iterable[Enum]],
+                 labels: Union[Union[Enum, str, int], Iterable[Union[Enum, str, int]]],
                  mapping: Enum = None,
                  scores: Union[float, Iterable[float]] = None):
         ...

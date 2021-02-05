@@ -94,8 +94,9 @@ class KittiObjectLoader(DetectionDatasetBase):
                 - image_2
                 - velodyne
 
-    For description of constructor parameters, please refer to :class:`d3d.dataset.base.DetectionDatasetBase`
     Note that the 3d objects labelled as `DontCare` are removed from the result of :meth:`annotation_3dobject`.
+
+    For description of constructor parameters, please refer to :class:`d3d.dataset.base.DetectionDatasetBase`
     """
 
     VALID_CAM_NAMES = ["cam2", "cam3"]

@@ -60,10 +60,6 @@ class WaymoLoader(TrackingDatasetBase):
     VALID_OBJ_CLASSES = WaymoObjectClass
 
     def __init__(self, base_path, phase="training", inzip=False, trainval_split=None, trainval_random=False, nframes=0):
-        """
-        :param phase: training, validation or testing
-        :param trainval_split: placeholder for interface compatibility with other loaders
-        """
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
                          trainval_split=trainval_split, trainval_random=trainval_random)
 

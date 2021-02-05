@@ -23,6 +23,8 @@ class I0Exp(torch.autograd.Function):
 
 def i0e(x):
     '''
-    Pytorch Autograd Function of modified Bessel function with order 0
+    Pytorch Autograd Function of
+    `modified Bessel function <https://en.wikipedia.org/wiki/Bessel_function>`_
+    with order 0
     '''
     return I0Exp.apply(x)

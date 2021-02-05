@@ -37,7 +37,7 @@ cdef inline float calc_fscore(int tp, int fp, int fn, float b2) nogil:
 
 @cython.auto_pickle(True)
 cdef class DetectionEvalStats:
-    '''Stats summary of a evaluation step'''
+    ''' Detection stats summary of a evaluation step '''
     cdef public unordered_map[int, int] ngt
     cdef public unordered_map[int, vector[int]] tp, fp, fn, ndt
     cdef public unordered_map[int, vector[float]] acc_iou, acc_angular, acc_dist, acc_box, acc_var
@@ -73,12 +73,7 @@ cdef class DetectionEvaluator:
     cdef object _class_type
     cdef unordered_map[int, float] _max_distance
     cdef vector[float] _pr_thresholds
-    cdef DetectionEvalStats _stats
-
-    # aggregated statistics declarations
-    # cdef unordered_map[int, int] _total_gt
-    # cdef unordered_map[int, vector[int]] _total_dt, _tp, _fp, _fn
-    # cdef unordered_map[int, vector[float]] _acc_angular, _acc_iou, _acc_box, _acc_dist, _acc_var
+    cdef DetectionEvalStats _stats # aggregated statistics declarations
 
     def __init__(self, classes, min_overlaps, int pr_sample_count=40, float min_score=0, str pr_sample_scale="log10"):
         '''
@@ -423,15 +418,22 @@ ctypedef unsigned long long ull
 
 @cython.auto_pickle(True)
 cdef class TrackingEvalStats(DetectionEvalStats):
-    # id_switches: tracked trajectory matched to different ground-truth trajectories
-    # fragments: ground-truth trajectory matched to different tracked tracjetories
-    cdef public unordered_map[int, vector[int]] id_switches, fragments
+    ''' Tracking stats summary of a evaluation step '''
 
-    # ngt_ids: frame count of all ground-truth targets (represented by their IDs)
-    # ndt_ids: frame count of all proposal targets (represented by their IDs)
-    # ngt_tracked: frame count of ground-truth targets being tracked
+    cdef public unordered_map[int, vector[int]] id_switches
+    ''' Number of tracked trajectory matched to different ground-truth trajectories '''
+    
+    cdef public unordered_map[int, vector[int]] fragments
+    ''' Number of ground-truth trajectory matched to different tracked tracjetories '''
+
     cdef public unordered_map[int, unordered_map[ull, int]] ngt_ids
-    cdef public unordered_map[int, vector[unordered_map[ull, int]]] ngt_tracked, ndt_ids
+    ''' Frame count of all ground-truth targets (represented by their IDs) '''
+
+    cdef public unordered_map[int, vector[unordered_map[ull, int]]] ngt_tracked
+    ''' Frame count of ground-truth targets being tracked '''
+
+    cdef public unordered_map[int, vector[unordered_map[ull, int]]] ndt_ids
+    ''' Frame count of all proposal targets (represented by their IDs) '''
 
     cdef void initialize(self, unordered_set[int] classes, int nsamples):
         DetectionEvalStats.initialize(self, classes, nsamples)

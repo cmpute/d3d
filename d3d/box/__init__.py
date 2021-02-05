@@ -29,7 +29,7 @@ if cuda_available:
     )
 
 # TODO: separate iou and iou loss (the latter one is the diagonal result of previous one)
-#       and it seems that we only need the backward part for the iou loss
+#       and it seems that we need the backward part only for the iou loss
 
 class Iou2D(torch.autograd.Function):
     '''
@@ -126,6 +126,9 @@ def seg1d_iou(seg1, seg2):
     '''
     Calculate IoU of 1D segments
     The input should be n*2, where the last dim is [center, width]
+
+    :param boxes1: Input segments, shape is Nx2
+    :param boxes2: Input segments, shape is Nx2
     '''
     assert torch.all(seg1[:,1] > 0)
     assert torch.all(seg2[:,1] > 0)
@@ -146,7 +149,11 @@ def seg1d_iou(seg1, seg2):
 
 def box2d_iou(boxes1, boxes2, method="box", precise=True):
     '''
-    :param method: 'box' - normal box, 'rbox' - rotated box,
+    Differentiable IoU on axis-aligned or rotated 2D boxes
+
+    :param boxes1: Input boxes, shape is N x 5 (x,y,w,h,r)
+    :param boxes2: Input boxes, shape is N x 5 (x,y,w,h,r)
+    :param method: 'box' - axis-aligned box, 'rbox' - rotated box,
         'grbox' - giou for rotated box, 'drbox' - diou for rotated box
     :param precise: force using double precision to calculate iou
     '''
@@ -189,10 +196,16 @@ def box2d_iou(boxes1, boxes2, method="box", precise=True):
 def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
     iou_threshold=0, score_threshold=0, supression_param=0, precise=True):
     '''
-    :param method: 'box' - normal box, 'rbox' - rotated box
-    :param precise: force using double precision to calculate iou
+    NMS on axis-aligned or rotated 2D boxes
 
-    Soft-NMS: Bodla, Navaneeth, et al. "Soft-NMS--improving object detection with one line of code." Proceedings of the IEEE international conference on computer vision. 2017.
+    :param method: 'box' - axis-aligned box, 'rbox' - rotated box
+    :param precise: force using double precision to calculate iou
+    :param iou_threshold: IoU threshold for two boxes to be considered as overlapped
+    :param score_threshold: Minimum score for a box to be considered as valid
+    :param suppression_param: Type of suppression. {0: hard, 1: linear, 2: gaussian}. See reference below for details ..
+
+        Soft-NMS: Bodla, Navaneeth, et al. “Soft-NMS–improving object detection with one line of code.” Proceedings of the IEEE international conference on computer vision. 2017.
+
     '''
     convert_numpy = False
     if isinstance(boxes, np.ndarray):
@@ -232,22 +245,24 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
         return mask.numpy()
     return mask
 
-def crop_2dr(cloud, boxes):
+def box2dr_crop(cloud, boxes):
     '''
     Crop point cloud points out given rotated boxes.
     The result is a list of indices tensor where each tensor is corresponding to indices of points lying in the box
 
-    :param cloud: A point cloud with N x 2 shape
-    :param boxes: Boxes array with M x 5 shape
+    :param cloud: The input point cloud, shape: N x 2
+    :param boxes: Input boxes array, shape: M x 5
     '''
-    result = crop_2dr(cloud, boxes)
+    result = crop_2dr_cc(cloud, boxes)
     return result
 
-def crop_3dr(cloud, boxes, project_axis=2):
+def box3dp_crop(cloud, boxes, project_axis=2):
     '''
     Crop point cloud points out given rotated boxes with boxes projected to given axis
 
-    TODO: test against the implementation in mmdet3d (correctness and speed)
+    :param cloud: The input point cloud, shape: N x 3
+    :param boxes: Input boxes array, shape: M x 7
+    :param project_axis: Axis for the box to be projected to. {0: x, 1: y, 2: z}
     '''
 
     if project_axis == 0:

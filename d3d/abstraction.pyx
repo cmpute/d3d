@@ -30,6 +30,10 @@ cdef class ObjectTag:
     '''
     This class stands for label tags associate with object target. This class can contains
     multiple estimated classes with separate confidence scores.
+
+    :param labels: A label or list of labels as enum object, enum name or enum id.
+    :param mapping: The enum object defining the label classes.
+    :param scores: Scores corresponding to the input labels.
     '''
     def __init__(self, labels, mapping=None, scores=None):
         if mapping is not None and not issubclass(mapping, enum.Enum):
@@ -119,16 +123,20 @@ def _parse_rotation(value):
 cdef class ObjectTarget3D:
     '''
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
-
-    :param position: Position of object center (x,y,z)
-    :param orientation: Object heading (direction of x-axis attached on body)
-        with regard to x-axis of the world at the object center.
-    :param dimension: Length of the object in 3 dimensions (lx,ly,lz)
-    :param tag: Classification information of the object
-    :param tid: ID of the object used for tracking (optional), 0 means no tracking id assigned
     '''
     def __init__(self, position, orientation, dimension, tag,
         tid=0, position_var=None, orientation_var=None, dimension_var=None):
+        '''
+        :param position: Position of object center (x,y,z)
+        :param orientation: Object heading (direction of x-axis attached on body)
+            with regard to x-axis of the world at the object center.
+        :param dimension: Length of the object in 3 dimensions (lx,ly,lz)
+        :param tag: Classification information of the object
+        :param tid: ID of the object used for tracking (optional), 0 means no tracking id assigned
+        :param position_var: The uncertainty of target position
+        :param orientation_var: The uncertainty of target orientation
+        :param dimension_var: The uncertainty of target dimension
+        '''
 
         self.position_ = create_vector3(position)
         self.dimension_ = create_vector3(dimension)
@@ -282,6 +290,12 @@ cdef class TrackingTarget3D(ObjectTarget3D):
     '''
     This class stands for a tracked target in cartesian coordinate.
     The body coordinate is FLU (front-left-up).
+
+    :param velocity: Velocity of the object (vx,vy,vz)
+    :param angular_velocity: Angular velocity of the object (wx,wy,wz)
+    :param velocity_var: The uncertainty of the target velocity
+    :param angular_velocity: The uncertainty of the target angular velocity
+    :param history: The time of the object being tracked
     '''
     def __init__(self, position, orientation, dimension, velocity, angular_velocity, tag,
         tid=0, position_var=None, orientation_var=None, dimension_var=None,
@@ -388,9 +402,12 @@ cdef class TrackingTarget3D(ObjectTarget3D):
 
 cdef class Target3DArray(list):
     '''
-    Target3DArray stores an array of ObjectTarget3D or TrackingTarget3D
+    Target3DArray stores an array of ObjectTarget3D or TrackingTarget3D represented in the frame
+    of certain senser at certain time.
 
-    :param frame: Frame that the box parameters used. None means base frame (in TransformSet)
+    :param iterable: List of targets
+    :param frame: Sensor frame that the box parameters used. None means base frame (consistent with TransformSet)
+    :param timestamp: The timestamp of the target properties
     '''
     def __init__(self, iterable=[], frame=None, timestamp=0):
         super().__init__(iterable)

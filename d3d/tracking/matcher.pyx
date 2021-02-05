@@ -9,6 +9,7 @@ from scipy.optimize import linear_sum_assignment
 from d3d.box import box2d_iou
 
 cdef class BaseMatcher:
+    ''' This class is the base class of various matchers'''
     cpdef void clear_match(self):
         '''
         Clear saved match results
@@ -24,6 +25,7 @@ cdef class BaseMatcher:
 
         :param src_boxes: boxes to match
         :param dst_boxes: fixed boxes (such as ground truth boxes)
+        :param distance_metric: the metric for calculating the "distance"
         '''
         self.clear_match()
 

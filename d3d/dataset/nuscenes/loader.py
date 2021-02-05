@@ -240,10 +240,6 @@ class NuscenesLoader(TrackingDatasetBase):
 
     def __init__(self, base_path, inzip=False, phase="training",
                  trainval_split=0.8, trainval_random=False, trainval_byseq=False, nframes=0):
-        """
-        :param phase: training, validation or testing
-        :param trainval_split: placeholder for interface compatibility with other loaders
-        """
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
                          trainval_split=trainval_split, trainval_random=trainval_random,
                          trainval_byseq=trainval_byseq)

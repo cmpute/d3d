@@ -2,13 +2,13 @@
 
 import logging
 import math
-import sys
+from typing import List, Union
 from warnings import warn
 
 import filterpy.kalman as kf
 import numpy as np
 import numpy.linalg as npl
-from d3d.abstraction import ObjectTarget3D
+from d3d.abstraction import ObjectTarget3D, TrackingTarget3D
 from scipy.spatial.transform import Rotation
 
 _logger = logging.getLogger("d3d")
@@ -26,8 +26,9 @@ def nearest_pd(A):
     """Find the nearest positive-definite matrix to input
     A Python/Numpy port of John D'Errico's `nearestSPD` MATLAB code [1], which
     credits [2].
-    [1] https://www.mathworks.com/matlabcentral/fileexchange/42885-nearestspd
-    [2] N.J. Higham, "Computing a nearest symmetric positive semidefinite
+
+    - [1] https://www.mathworks.com/matlabcentral/fileexchange/42885-nearestspd
+    - [2] N.J. Higham, "Computing a nearest symmetric positive semidefinite
     matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
     """
 
@@ -62,26 +63,23 @@ def nearest_pd(A):
 
 ##### simple motion models: http://fusion.isif.org/proceedings/fusion08CD/papers/1569107835.pdf
 
-def wrap_angle(theta):
+def wrap_angle(theta: float) -> float:
     '''
     Normalize the angle to [-pi, pi)
 
-    :param float theta: angle to be wrapped
+    :param theta: angle to be wrapped
     :return: wrapped angle
-    :rtype: float
     '''
 
     return (theta + np.pi) % (2*np.pi) - np.pi
 
-def motion_CV(state, dt):
+def motion_CV(state: Union[np.ndarray, List[float]], dt: float) -> np.ndarray:
     '''
     Constant Velocity model
 
     :param state: original state in format [x, y, vx, vy]
-    :type state: np.ndarray or list
-    :param float dt: time difference after last update
+    :param dt: time difference after last update
     :return: updated state
-    :rtype: np.ndarray
     '''
 
     state = np.copy(state)
@@ -89,20 +87,18 @@ def motion_CV(state, dt):
     state[1] += state[3] * dt
     return state
 
-def motion_CTRV(state, dt):
+def motion_CTRV(state: Union[np.ndarray, List[float]], dt: float) -> np.ndarray:
     raise NotImplementedError()
 
-def motion_CTRA(state, dt):
+def motion_CTRA(state: Union[np.ndarray, List[float]], dt: float) -> np.ndarray:
     '''
     Constant Turn-Rate and (longitudinal) Acceleration model.
     This model also assume that velocity is the same with heading angle.
     CV, CTRV can be modeled by assume value equals zero
 
     :param state: original state in format [x, y, theta, v, a, w]
-    :type state: np.ndarray or list, contents are [x, y, vx, vy]
     :param dt: time difference after last update
     :return: updated state
-    :rtype: np.ndarray
     '''
 
     x, y, th, v, a, w = state
@@ -119,16 +115,14 @@ def motion_CTRA(state, dt):
     state[:4] = (nx, ny, nth, nv)
     return state
 
-def motion_CSAA(state, dt):
+def motion_CSAA(state: np.ndarray, dt: float) -> np.ndarray:
     '''
     Constant Steering Angle and Acceleration model.
 
     :param state: original state in format [x, y, theta, v, a, c]
                                            [0  1    2    3  4  5]
-    :type state: np.ndarray or list, contents are [x, y, vx, vy]
     :param dt: time difference after last update
     :return: updated state
-    :rtype: np.ndarray
     '''
 
     x, y, th, v, a, c = state
@@ -155,90 +149,107 @@ def motion_CSAA(state, dt):
 ##### End motion models #####
 
 class PropertyFilter:
+    '''
+    Abstraction class defining the interfaces for filters on target property 
+    '''
     @property
-    def dimension(self):
-        '''
-        Current dimension estimation
-        '''
-        pass
+    def dimension(self) -> np.ndarray:
+        ''' Current dimension estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def dimension_var(self):
-        '''
-        Covariance for current shape estimation
-        '''
-        pass
+    def dimension_var(self) -> np.ndarray:
+        ''' Covariance for current shape estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def classification(self):
-        '''
-        Current classification estimation
-        '''
-        pass
+    def classification(self) -> np.ndarray:
+        ''' Current classification estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def classification_var(self):
+    def classification_var(self) -> np.ndarray:
+        ''' Covariance for current classification estimation '''
+        raise NotImplementedError("This is an abstraction filter")
+
+    def predict(self, dt: float):
         '''
-        Covariance for current classification estimation
+        Predict the current system state
+
+        :param dt: Time since last update
         '''
-        pass
+        raise NotImplementedError("This is an abstraction filter")
+
+    def update(self, target: Union[ObjectTarget3D, TrackingTarget3D]):
+        '''
+        Correct the current system state with observation. This method should
+        always be called after calling :meth:`predict`.
+
+        :param target: New target observation
+        '''
+        raise NotImplementedError("This is an abstraction filter")
 
 class PoseFilter:
-    # TODO: also reports velocity and its variance
+    '''
+    Abstraction class defining the interfaces for filters on target pose
+    '''
+
     @property
-    def position(self):
-        '''
-        Current position estimation
-        '''
-        pass
+    def position(self) -> np.ndarray:
+        ''' Current position estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def position_var(self):
-        '''
-        Covariance for current position estimation
-        '''
-        pass
+    def position_var(self) -> np.ndarray:
+        ''' Covariance for current position estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def orientation(self):
-        '''
-        Current orientation estimation
-        '''
-        pass
+    def orientation(self) -> np.ndarray:
+        ''' Current orientation estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def orientation_var(self):
-        '''
-        Covariance for current orientation estimation
-        '''
-        pass
+    def orientation_var(self) -> np.ndarray:
+        ''' Covariance for current orientation estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def velocity(self):
-        '''
-        Current linear velocity estimation
-        '''
-        pass
+    def velocity(self) -> np.ndarray:
+        ''' Current linear velocity estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def velocity_var(self):
-        '''
-        Covariance for current linear velocity estimation
-        '''
-        pass
+    def velocity_var(self) -> np.ndarray:
+        ''' Covariance for current linear velocity estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def angular_velocity(self):
-        '''
-        Current angular velocity estimation
-        '''
-        pass
+    def angular_velocity(self) -> np.ndarray:
+        ''' Current angular velocity estimation '''
+        raise NotImplementedError("This is an abstraction filter")
     @property
-    def angular_velocity_var(self):
+    def angular_velocity_var(self) -> np.ndarray:
+        ''' Covariance for current angular velocity esimation '''
+        raise NotImplementedError("This is an abstraction filter")
+
+    def predict(self, dt: float):
         '''
-        Covariance for current angular velocity esimation
+        Predict the current system state
+
+        :param dt: Time since last update
         '''
-        pass
+        raise NotImplementedError("This is an abstraction filter")
+
+    def update(self, target: Union[ObjectTarget3D, TrackingTarget3D]):
+        '''
+        Correct the current system state with observation. This method should
+        always be called after calling :meth:`predict`.
+
+        :param target: New target observation
+        '''
+        raise NotImplementedError("This is an abstraction filter")
 
 class Box_KF(PropertyFilter):
     '''
     Use kalman filter (simple bayesian filter) for a box shape estimation.
     Use latest value for classification result
     '''
-    def __init__(self, init: ObjectTarget3D, Q=np.eye(3)):
+    def __init__(self, init: Union[ObjectTarget3D, TrackingTarget3D], Q: np.ndarray = np.eye(3)):
         '''
-        :param init: Initial state for the detection
+        :param init: Initial state for the target
+        :param Q: System process noise
         '''
         self._filter = kf.KalmanFilter(dim_x=3, dim_z=3)
 
@@ -255,12 +266,12 @@ class Box_KF(PropertyFilter):
     def predict(self, dt):
         self._filter.predict()
 
-    def update(self, detection: ObjectTarget3D):
-        self._filter.update(detection.dimension, R=detection.dimension_var)
+    def update(self, target):
+        self._filter.update(target.dimension, R=target.dimension_var)
 
         # Update classification
         # TODO: do bayesian filtering for classification?
-        self._saved_tag = detection.tag
+        self._saved_tag = target.tag
 
     @property
     def dimension(self):
@@ -278,7 +289,7 @@ class Box_KF(PropertyFilter):
     def classification_var(self):
         raise NotImplementedError()
 
-class Pose_3DOF_UKF_CV:
+class Pose_3DOF_UKF_CV(PoseFilter):
     '''
     UKF using constant velocity model for pose estimation, assuming 3DoF (x, y, yaw)
 
@@ -287,7 +298,11 @@ class Pose_3DOF_UKF_CV:
     Observe: [x, y]
              [0  1]
     '''
-    def __init__(self, init: ObjectTarget3D, Q=np.eye(4)):
+    def __init__(self, init: Union[ObjectTarget3D, TrackingTarget3D], Q: np.ndarray = np.eye(4)):
+        '''
+        :param init: Initial state for the target
+        :param Q: System process noise
+        '''
         # create filter
         sigma_points = kf.JulierSigmaPoints(6)
         self._filter = kf.UnscentedKalmanFilter(dim_x=4, dim_z=2, dt=None,
@@ -352,7 +367,7 @@ class Pose_3DOF_UKF_CV:
     def angular_velocity_var(self):
         return np.zeros((3, 3))
 
-class Pose_3DOF_UKF_CTRV:
+class Pose_3DOF_UKF_CTRV(PoseFilter):
     '''
     UKF using constant turning rate and velocity (CTRV) model for pose estimation
     
@@ -364,7 +379,7 @@ class Pose_3DOF_UKF_CTRV:
     def __init__(self):
         raise NotImplementedError()
 
-class Pose_3DOF_UKF_CTRA:
+class Pose_3DOF_UKF_CTRA(PoseFilter):
     '''
     UKF using constant turning rate and acceleration (CTRA) model for pose estimation
 
@@ -400,7 +415,11 @@ class Pose_3DOF_UKF_CTRA:
                 raise RuntimeError(message)
             self._filter.P = newp
 
-    def __init__(self, init: ObjectTarget3D, Q=np.eye(6)):
+    def __init__(self, init: Union[ObjectTarget3D, TrackingTarget3D], Q: np.ndarray = np.eye(6)):
+        '''
+        :param init: Initial state for the target
+        :param Q: System process noise
+        '''
         sigma_points = kf.JulierSigmaPoints(6)
         self._filter = kf.UnscentedKalmanFilter(dim_x=6, dim_z=3, dt=None,
             fx=motion_CTRA, hx=lambda s: s[:3], points=sigma_points,
@@ -488,7 +507,7 @@ class Pose_3DOF_UKF_CTRA:
     def angular_velocity_var(self):
         return np.diag([0, 0, self._filter.P[5, 5]])
 
-class Pose_IMM:
+class Pose_IMM(PoseFilter):
     '''
     UKF using IMM (BR + CV + CA + CTRV + CTRA) model for pose estimation
     '''
