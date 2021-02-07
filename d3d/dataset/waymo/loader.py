@@ -1,17 +1,16 @@
 import base64
-import itertools
 import json
 import logging
 import os
-import os.path as osp
 import shutil
 import struct
 import subprocess
 import tarfile
 import tempfile
+from typing import Union
 import zipfile
 from enum import Enum, auto
-from io import BytesIO
+from io import BytesIO, RawIOBase
 from pathlib import Path
 
 import msgpack
@@ -275,51 +274,53 @@ class WaymoLoader(TrackingDatasetBase):
     def sequence_sizes(self):
         return {k: v.frame_count for k, v in self._metadata.items()}
 
-def dump_detection_output(detections: Target3DArray, context: str, timestamp: int):
-    '''
-    :param detections: detection result
-    :param ids: auxiliary information for output, each item contains context name and timestamp
-    '''
-    try:
-        from waymo_open_dataset import label_pb2
-        from waymo_open_dataset.protos import metrics_pb2
-    except:
-        _logger.error("Cannot find waymo_open_dataset, install the package at "
-            "https://github.com/waymo-research/waymo-open-dataset, output will be skipped now.")
-        return
+    @expand_idx
+    def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray, fout: RawIOBase) -> None:
+        '''
+        :param detections: detection result
+        :param ids: auxiliary information for output, each item contains context name and timestamp
+        :param fout: output file-like object
+        '''
+        try:
+            from waymo_open_dataset import label_pb2
+            from waymo_open_dataset.protos import metrics_pb2
+        except:
+            _logger.error("Cannot find waymo_open_dataset, install the package at "
+                "https://github.com/waymo-research/waymo-open-dataset, output will be skipped now.")
+            return
 
-    label_map = {
-        WaymoObjectClass.Unknown: label_pb2.Label.TYPE_UNKNOWN,
-        WaymoObjectClass.Vehicle: label_pb2.Label.TYPE_VEHICLE,
-        WaymoObjectClass.Pedestrian: label_pb2.Label.TYPE_PEDESTRIAN,
-        WaymoObjectClass.Sign: label_pb2.Label.TYPE_SIGN,
-        WaymoObjectClass.Cyclist: label_pb2.Label.TYPE_CYCLIST
-    }
+        label_map = {
+            WaymoObjectClass.Unknown: label_pb2.Label.TYPE_UNKNOWN,
+            WaymoObjectClass.Vehicle: label_pb2.Label.TYPE_VEHICLE,
+            WaymoObjectClass.Pedestrian: label_pb2.Label.TYPE_PEDESTRIAN,
+            WaymoObjectClass.Sign: label_pb2.Label.TYPE_SIGN,
+            WaymoObjectClass.Cyclist: label_pb2.Label.TYPE_CYCLIST
+        }
 
-    waymo_array = metrics_pb2.Objects()
-    for target in detections:
-        waymo_target = metrics_pb2.Object()
+        waymo_array = metrics_pb2.Objects()
+        for target in detections:
+            waymo_target = metrics_pb2.Object()
 
-        # convert box parameters
-        box = label_pb2.Label.Box()
-        box.center_x = target.position[0]
-        box.center_y = target.position[1]
-        box.center_z = target.position[2]
-        box.length = target.dimension[0]
-        box.width = target.dimension[1]
-        box.height = target.dimension[2]
-        box.heading = target.yaw
-        waymo_target.object.box.CopyFrom(box)
+            # convert box parameters
+            box = label_pb2.Label.Box()
+            box.center_x = target.position[0]
+            box.center_y = target.position[1]
+            box.center_z = target.position[2]
+            box.length = target.dimension[0]
+            box.width = target.dimension[1]
+            box.height = target.dimension[2]
+            box.heading = target.yaw
+            waymo_target.object.box.CopyFrom(box)
 
-        # convert label
-        waymo_target.object.type = label_map[target.tag_top]
-        waymo_target.score = target.tag.scores[0]
+            # convert label
+            waymo_target.object.type = label_map[target.tag_top]
+            waymo_target.score = target.tag.scores[0]
 
-        waymo_target.context_name = context
-        waymo_target.frame_timestamp_micros = int(timestamp * 1e6)
-        waymo_array.objects.append(waymo_target)
+            waymo_target.context_name = idx[0] # the name of the sequence is the context
+            waymo_target.frame_timestamp_micros = int(self.timestamp(idx) * 1e6)
+            waymo_array.objects.append(waymo_target)
 
-    return waymo_array
+        fout.write(waymo_array.SerializeToString())
 
 def execute_official_evaluator(exec_path, label_path, result_path, output_path, model_name=None, show_output=True):
     '''

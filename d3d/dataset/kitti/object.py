@@ -2,8 +2,10 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Union
 from zipfile import ZipFile
 import zipfile
+from io import RawIOBase
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -70,6 +72,46 @@ def parse_label(label: list, raw_calib: dict):
 
     return objects
 
+def _line_box_intersect(p0, p1, width, height):
+    # p0: inlier point
+    # p1: outlier point
+    k = (p1[1] - p0[1]) / (p1[0] - p0[0])
+    
+    # find which border
+    case = None
+    if p1[0] < p0[0]:
+        if p1[1] < p0[1]:
+            k0 = p0[1] / p0[0]
+            case = 2 if k > k0 else 3
+        else:
+            k0 = - (height - p0[1]) / p0[0]
+            case = 3 if k > k0 else 0
+    else:
+        if p1[1] < p0[1]:
+            k0 = - p0[1] / (width - p0[0])
+            case = 1 if k > k0 else 2
+        else:
+            k0 = (height - p0[1]) / (width - p0[0])
+            case = 0 if k > k0 else 1
+
+    # do intersection
+    if case == 0: # y > height border
+        x = p0[0] + (height - p0[1]) / k
+        y = height
+    elif case == 1: # x > width border
+        x = width
+        y = p0[1] + (width - p0[0]) * k
+    elif case == 2: # y < 0 border
+        x = p1[0] + (-p1[1]) / k
+        y = 0
+    elif case == 3: # x < 0 border
+        x = 0
+        y = p1[1] + (-p1[0]) * k
+
+    assert 0 <= x <= width, "x = %.2f" % x
+    assert 0 <= y <= height, "y = %.2f" % y
+    return (x, y)     
+
 class KittiObjectLoader(DetectionDatasetBase):
     """
     Loader for KITTI object detection dataset, please organize the files into following structure
@@ -134,16 +176,20 @@ class KittiObjectLoader(DetectionDatasetBase):
     def __len__(self):
         return len(self.frames)
 
+    def _parse_idx(self, idx):
+        if isinstance(idx, int):
+            uidx = self.frames[idx]
+        else:
+            uidx, = idx
+        return uidx
+
     @expand_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names='cam2'):
         if names == "cam2":
             folder_name = "image_2"
         elif names == "cam3":
             folder_name = "image_3"
-        if isinstance(idx, int):
-            uidx = self.frames[idx]
-        else:
-            uidx, = idx
+        uidx = self._parse_idx(idx)
 
         fname = Path(self.phase_path, folder_name, '%06d.png' % uidx)
         if self._return_file_path:
@@ -164,10 +210,7 @@ class KittiObjectLoader(DetectionDatasetBase):
     @expand_name(VALID_LIDAR_NAMES)
     def lidar_data(self, idx, names='velo'):
         assert names == 'velo'
-        if isinstance(idx, int):
-            uidx = self.frames[idx]
-        else:
-            uidx, = idx
+        uidx = self._parse_idx(idx)
 
         fname = Path(self.phase_path, 'velodyne', '%06d.bin' % uidx)
         if self._return_file_path:
@@ -178,46 +221,6 @@ class KittiObjectLoader(DetectionDatasetBase):
                 return utils.load_velo_scan(source, fname)
         else:
             return utils.load_velo_scan(self.base_path, fname)
-
-    def calibration_data(self, idx, raw=False):
-        if isinstance(idx, int):
-            uidx = self.frames[idx]
-        else:
-            uidx, = idx
-
-        fname = Path(self.phase_path, 'calib', '%06d.txt' % uidx)
-        if self._return_file_path:
-            return self.base_path / fname
-
-        if self.inzip:
-            with PatchedZipFile(self.base_path / "data_object_calib.zip", to_extract=fname) as source:
-                return self._load_calib(source, uidx, raw)
-        else:
-            return self._load_calib(self.base_path, uidx, raw)
-
-    def annotation_3dobject(self, idx, raw=False):
-        assert self.phase_path != "testing", "Testing dataset doesn't contain label data"
-        if isinstance(idx, int):
-            uidx = self.frames[idx]
-        else:
-            uidx, = idx
-
-        fname = Path(self.phase_path, 'label_2', '%06d.txt' % uidx)
-        if self._return_file_path:
-            return self.base_path / fname
-
-        if self.inzip:
-            with PatchedZipFile(self.base_path / "data_object_label_2.zip", to_extract=fname) as source:
-                label = load_label(source, fname)
-        else:
-            label = load_label(self.base_path, fname)
-
-        if raw:
-            return label
-        return parse_label(label, self.calibration_data((uidx,), raw=True))
-
-    def identity(self, idx):
-        return (self.frames[idx],)
 
     def _load_calib(self, basepath, uidx, raw=False):
         # load the calibration file
@@ -253,103 +256,101 @@ class KittiObjectLoader(DetectionDatasetBase):
 
         return data
 
-def _line_box_intersect(p0, p1, width, height):
-    # p0: inlier point
-    # p1: outlier point
-    k = (p1[1] - p0[1]) / (p1[0] - p0[0])
-    
-    # find which border
-    case = None
-    if p1[0] < p0[0]:
-        if p1[1] < p0[1]:
-            k0 = p0[1] / p0[0]
-            case = 2 if k > k0 else 3
+    def calibration_data(self, idx, raw=False):
+        uidx = self._parse_idx(idx)
+
+        fname = Path(self.phase_path, 'calib', '%06d.txt' % uidx)
+        if self._return_file_path:
+            return self.base_path / fname
+
+        if self.inzip:
+            with PatchedZipFile(self.base_path / "data_object_calib.zip", to_extract=fname) as source:
+                return self._load_calib(source, uidx, raw)
         else:
-            k0 = - (height - p0[1]) / p0[0]
-            case = 3 if k > k0 else 0
-    else:
-        if p1[1] < p0[1]:
-            k0 = - p0[1] / (width - p0[0])
-            case = 1 if k > k0 else 2
+            return self._load_calib(self.base_path, uidx, raw)
+
+    def annotation_3dobject(self, idx, raw=False):
+        assert self.phase_path != "testing", "Testing dataset doesn't contain label data"
+        uidx = self._parse_idx(idx)
+
+        fname = Path(self.phase_path, 'label_2', '%06d.txt' % uidx)
+        if self._return_file_path:
+            return self.base_path / fname
+
+        if self.inzip:
+            with PatchedZipFile(self.base_path / "data_object_label_2.zip", to_extract=fname) as source:
+                label = load_label(source, fname)
         else:
-            k0 = (height - p0[1]) / (width - p0[0])
-            case = 0 if k > k0 else 1
+            label = load_label(self.base_path, fname)
 
-    # do intersection
-    if case == 0: # y > height border
-        x = p0[0] + (height - p0[1]) / k
-        y = height
-    elif case == 1: # x > width border
-        x = width
-        y = p0[1] + (width - p0[0]) * k
-    elif case == 2: # y < 0 border
-        x = p1[0] + (-p1[1]) / k
-        y = 0
-    elif case == 3: # x < 0 border
-        x = 0
-        y = p1[1] + (-p1[0]) * k
+        if raw:
+            return label
+        return parse_label(label, self.calibration_data((uidx,), raw=True))
 
-    assert 0 <= x <= width, "x = %.2f" % x
-    assert 0 <= y <= height, "y = %.2f" % y
-    return (x, y)
+    def identity(self, idx):
+        return (self.frames[idx],)
 
-def dump_detection_output(detections: Target3DArray, calib: TransformSet, raw_calib: dict):
-    '''
-    Save the detection in KITTI output format. We need raw calibration for R0_rect
-    '''
-    # get intrinsics
-    assert detections.frame == "velo"
-    Tr = raw_calib['Tr_velo_to_cam'].reshape(3, 4)
-    RRect = Rotation.from_matrix(raw_calib['R0_rect'].reshape(3, 3))
-    HR, HT = Rotation.from_matrix(Tr[:,:3]), Tr[:,3]
+    def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray, fout: RawIOBase) -> None:
+        '''
+        Save the detection in KITTI output format. We need raw calibration for R0_rect
+        '''
+        uidx = self._parse_idx(idx)
+        calib = self.calibration_data(uidx)
+        raw_calib = self.calibration_data(uidx, raw=True)
 
-    meta = calib.intrinsics_meta['cam2']
-    width, height = meta.width, meta.height
+        # get intrinsics
+        assert detections.frame == "velo"
+        Tr = raw_calib['Tr_velo_to_cam'].reshape(3, 4)
+        RRect = Rotation.from_matrix(raw_calib['R0_rect'].reshape(3, 3))
+        HR, HT = Rotation.from_matrix(Tr[:,:3]), Tr[:,3]
 
-    # process detections
-    output_lines = []
-    output_format = "%s 0 0 0" + " %.2f" * 12
-    for box in detections:
-        # calculate bounding box 2D
-        uv, mask, dmask = calib.project_points_to_camera(box.corners,
-            frame_to="cam2", frame_from="velo", remove_outlier=False, return_dmask=True)
-        if len(uv[mask]) < 1: continue # ignore boxes that is outside the image
+        meta = calib.intrinsics_meta['cam2']
+        width, height = meta.width, meta.height
 
-        bdpoints = []
-        pairs = [(0, 1), (2, 3), (4, 5), (6, 7), # box lines
-                 (0, 4), (1, 5), (2, 6), (3, 7),
-                 (0, 2), (1, 3), (4, 6), (5, 7)]
-        inlier = [i in mask for i in range(len(uv))]
-        for i, j in pairs:
-            if not inlier[i] and not inlier[j]:
-                continue
-            if i not in dmask or j not in dmask: # only calculate for points ahead
-                continue
-            if not inlier[i]:
-                bdpoints.append(_line_box_intersect(uv[j], uv[i], width, height))
-            if not inlier[j]:
-                bdpoints.append(_line_box_intersect(uv[i], uv[j], width, height))
+        # process detections
+        output_lines = []
+        output_format = "%s 0 0 0" + " %.2f" * 12
+        for box in detections:
+            # calculate bounding box 2D
+            uv, mask, dmask = calib.project_points_to_camera(box.corners,
+                frame_to="cam2", frame_from="velo", remove_outlier=False, return_dmask=True)
+            if len(uv[mask]) < 1: continue # ignore boxes that is outside the image
 
-        uv = np.array(uv[mask].tolist() + bdpoints)
-        umin, vmin = np.min(uv, axis=0)
-        umax, vmax = np.max(uv, axis=0)
+            bdpoints = []
+            pairs = [(0, 1), (2, 3), (4, 5), (6, 7), # box lines
+                    (0, 4), (1, 5), (2, 6), (3, 7),
+                    (0, 2), (1, 3), (4, 6), (5, 7)]
+            inlier = [i in mask for i in range(len(uv))]
+            for i, j in pairs:
+                if not inlier[i] and not inlier[j]:
+                    continue
+                if i not in dmask or j not in dmask: # only calculate for points ahead
+                    continue
+                if not inlier[i]:
+                    bdpoints.append(_line_box_intersect(uv[j], uv[i], width, height))
+                if not inlier[j]:
+                    bdpoints.append(_line_box_intersect(uv[i], uv[j], width, height))
 
-        # calculate position in original 3D frame
-        l,w,h = box.dimension
-        position = RRect.as_matrix().dot(HR.as_matrix().dot(box.position) + HT)
-        position[1] += h/2
-        orientation = box.orientation * Rotation.from_euler("x", np.pi/2)
-        orientation = RRect * HR * orientation
-        yaw = orientation.as_euler("YZX")[0]
+            uv = np.array(uv[mask].tolist() + bdpoints)
+            umin, vmin = np.min(uv, axis=0)
+            umax, vmax = np.max(uv, axis=0)
 
-        output_values = (box.tag_name,)
-        output_values += (umin, vmin, umax, vmax)
-        output_values += (h, w, l)
-        output_values += tuple(position.tolist())
-        output_values += (yaw, box.tag_score)
-        output_lines.append(output_format % output_values)
-    
-    return "\n".join(output_lines)       
+            # calculate position in original 3D frame
+            l,w,h = box.dimension
+            position = RRect.as_matrix().dot(HR.as_matrix().dot(box.position) + HT)
+            position[1] += h/2
+            orientation = box.orientation * Rotation.from_euler("x", np.pi/2)
+            orientation = RRect * HR * orientation
+            yaw = orientation.as_euler("YZX")[0]
+
+            output_values = (box.tag_name,)
+            output_values += (umin, vmin, umax, vmax)
+            output_values += (h, w, l)
+            output_values += tuple(position.tolist())
+            output_values += (yaw, box.tag_score)
+            output_lines.append(output_format % output_values)
+
+        fout.write("\n".join(output_lines).encode())
 
 def execute_official_evaluator(exec_path, label_path, result_path, output_path, model_name=None, show_output=True):
     '''

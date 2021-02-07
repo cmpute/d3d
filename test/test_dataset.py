@@ -1,21 +1,21 @@
 import os
 import random
 import unittest
+from tkinter import TclError
 
 import numpy as np
 import pcl
-from PIL.Image import Image
-from matplotlib import pyplot as plt
-from tkinter import TclError
-
 from d3d.abstraction import EgoPose, Target3DArray, TransformSet
 from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
-                                      dump_detection_output, KittiTrackingLoader, KittiRawLoader)
-from d3d.dataset.waymo.loader import WaymoLoader
-from d3d.dataset.nuscenes.loader import NuscenesObjectClass, NuscenesLoader, NuscenesDetectionClass
+                               KittiRawLoader, KittiTrackingLoader)
 from d3d.dataset.kitti360.loader import KITTI360Loader
-from d3d.vis.pcl import visualize_detections as pcl_vis
+from d3d.dataset.nuscenes.loader import (NuscenesDetectionClass,
+                                         NuscenesLoader, NuscenesObjectClass)
+from d3d.dataset.waymo.loader import WaymoLoader
 from d3d.vis.image import visualize_detections as img_vis
+from d3d.vis.pcl import visualize_detections as pcl_vis
+from matplotlib import pyplot as plt
+from PIL.Image import Image
 
 # set the location of the dataset in environment variable
 # if not set, then the corresponding test will be skipped
@@ -177,8 +177,7 @@ class TestKittiObjectDataset(unittest.TestCase, CommonObjectDSMixin):
         print("index: ", idx) # for debug
         targets = self.oloader.annotation_3dobject(idx)
         label = self.oloader.annotation_3dobject(idx, raw=True)
-        output = dump_detection_output(targets,
-            self.oloader.calibration_data(idx), self.oloader.calibration_data(idx, raw=True))
+        output = self.oloader.dump_detection_output(idx, targets)
 
         # These are for debug. Actually there are some labels in KITTI (usually pedestrian)
         #     whose 2D coordinates are not calculated from 3D box...

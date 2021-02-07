@@ -4,9 +4,9 @@ import logging
 import os
 import zipfile
 from enum import Enum, IntFlag, auto
-from io import BytesIO
+from io import BytesIO, RawIOBase
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Union
 
 import msgpack
 import numpy as np
@@ -536,6 +536,7 @@ class NuscenesLoader(TrackingDatasetBase):
     @expand_idx_name(VALID_LIDAR_NAMES)
     def annotation_3dpoints(self, idx, names='lidar_top', convert_tag=True):
         # TODO: (v0.5) Force convert_tag from raw number to our number, convert_tag=True means convert to segmentation class
+        #       CAUTION, this is a breaking change
         assert names == 'lidar_top'
         seq_id, frame_idx = idx
 
@@ -644,77 +645,92 @@ class NuscenesLoader(TrackingDatasetBase):
         t = r.inv().as_matrix().dot(np.array(data['translation']))
         return EgoPose(t, r)
 
-def dump_detection_output(detections: Target3DArray,
-                          calib: TransformSet,
-                          ego_pose: EgoPose,
-                          sample_token: str,
-                          ranges: Dict[NuscenesObjectClass, float] = {}
-):
-    default_attr = {
-        NuscenesDetectionClass.car: NuscenesObjectClass.vehicle_parked.attribute_name,
-        NuscenesDetectionClass.pedestrian: NuscenesObjectClass.pedestrian_standing.attribute_name,
-        NuscenesDetectionClass.trailer: NuscenesObjectClass.vehicle_parked.attribute_name,
-        NuscenesDetectionClass.truck: NuscenesObjectClass.vehicle_parked.attribute_name,
-        NuscenesDetectionClass.bus: NuscenesObjectClass.vehicle_stopped.attribute_name,
-        NuscenesDetectionClass.motorcycle: NuscenesObjectClass.cycle_without_rider.attribute_name,
-        NuscenesDetectionClass.construction_vehicle: NuscenesObjectClass.vehicle_parked.attribute_name,
-        NuscenesDetectionClass.bicycle: NuscenesObjectClass.cycle_without_rider.attribute_name,
-        NuscenesDetectionClass.barrier: "",
-        NuscenesDetectionClass.traffic_cone: "",
-    }
-    output = []
+    @expand_idx
+    def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray, fout: RawIOBase,
+                              ranges: Dict[NuscenesObjectClass, float] = {}) -> None:
+        calib = self.calibration_data(idx)
+        ego_pose = self.pose(idx)
+        sample_token = self.metadata(idx).sample_token
 
-    for box in calib.transform_objects(detections, "ego"):
-        if box.tag_top in ranges:
-            if np.hypot(box.position[:2]) > ranges[box.tag_top]:
-                continue
-        
-        # parse category and attribute
-        cat = box.tag_top.category
-        if box.tag_top.attribute == NuscenesObjectClass.unknown:
-            if np.hypot(box.velocity[:2]) > 0.2:
-                if cat in [
-                    NuscenesDetectionClass.car,
-                    NuscenesDetectionClass.construction_vehicle,
-                    NuscenesDetectionClass.bus,
-                    NuscenesDetectionClass.truck,
-                    NuscenesDetectionClass.trailer,
-                ]:
-                    attr = NuscenesObjectClass.vehicle_moving.attribute_name
-                elif cat in [
-                    NuscenesDetectionClass.bicycle,
-                    NuscenesDetectionClass.motorcycle
-                ]:
-                    attr = NuscenesObjectClass.cycle_with_rider.attribute_name
-                elif cat in [
-                    NuscenesDetectionClass.pedestrian
-                ]:
-                    attr = NuscenesObjectClass.pedestrian_moving.attribute_name
-                else:
-                    attr = default_attr[cat]
+        default_attr = {
+            NuscenesDetectionClass.car: NuscenesObjectClass.vehicle_parked.attribute_name,
+            NuscenesDetectionClass.pedestrian: NuscenesObjectClass.pedestrian_standing.attribute_name,
+            NuscenesDetectionClass.trailer: NuscenesObjectClass.vehicle_parked.attribute_name,
+            NuscenesDetectionClass.truck: NuscenesObjectClass.vehicle_parked.attribute_name,
+            NuscenesDetectionClass.bus: NuscenesObjectClass.vehicle_stopped.attribute_name,
+            NuscenesDetectionClass.motorcycle: NuscenesObjectClass.cycle_without_rider.attribute_name,
+            NuscenesDetectionClass.construction_vehicle: NuscenesObjectClass.vehicle_parked.attribute_name,
+            NuscenesDetectionClass.bicycle: NuscenesObjectClass.cycle_without_rider.attribute_name,
+            NuscenesDetectionClass.barrier: "",
+            NuscenesDetectionClass.traffic_cone: "",
+        }
+        output = []
+
+        for box in calib.transform_objects(detections, "ego"):
+            if box.tag_top in ranges:
+                if np.hypot(box.position[:2]) > ranges[box.tag_top]:
+                    continue
+            
+            if isinstance(box.tag_top, NuscenesObjectClass):
+                box_cat = box.tag_top.to_detection()
+                box_attr = box.tag_top.attribute
+            elif isinstance(box.tag_top, NuscenesDetectionClass):
+                box_cat = box.tag_top
+                box_attr = NuscenesObjectClass.unknown
             else:
-                attr = default_attr[cat]
-        else:
-            attr = box.tag_top.attribute_name
+                raise ValueError("Incorrect object tag type")
 
-        # calculate properties
-        rel_r, rel_t = box.orientation, box.translation
-        ego_r, ego_t = ego_pose.orientation, ego_pose.position
-        t = ego_r.as_matrix().dot(rel_t) + ego_t
-        r = (ego_r * rel_r).as_quat()
+            # parse category and attribute
+            if box_attr == NuscenesObjectClass.unknown:
+                if isinstance(box, TrackingTarget3D) and np.hypot(box.velocity[:2]) > 0.2:
+                    if box_cat in [
+                        NuscenesDetectionClass.car,
+                        NuscenesDetectionClass.construction_vehicle,
+                        NuscenesDetectionClass.bus,
+                        NuscenesDetectionClass.truck,
+                        NuscenesDetectionClass.trailer,
+                    ]:
+                        attr = NuscenesObjectClass.vehicle_moving.attribute_name
+                    elif box_cat in [
+                        NuscenesDetectionClass.bicycle,
+                        NuscenesDetectionClass.motorcycle
+                    ]:
+                        attr = NuscenesObjectClass.cycle_with_rider.attribute_name
+                    elif box_cat in [
+                        NuscenesDetectionClass.pedestrian
+                    ]:
+                        attr = NuscenesObjectClass.pedestrian_moving.attribute_name
+                    else:
+                        attr = default_attr[box_cat]
+                else:
+                    attr = default_attr[box_cat]
+            else:
+                attr = box.tag_top.attribute_name
 
-        output.append(dict(
-            sample_token=sample_token,
-            translation=t.tolist(),
-            size=[box.dimension[1], box.dimension[0], box.dimension[2]], # lwh -> wlh
-            rotation=[r[3], r[:3]], # xyzw -> wxyz
-            velocity=box.velocity[:2].tolist(),
-            detection_name=cat.category_name,
-            detection_score=box.top_score,
-            attribute_name=attr
-        ))
+            # calculate properties
+            rel_r, rel_t = box.orientation, box.position
+            ego_r, ego_t = ego_pose.orientation, ego_pose.position
+            t = ego_r.as_matrix().dot(rel_t) + ego_t
+            r = (ego_r * rel_r).as_quat().tolist()
+            l, w, h = box.dimension.tolist()
 
-    return output
+            odict = dict(
+                sample_token=sample_token,
+                translation=t.tolist(),
+                size=[w, l, h], # lwh -> wlh
+                rotation=[r[3]] + r[:3], # xyzw -> wxyz
+                detection_name=box_cat.name,
+                detection_score=box.tag_score,
+                attribute_name=attr
+            )
+            if isinstance(box, TrackingTarget3D):
+                odict['velocity'] = box.velocity[:2].tolist()
+            output.append(odict)
+
+        if not output: # add token if no objects available
+            output.append(sample_token)
+
+        fout.write(json.dumps(output).encode())
 
 def execute_official_evaluator(nusc_path, result_path, output_path, model_name=None, show_output=True):
     # call official evaluator

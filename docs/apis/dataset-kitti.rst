@@ -11,4 +11,4 @@ This module contains loaders for KITTI 3d object, KITTI tracking, KITTI raw data
     :undoc-members:
 
 .. automodule:: d3d.dataset.kitti.object
-    :members: dump_detection_output, execute_official_evaluator
+    :members: execute_official_evaluator

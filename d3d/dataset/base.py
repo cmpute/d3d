@@ -487,16 +487,18 @@ def expand_idx(func):
     the original underlying method without expansion.
     '''
     @functools.wraps(func)
-    def wrapper(self: TrackingDatasetBase, idx, bypass=False, **kwargs):
+    def wrapper(self: TrackingDatasetBase, idx: Union[int, tuple], *kargs, **kwargs):
+        bypass = kwargs.pop("bypass", False)
+
         if isinstance(idx, int):
             seq_id, frame_idx = self._locate_frame(idx)
         else:
             seq_id, frame_idx = idx
 
         if self.nframes == 0 or bypass:
-            return func(self, (seq_id, frame_idx), **kwargs)
+            return func(self, (seq_id, frame_idx), *kargs, **kwargs)
         else:
-            return [func(self, (seq_id, idx), **kwargs)
+            return [func(self, (seq_id, idx), *kargs, **kwargs)
                     for idx in range(frame_idx, frame_idx + self.nframes + 1)]
 
     return wrapper
@@ -514,12 +516,12 @@ def expand_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
                "The decorated function should have default names value"
 
         @functools.wraps(func)
-        def wrapper(self: TrackingDatasetBase, idx, names=default_names, **kwargs):
+        def wrapper(self: TrackingDatasetBase, idx, names=default_names, *kargs, **kwargs):
             unpack_result, names = check_frames(names, valid_names)
 
             results = []
             for name in names:
-                results.append(func(self, idx, name, **kwargs))
+                results.append(func(self, idx, name, *kargs, **kwargs))
             return results[0] if unpack_result else results
 
         return wrapper
@@ -542,7 +544,9 @@ def expand_idx_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
                "The decorated function should have default names value"
 
         @functools.wraps(func)
-        def wrapper(self: TrackingDatasetBase, idx, names=default_names, bypass=False, **kwargs):
+        def wrapper(self: TrackingDatasetBase, idx, names=default_names, *kargs, **kwargs):
+            bypass = kwargs.pop("bypass", False)
+
             if isinstance(idx, int):
                 seq_id, frame_idx = self._locate_frame(idx)
             else:
@@ -552,9 +556,9 @@ def expand_idx_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
             results = []
             for name in names:
                 if self.nframes == 0 or bypass:
-                    results.append(func(self, (seq_id, frame_idx), names=name, **kwargs))
+                    results.append(func(self, (seq_id, frame_idx), names=name, *kargs, **kwargs))
                 else:
-                    results.append([func(self, (seq_id, idx), names=name, **kwargs)
+                    results.append([func(self, (seq_id, idx), names=name, *kargs, **kwargs)
                                     for idx in range(frame_idx, frame_idx + self.nframes + 1)])
             return results[0] if unpack_result else results
 
