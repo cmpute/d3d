@@ -7,24 +7,24 @@ import os.path as osp
 import shutil
 import struct
 import subprocess
+import tarfile
 import tempfile
 import zipfile
-import tarfile
-from pathlib import Path
-from collections import OrderedDict
 from enum import Enum, auto
 from io import BytesIO
+from pathlib import Path
 
-import numpy as np
 import msgpack
+import numpy as np
 from addict import Dict as edict
+from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
+                             TransformSet)
+from d3d.dataset.base import (TrackingDatasetBase, check_frames, expand_idx,
+                              expand_idx_name)
+from d3d.dataset.zip import PatchedZipFile
 from PIL import Image
 from scipy.spatial.transform import Rotation
-
-from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
-                             TransformSet, EgoPose)
-from d3d.dataset.zip import PatchedZipFile
-from d3d.dataset.base import TrackingDatasetBase, check_frames, expand_idx, expand_idx_name
+from sortedcontainers import SortedDict
 
 _logger = logging.getLogger("d3d")
 
@@ -92,7 +92,7 @@ class WaymoLoader(TrackingDatasetBase):
                 msgpack.pack(metadata, fout)
 
         with open(meta_path, "rb") as fin:
-            self._metadata = OrderedDict()
+            self._metadata = SortedDict()
             meta_json = msgpack.unpack(fin)
             for k, v in meta_json.items():
                 self._metadata[k] = edict(v)
@@ -331,15 +331,15 @@ def execute_official_evaluator(exec_path, label_path, result_path, output_path, 
 def create_submission(exec_path, result_path, output_path, meta_path, model_name=None):
     '''
     Execute create_submission from waymo_open_dataset
-    :param exec_path: path to create_submission
-    :param result_path: path (or list of path) to detection result in binary protobuf
+    :param exec_path: path to create_submission executable from waymo devkit
+    :param result_path: path (or list of path) to detection result in binary protobuf from dump_detection_output
     :param meta_path: path to the metadata file (example: waymo_open_dataset/metrics/tools/submission.txtpb)
     :param output_path: output path for the created submission archive
     '''
     temp_path = tempfile.mkdtemp() + '/'
     model_name = model_name or "noname"
-    cwd_path = temp_path + 'input' # change input directory
-    os.mkdir(cwd_path)
+    cwd_path = Path(temp_path + 'input') # change input directory
+    cwd_path.mkdir()
 
     # combine single results
     if isinstance(result_path, str):
@@ -350,24 +350,24 @@ def create_submission(exec_path, result_path, output_path, meta_path, model_name
     print("Combining outputs into %s..." % temp_path)
     for rpath in result_path:
         from waymo_open_dataset.protos.metrics_pb2 import Objects
-        
+
         # merge objects
         combined_objects = Objects()
         for f in os.listdir(rpath):
-            with open(osp.join(rpath, f), "rb") as fin:
+            with open(Path(rpath, f), "rb") as fin:
                 objects = Objects()
                 objects.ParseFromString(fin.read())
                 combined_objects.MergeFrom(objects)
             
             if len(combined_objects.objects) > 1024: # create binary file every 1024 objects
-                with open(osp.join(cwd_path, "%x.bin" % counter), "wb") as fout:
+                with open(cwd_path / ("%x.bin" % counter), "wb") as fout:
                     fout.write(combined_objects.SerializeToString())
                 combined_objects = Objects()
                 counter += 1
 
     # write remaining objects
     if len(combined_objects.objects) > 0:
-        with open(osp.join(cwd_path, "%x.bin" % counter), "wb") as fout:
+        with open(cwd_path / ("%x.bin" % counter), "wb") as fout:
             fout.write(combined_objects.SerializeToString())
     input_files = ','.join(os.listdir(cwd_path))
 
@@ -384,10 +384,12 @@ def create_submission(exec_path, result_path, output_path, meta_path, model_name
     print("Clean up...")
     if cwd_path != result_path: # remove combined files before zipping
         shutil.rmtree(cwd_path)
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
-    with tarfile.open(osp.join(output_path, model_name + ".tgz"), "w:gz") as tar:
+    output_path = Path(output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+    fsubmission = output_path / (model_name + ".tgz")
+    with tarfile.open(fsubmission, "w:gz") as tar:
         tar.add(temp_path, arcname=os.path.basename(temp_path))
 
     # clean
     shutil.rmtree(temp_path)
+    print("Submission created at", fsubmission)

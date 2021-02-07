@@ -4,7 +4,7 @@ from enum import Enum
 from multiprocessing import Manager, Pool
 from pathlib import Path
 from threading import Event
-from typing import (Any, Callable, Dict, List, Optional, Dict, Tuple,
+from typing import (Any, Callable, Dict, Iterable, List, Optional, Dict, Tuple,
                     Union, ContextManager)
 
 import numpy as np
@@ -13,16 +13,12 @@ from d3d.abstraction import EgoPose, Target3DArray, TransformSet
 from numpy import ndarray as NdArray
 from PIL.Image import Image
 from tqdm import tqdm
-
-try:
-    from typing import OrderedDict
-except ImportError: # in version < 3.7.2
-    OrderedDict = Dict
+from sortedcontainers import SortedDict
 
 def split_trainval(phase: str,
                    total_count: int,
                    trainval_split: Union[float, List[int]],
-                   trainval_random: Union[bool, int, str]):
+                   trainval_random: Union[bool, int, str]) -> Iterable[int]:
     '''
     Split frames for training or validation set
 
@@ -65,7 +61,7 @@ def split_trainval_seq(phase: str,
                        seq_counts: Dict[Any, int],
                        trainval_split: Union[float, List[int]],
                        trainval_random: Union[bool, int, str],
-                       by_seq: bool = False):
+                       by_seq: bool = False) -> Iterable[int]:
     '''
     Split frames for training or validation by frames or by sequence
 
@@ -75,7 +71,8 @@ def split_trainval_seq(phase: str,
 
         * If it's a number, then it's the ratio to split training dataset.
         * If it's 1, then the validation set is empty; if it's 0, then training set is empty
-        * If it's a list of number, then it directly defines the indices to report (ignoring :obj:`trainval_random`)
+        * If it's a list of number and by_seq is True, then it directly defines the indices to report (ignoring :obj:`trainval_random`)
+        * If it's a list of sequence name and by_seq is False, then it directly defines the sequences to be chosen
     :param trainval_random: whether select the train/val split randomly.
 
         * If it's a bool, then trainval is split with or without shuffle
@@ -83,19 +80,26 @@ def split_trainval_seq(phase: str,
         * If it's a string, then predefined order is used. {r: reverse}
     :param by_seq: Whether split trainval partitions by sequences instead of frames
     '''
-    if isinstance(trainval_split, list):
-        return trainval_split
     if not by_seq:
         total_count = sum(seq_counts.values())
         return split_trainval(phase, total_count, trainval_split, trainval_random)
 
-    seqs = []
+    # calculate starting point of sequences
     seqstarts = {}
     counter = 0
     for seqid, seqcount in seq_counts.items():
-        seqs.append(seqid)
         seqstarts[seqid] = counter
         counter += seqcount
+
+    # determine sequences
+    if isinstance(trainval_split, list):
+        seqs = trainval_split
+    else:
+        seqs = list(seq_counts.keys())
+        if phase == 'training':
+            seqs = seqs[:int(len(seqs) * trainval_split)]
+        elif phase == 'validation':
+            seqs = seqs[int(len(seqs) * trainval_split):]
 
     # generate frames
     frames = []
@@ -119,14 +123,7 @@ def split_trainval_seq(phase: str,
         for seq in seqs[::-1]:
             frames.append(np.arange(seq_counts[seq])[::-1] + seqstarts[seq])
 
-    # split sequences by phase
-    if phase == 'training':
-        frames = frames[:int(len(frames) * trainval_split)]
-    elif phase == 'validation':
-        frames = frames[int(len(frames) * trainval_split):]
-    frames = np.concatenate(frames)
-
-    return frames
+    return np.concatenate(frames)
 
 def check_frames(names: Union[List[str], str], valid: List[str]):
     '''
@@ -236,6 +233,12 @@ class DetectionDatasetBase(DatasetBase):
         super().__init__(base_path, inzip=inzip, phase=phase,
                          trainval_split=trainval_split, trainval_random=trainval_random)
 
+    def __len__(self) -> int:
+        '''
+        Return the total number of frames (in the given split)
+        '''
+        raise NotImplementedError("abstract function")
+
     def lidar_data(self,
                    idx: Union[int, tuple],
                    names: Optional[Union[str, List[str]]] = None
@@ -314,9 +317,9 @@ class TrackingDatasetBase(DetectionDatasetBase):
         :param inzip: whether the dataset is store in original zip archives or unzipped
         :param phase: training, validation or testing
         :param trainval_split: the ratio to split training dataset. See
-                            documentation of :func:`split_trainval` for detail.
+                            documentation of :func:`split_trainval_seq` for detail.
         :param trainval_random: whether select the train/val split randomly. See
-                            documentation of :func:`split_trainval` for detail.
+                            documentation of :func:`split_trainval_seq` for detail.
         :param nframes: number of consecutive frames returned from the accessors
 
             * If it's a positive number, then it returns adjacent frames with total number reduced

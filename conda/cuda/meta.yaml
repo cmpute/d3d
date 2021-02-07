@@ -43,6 +43,7 @@ requirements:
     - tqdm
     - msgpack-python
     - filterpy
+    - sortedcontainers
 
 test:
   imports:

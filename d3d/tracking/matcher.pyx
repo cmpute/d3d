@@ -34,6 +34,9 @@ cdef class BaseMatcher:
         self._src_boxes = src_boxes
         self._dst_boxes = dst_boxes
 
+        if len(src_boxes) == 0 or len(dst_boxes) == 0:
+            return
+
         # sometimes pre-calculate these values will be slower?
         cdef np.ndarray src_arr = src_boxes.to_numpy().astype(np.float32)
         cdef np.ndarray dst_arr = dst_boxes.to_numpy().astype(np.float32)

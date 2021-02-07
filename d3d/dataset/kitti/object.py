@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from zipfile import ZipFile
+import zipfile
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -292,7 +293,7 @@ def _line_box_intersect(p0, p1, width, height):
     assert 0 <= y <= height, "y = %.2f" % y
     return (x, y)
 
-def dump_detection_output(detections: Target3DArray, calib:TransformSet, raw_calib: dict):
+def dump_detection_output(detections: Target3DArray, calib: TransformSet, raw_calib: dict):
     '''
     Save the detection in KITTI output format. We need raw calibration for R0_rect
     '''
@@ -353,7 +354,12 @@ def dump_detection_output(detections: Target3DArray, calib:TransformSet, raw_cal
 def execute_official_evaluator(exec_path, label_path, result_path, output_path, model_name=None, show_output=True):
     '''
     Execute official evaluator from KITTI devkit
+
+    :param label_path: path to the extracted labels of kitti dataset
+    :param result_path: path to the results created by dump_detection_output
+    :parma output_path: path to the output evaluation results
     :param model_name: unique name of your model. KITTI tool requires sha1 as model name, but that's not mandatory.
+    :param show_output: show_output option passed to Kitti evaluator
 
     Note: to install prerequisites `sudo apt install gnuplot texlive-extra-utils`
     '''
@@ -385,10 +391,17 @@ def execute_official_evaluator(exec_path, label_path, result_path, output_path, 
         # clean
         shutil.rmtree(temp_path)
 
+def create_submission(result_path, output_path):
+    '''
+    Create submission file from dumped detection results (using dump_detection_output)
+    '''
+    fsubmission = Path(output_path, "submission.zip")
+    with zipfile.ZipFile(fsubmission, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for file in Path(result_path).iterdir():
+            archive.write(file, file.name)
+    print("Submission file created at", fsubmission)
+
 def parse_detection_output():
-    '''
-    This function is directly exposed to parse detection output to d3d format
-    '''
     from argparse import ArgumentParser
     from tqdm import tqdm
 

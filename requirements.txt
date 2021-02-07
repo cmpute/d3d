@@ -7,6 +7,7 @@ pillow
 tqdm
 msgpack
 filterpy
+sortedcontainers
 
 # build dependencies
 cmake >= 3.12

@@ -3,10 +3,10 @@ import json
 import logging
 import os
 import zipfile
-from collections import OrderedDict
 from enum import Enum, IntFlag, auto
 from io import BytesIO
 from pathlib import Path
+from typing import Dict
 
 import msgpack
 import numpy as np
@@ -18,8 +18,50 @@ from d3d.dataset.base import (TrackingDatasetBase, expand_idx, expand_idx_name,
 from d3d.dataset.zip import PatchedZipFile
 from PIL import Image
 from scipy.spatial.transform import Rotation
+from sortedcontainers import SortedDict
 
 _logger = logging.getLogger("d3d")
+
+class NuscenesDetectionClass(Enum):
+    '''
+    Label classes for detection in Nuscenes dataset.
+    '''
+    ignore = 0
+    barrier = auto()
+    bicycle = auto()
+    bus = auto()
+    car = auto()
+    construction_vehicle = auto()
+    motorcycle = auto()
+    pedestrian = auto()
+    traffic_cone = auto()
+    trailer = auto()
+    truck = auto()
+
+class NuscenesSegmentationClass(Enum):
+    '''
+    Label classes for lidar segmentation task in Nuscenes dataset
+
+    Notice that there's a one-to-one correspondance between detection
+    and segmentation classes
+    '''
+    ignore = 0
+    barrier = auto()
+    bicycle = auto()
+    bus = auto()
+    car = auto()
+    construction_vehicle = auto()
+    motorcycle = auto()
+    pedestrian = auto()
+    traffic_cone = auto()
+    trailer = auto()
+    truck = auto()
+    driveable_surface = auto()
+    other_flat = auto()
+    sidewalk = auto()
+    terrain = auto()
+    manmade = auto()
+    vegetation = auto()
 
 class NuscenesObjectClass(IntFlag):
     '''
@@ -179,42 +221,72 @@ class NuscenesObjectClass(IntFlag):
         """
         # following table is copied from nuscenes definition
         detection_mapping = {
-            'movable_object.barrier': 'barrier',
-            'vehicle.bicycle': 'bicycle',
-            'vehicle.bus.bendy': 'bus',
-            'vehicle.bus.rigid': 'bus',
-            'vehicle.car': 'car',
-            'vehicle.construction': 'construction_vehicle',
-            'vehicle.motorcycle': 'motorcycle',
-            'human.pedestrian.adult': 'pedestrian',
-            'human.pedestrian.child': 'pedestrian',
-            'human.pedestrian.construction_worker': 'pedestrian',
-            'human.pedestrian.police_officer': 'pedestrian',
-            'movable_object.trafficcone': 'traffic_cone',
-            'vehicle.trailer': 'trailer',
-            'vehicle.truck': 'truck'
+            NuscenesObjectClass.movable_object_barrier: NuscenesDetectionClass.barrier,
+            NuscenesObjectClass.vehicle_bicycle: NuscenesDetectionClass.bicycle,
+            NuscenesObjectClass.vehicle_bus_bendy: NuscenesDetectionClass.bus,
+            NuscenesObjectClass.vehicle_bus_rigid: NuscenesDetectionClass.bus,
+            NuscenesObjectClass.vehicle_car: NuscenesDetectionClass.car,
+            NuscenesObjectClass.vehicle_construction: NuscenesDetectionClass.construction_vehicle,
+            NuscenesObjectClass.vehicle_motorcycle: NuscenesDetectionClass.motorcycle,
+            NuscenesObjectClass.human_pedestrian_adult: NuscenesDetectionClass.pedestrian,
+            NuscenesObjectClass.human_pedestrian_child: NuscenesDetectionClass.pedestrian,
+            NuscenesObjectClass.human_pedestrian_construction_worker: NuscenesDetectionClass.pedestrian,
+            NuscenesObjectClass.human_pedestrian_police_officer: NuscenesDetectionClass.pedestrian,
+            NuscenesObjectClass.movable_object_trafficcone: NuscenesDetectionClass.traffic_cone,
+            NuscenesObjectClass.vehicle_trailer: NuscenesDetectionClass.trailer,
+            NuscenesObjectClass.vehicle_truck: NuscenesDetectionClass.truck
         }
 
         if self.category_name not in detection_mapping:
             return NuscenesDetectionClass.ignore
         else:
-            return NuscenesDetectionClass[detection_mapping[self.category_name]]
+            return NuscenesDetectionClass[self.category]
 
-class NuscenesDetectionClass(Enum):
-    '''
-    Label classes for detection in Nuscenes dataset.
-    '''
-    ignore = 0
-    barrier = auto()
-    bicycle = auto()
-    bus = auto()
-    car = auto()
-    construction_vehicle = auto()
-    motorcycle = auto()
-    pedestrian = auto()
-    traffic_cone = auto()
-    trailer = auto()
-    truck = auto()
+    def to_segmentation(self):
+        """
+        Convert the label to the class for segmentation
+
+        Reference: https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/eval/lidarseg/README.md
+        """
+        segmentation_mapping = {
+            NuscenesObjectClass.animal: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.human_pedestrian_personal_mobility: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.human_pedestrian_stroller: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.human_pedestrian_wheelchair: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.movable_object_debris: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.movable_object_pushable_pullable: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.static_object_bicycle_rack: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.vehicle_emergency_ambulance: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.vehicle_emergency_police: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.noise: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.static_other: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.vehicle_ego: NuscenesSegmentationClass.ignore,
+            NuscenesObjectClass.movable_object_barrier: NuscenesSegmentationClass.barrier,
+            NuscenesObjectClass.vehicle_bicycle: NuscenesSegmentationClass.bicycle,
+            NuscenesObjectClass.vehicle_bus_bendy: NuscenesSegmentationClass.bus,
+            NuscenesObjectClass.vehicle_bus_rigid: NuscenesSegmentationClass.bus,
+            NuscenesObjectClass.vehicle_car: NuscenesSegmentationClass.car,
+            NuscenesObjectClass.vehicle_construction: NuscenesSegmentationClass.construction_vehicle,
+            NuscenesObjectClass.vehicle_motorcycle: NuscenesSegmentationClass.motorcycle,
+            NuscenesObjectClass.human_pedestrian_adult: NuscenesSegmentationClass.pedestrian,
+            NuscenesObjectClass.human_pedestrian_child: NuscenesSegmentationClass.pedestrian,
+            NuscenesObjectClass.human_pedestrian_construction_worker: NuscenesSegmentationClass.pedestrian,
+            NuscenesObjectClass.human_pedestrian_police_officer: NuscenesSegmentationClass.pedestrian,
+            NuscenesObjectClass.movable_object_trafficcone: NuscenesSegmentationClass.traffic_cone,
+            NuscenesObjectClass.vehicle_trailer: NuscenesSegmentationClass.trailer,
+            NuscenesObjectClass.vehicle_truck: NuscenesSegmentationClass.truck,
+            NuscenesObjectClass.flat_driveable_surface: NuscenesSegmentationClass.driveable_surface,
+            NuscenesObjectClass.flat_other: NuscenesSegmentationClass.other_flat,
+            NuscenesObjectClass.flat_sidewalk: NuscenesSegmentationClass.sidewalk,
+            NuscenesObjectClass.flat_terrain: NuscenesSegmentationClass.terrain,
+            NuscenesObjectClass.static_manmade: NuscenesSegmentationClass.manmade,
+            NuscenesObjectClass.static_vegetation: NuscenesSegmentationClass.vegetation,
+        }
+
+        if self.category_name not in segmentation_mapping:
+            return NuscenesSegmentationClass.ignore
+        else:
+            return NuscenesSegmentationClass[self.category]
 
 class NuscenesLoader(TrackingDatasetBase):
     '''
@@ -252,7 +324,7 @@ class NuscenesLoader(TrackingDatasetBase):
         self._load_metadata()
 
         # split trainval
-        frames_counts = OrderedDict((k, v.nbr_samples) for k, v in self._metadata.items())
+        frames_counts = SortedDict((k, v.nbr_samples) for k, v in self._metadata.items())
         self.frames = split_trainval_seq(phase, frames_counts, trainval_split, trainval_random, trainval_byseq)
 
     def _load_metadata(self):
@@ -281,7 +353,7 @@ class NuscenesLoader(TrackingDatasetBase):
                 msgpack.pack(metadata, fout)
 
         with open(meta_path, "rb") as fin:
-            self._metadata = OrderedDict()
+            self._metadata = SortedDict()
             meta_json = msgpack.unpack(fin)
             for k, v in meta_json.items():
                 self._metadata[k] = edict(v)
@@ -463,6 +535,7 @@ class NuscenesLoader(TrackingDatasetBase):
 
     @expand_idx_name(VALID_LIDAR_NAMES)
     def annotation_3dpoints(self, idx, names='lidar_top', convert_tag=True):
+        # TODO: (v0.5) Force convert_tag from raw number to our number, convert_tag=True means convert to segmentation class
         assert names == 'lidar_top'
         seq_id, frame_idx = idx
 
@@ -570,3 +643,79 @@ class NuscenesLoader(TrackingDatasetBase):
         r = Rotation.from_quat(data['rotation'][1:] + [data['rotation'][0]])
         t = r.inv().as_matrix().dot(np.array(data['translation']))
         return EgoPose(t, r)
+
+def dump_detection_output(detections: Target3DArray,
+                          calib: TransformSet,
+                          ego_pose: EgoPose,
+                          sample_token: str,
+                          ranges: Dict[NuscenesObjectClass, float] = {}
+):
+    default_attr = {
+        NuscenesDetectionClass.car: NuscenesObjectClass.vehicle_parked.attribute_name,
+        NuscenesDetectionClass.pedestrian: NuscenesObjectClass.pedestrian_standing.attribute_name,
+        NuscenesDetectionClass.trailer: NuscenesObjectClass.vehicle_parked.attribute_name,
+        NuscenesDetectionClass.truck: NuscenesObjectClass.vehicle_parked.attribute_name,
+        NuscenesDetectionClass.bus: NuscenesObjectClass.vehicle_stopped.attribute_name,
+        NuscenesDetectionClass.motorcycle: NuscenesObjectClass.cycle_without_rider.attribute_name,
+        NuscenesDetectionClass.construction_vehicle: NuscenesObjectClass.vehicle_parked.attribute_name,
+        NuscenesDetectionClass.bicycle: NuscenesObjectClass.cycle_without_rider.attribute_name,
+        NuscenesDetectionClass.barrier: "",
+        NuscenesDetectionClass.traffic_cone: "",
+    }
+    output = []
+
+    for box in calib.transform_objects(detections, "ego"):
+        if box.tag_top in ranges:
+            if np.hypot(box.position[:2]) > ranges[box.tag_top]:
+                continue
+        
+        # parse category and attribute
+        cat = box.tag_top.category
+        if box.tag_top.attribute == NuscenesObjectClass.unknown:
+            if np.hypot(box.velocity[:2]) > 0.2:
+                if cat in [
+                    NuscenesDetectionClass.car,
+                    NuscenesDetectionClass.construction_vehicle,
+                    NuscenesDetectionClass.bus,
+                    NuscenesDetectionClass.truck,
+                    NuscenesDetectionClass.trailer,
+                ]:
+                    attr = NuscenesObjectClass.vehicle_moving.attribute_name
+                elif cat in [
+                    NuscenesDetectionClass.bicycle,
+                    NuscenesDetectionClass.motorcycle
+                ]:
+                    attr = NuscenesObjectClass.cycle_with_rider.attribute_name
+                elif cat in [
+                    NuscenesDetectionClass.pedestrian
+                ]:
+                    attr = NuscenesObjectClass.pedestrian_moving.attribute_name
+                else:
+                    attr = default_attr[cat]
+            else:
+                attr = default_attr[cat]
+        else:
+            attr = box.tag_top.attribute_name
+
+        # calculate properties
+        rel_r, rel_t = box.orientation, box.translation
+        ego_r, ego_t = ego_pose.orientation, ego_pose.position
+        t = ego_r.as_matrix().dot(rel_t) + ego_t
+        r = (ego_r * rel_r).as_quat()
+
+        output.append(dict(
+            sample_token=sample_token,
+            translation=t.tolist(),
+            size=[box.dimension[1], box.dimension[0], box.dimension[2]], # lwh -> wlh
+            rotation=[r[3], r[:3]], # xyzw -> wxyz
+            velocity=box.velocity[:2].tolist(),
+            detection_name=cat.category_name,
+            detection_score=box.top_score,
+            attribute_name=attr
+        ))
+
+    return output
+
+def execute_official_evaluator(nusc_path, result_path, output_path, model_name=None, show_output=True):
+    # call official evaluator
+    pass

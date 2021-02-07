@@ -3,28 +3,27 @@ import shutil
 import tempfile
 import time
 from bisect import bisect_right
-from collections import OrderedDict
 from io import BytesIO
 from itertools import chain
 from pathlib import Path
-from zipfile import ZipFile, ZIP_STORED
+from zipfile import ZIP_STORED, ZipFile
 
 import numpy as np
 import tqdm
 from addict import Dict as edict
 from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import (NumberPool, TrackingDatasetBase,
-                              expand_idx, expand_idx_name, split_trainval_seq)
+from d3d.dataset.base import (NumberPool, TrackingDatasetBase, expand_idx,
+                              expand_idx_name, split_trainval_seq)
 from d3d.dataset.kitti360.utils import (Kitti360Class, id2label, kittiId2label,
                                         load_bboxes, load_sick_scan)
 from d3d.dataset.kitti.utils import (load_calib_file, load_image,
                                      load_timestamps, load_velo_scan)
 from d3d.dataset.zip import PatchedZipFile
-
 from PIL import Image
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation, Slerp
+from sortedcontainers import SortedDict
 
 _logger = logging.getLogger("d3d")
 
@@ -151,7 +150,7 @@ class KITTI360Loader(TrackingDatasetBase):
 
         if not frame_count:
             raise ValueError("Cannot parse dataset, please check path, inzip option and file structure")
-        self.frame_dict = OrderedDict(frame_count)
+        self.frame_dict = SortedDict(frame_count)
 
         self.frames = split_trainval_seq(phase, self.frame_dict, self.frame_dict, trainval_random, trainval_byseq)
         self._poses_idx = {} # store loaded poses indices
@@ -327,8 +326,8 @@ class KITTI360Loader(TrackingDatasetBase):
     def _parse_semantic_ply(self, ntqdm, seq: str, fname: Path, dynamic: bool, result_path: Path, expand_frames: int):
         ''' match point cloud in aggregated semantic point clouds '''
         import pcl
-        from sklearn.neighbors import KDTree
         from filelock import FileLock
+        from sklearn.neighbors import KDTree
 
         fstart, fend = fname.stem.split('_')
         fstart, fend = int(fstart), int(fend)

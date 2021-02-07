@@ -10,6 +10,7 @@ Installation requirements:
 - `tqdm`
 - `msgpack`
 - `filterpy`
+- `sortedcontainers`
 
 Build requirements:
 - `cython >= 0.29.16`

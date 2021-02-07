@@ -1,16 +1,17 @@
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from pathlib import Path
 from zipfile import ZipFile
 
 import numpy as np
 from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TransformSet)
-from d3d.dataset.base import (TrackingDatasetBase, expand_idx,
-                              expand_idx_name, split_trainval_seq)
+from d3d.dataset.base import (TrackingDatasetBase, expand_idx, expand_idx_name,
+                              split_trainval_seq)
 from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
 from d3d.dataset.zip import PatchedZipFile
 from scipy.spatial.transform import Rotation
+from sortedcontainers import SortedDict
 
 
 def parse_label(label: list, raw_calib: dict) -> Target3DArray:
@@ -121,7 +122,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         if not len(frame_count):
             raise ValueError("Cannot parse dataset, please check path, inzip option and file structure")
-        self.frame_dict = OrderedDict(frame_count)
+        self.frame_dict = SortedDict(frame_count)
 
         self.frames = split_trainval_seq(phase, self.frame_dict, trainval_split, trainval_random, trainval_byseq)
         self._image_size_cache = {} # used to store the image size (for each sequence)
