@@ -35,6 +35,7 @@ cdef class BaseMatcher:
         self._dst_boxes = dst_boxes
 
         if len(src_boxes) == 0 or len(dst_boxes) == 0:
+            self._distance_cache = np.zeros((len(src_boxes), len(dst_boxes)), dtype=np.float32)
             return
 
         # sometimes pre-calculate these values will be slower?

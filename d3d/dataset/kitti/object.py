@@ -392,11 +392,16 @@ def execute_official_evaluator(exec_path, label_path, result_path, output_path, 
         # clean
         shutil.rmtree(temp_path)
 
-def create_submission(result_path, output_path):
+def create_submission(result_path, output_file):
     '''
     Create submission file from dumped detection results (using dump_detection_output)
+
+    :param output_file: Output zip file. If not ended with `.zip`, `.zip` will be appended
     '''
-    fsubmission = Path(output_path, "submission.zip")
+    fsubmission = Path(output_file)
+    if fsubmission.suffix != ".zip":
+        fsubmission = fsubmission.parent / (fsubmission.name + ".zip")
+    fsubmission.parent.mkdir(exist_ok=True, parents=True)
     with zipfile.ZipFile(fsubmission, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for file in Path(result_path).iterdir():
             archive.write(file, file.name)

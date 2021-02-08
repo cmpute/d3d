@@ -6,10 +6,11 @@ import zipfile
 from enum import Enum, IntFlag, auto
 from io import BytesIO, RawIOBase
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Union, ValuesView
 
 import msgpack
 import numpy as np
+import tqdm
 from addict import Dict as edict
 from d3d.abstraction import (EgoPose, ObjectTag, ObjectTarget3D, Target3DArray,
                              TrackingTarget3D, TransformSet)
@@ -237,10 +238,10 @@ class NuscenesObjectClass(IntFlag):
             NuscenesObjectClass.vehicle_truck: NuscenesDetectionClass.truck
         }
 
-        if self.category_name not in detection_mapping:
+        if self.category not in detection_mapping:
             return NuscenesDetectionClass.ignore
         else:
-            return NuscenesDetectionClass[self.category]
+            return detection_mapping[self.category]
 
     def to_segmentation(self):
         """
@@ -283,10 +284,10 @@ class NuscenesObjectClass(IntFlag):
             NuscenesObjectClass.static_vegetation: NuscenesSegmentationClass.vegetation,
         }
 
-        if self.category_name not in segmentation_mapping:
+        if self.category not in segmentation_mapping:
             return NuscenesSegmentationClass.ignore
         else:
-            return NuscenesSegmentationClass[self.category]
+            return segmentation_mapping[self.category]
 
 class NuscenesLoader(TrackingDatasetBase):
     '''
@@ -647,7 +648,7 @@ class NuscenesLoader(TrackingDatasetBase):
 
     @expand_idx
     def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray, fout: RawIOBase,
-                              ranges: Dict[NuscenesObjectClass, float] = {}) -> None:
+                              ranges: Dict[NuscenesObjectClass, float] = {}) -> None: # TODO: load ranges from preset
         calib = self.calibration_data(idx)
         ego_pose = self.pose(idx)
         sample_token = self.metadata(idx).sample_token
@@ -668,9 +669,9 @@ class NuscenesLoader(TrackingDatasetBase):
 
         for box in calib.transform_objects(detections, "ego"):
             if box.tag_top in ranges:
-                if np.hypot(box.position[:2]) > ranges[box.tag_top]:
+                if np.hypot(box.position[0], box.position[1]) > ranges[box.tag_top]:
                     continue
-            
+
             if isinstance(box.tag_top, NuscenesObjectClass):
                 box_cat = box.tag_top.to_detection()
                 box_attr = box.tag_top.attribute
@@ -682,7 +683,7 @@ class NuscenesLoader(TrackingDatasetBase):
 
             # parse category and attribute
             if box_attr == NuscenesObjectClass.unknown:
-                if isinstance(box, TrackingTarget3D) and np.hypot(box.velocity[:2]) > 0.2:
+                if isinstance(box, TrackingTarget3D) and np.hypot(box.velocity[0], box.velocity[1]) > 0.2:
                     if box_cat in [
                         NuscenesDetectionClass.car,
                         NuscenesDetectionClass.construction_vehicle,
@@ -707,9 +708,10 @@ class NuscenesLoader(TrackingDatasetBase):
             else:
                 attr = box.tag_top.attribute_name
 
-            # calculate properties
+            # calculate properties, this part is the exact inverse of annotation_3dobject
             rel_r, rel_t = box.orientation, box.position
             ego_r, ego_t = ego_pose.orientation, ego_pose.position
+            ego_t = ego_r.as_matrix().dot(ego_t)
             t = ego_r.as_matrix().dot(rel_t) + ego_t
             r = (ego_r * rel_r).as_quat().tolist()
             l, w, h = box.dimension.tolist()
@@ -725,6 +727,8 @@ class NuscenesLoader(TrackingDatasetBase):
             )
             if isinstance(box, TrackingTarget3D):
                 odict['velocity'] = box.velocity[:2].tolist()
+            else:
+                odict['velocity'] = [0, 0]
             output.append(odict)
 
         if not output: # add token if no objects available
@@ -732,6 +736,63 @@ class NuscenesLoader(TrackingDatasetBase):
 
         fout.write(json.dumps(output).encode())
 
-def execute_official_evaluator(nusc_path, result_path, output_path, model_name=None, show_output=True):
-    # call official evaluator
-    pass
+def create_submission(result_path, output_file, task="detection", modality=None):
+    '''
+    :param result_path: path to the dump results
+    :param output_file: path to the output file
+    :param modality: modality used
+    '''
+    if task == "detection":
+        if not modality:
+            modality = {
+                "use_camera":   False,  # Whether this submission uses camera data as an input.
+                "use_lidar":    True,   # Whether this submission uses lidar data as an input.
+                "use_radar":    False,  # Whether this submission uses radar data as an input.
+                "use_map":      False,  # Whether this submission uses map data as an input.
+                "use_external": False,  # Whether this submission uses external data as an input.
+            }
+        nusc_submissions = {
+            'meta': modality,
+            'results': {},
+        }
+
+        fjsons = list(Path(result_path).iterdir())
+        for fdump in tqdm.tqdm(fjsons, "Reading dumped objects"):
+            with open(fdump) as fin:
+                dump_data = json.load(fin)
+            if isinstance(dump_data[0], str):
+                nusc_submissions['results'][dump_data[0]] = {}
+            else:
+                token = dump_data[0]['sample_token']
+                nusc_submissions['results'][token] = dump_data
+        
+        fsubmission = Path(output_file)
+        if fsubmission.suffix != ".json":
+            fsubmission = fsubmission.parent / (fsubmission.name + ".json")
+        fsubmission.parent.mkdir(exist_ok=True, parents=True)
+        fsubmission.write_bytes(json.dumps(nusc_submissions).encode())
+    else:
+        raise ValueError("Unrecognized task")
+
+def execute_official_evaluator(nusc_path, result_path, output_path,
+                               task="detection",
+                               nusc_version="v1.0-trainval",
+                               eval_version="detection_cvpr_2019",
+                               verbose=True):
+    '''
+    call official evaluator implemented in Nuscenes devkit
+    '''
+    from nuscenes import NuScenes
+    from nuscenes.eval.detection.evaluate import NuScenesEval
+    from nuscenes.eval.detection.config import config_factory
+
+    nusc = NuScenes(version=nusc_version, dataroot=nusc_path, verbose=verbose)
+    nusc_eval = NuScenesEval(
+        nusc,
+        config=config_factory(eval_version),
+        result_path=result_path,
+        eval_set='val',
+        output_dir=output_path,
+        verbose=verbose
+    )
+    nusc_eval.main(render_curves=False)

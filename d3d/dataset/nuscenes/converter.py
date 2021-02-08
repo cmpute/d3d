@@ -36,6 +36,9 @@ def _load_table(path):
         kvdata = {k: v for (k, v) in kvdata}
         return kvdata
 
+def hex_pad32(value): # convert hex string and pad to 32 length
+    return hex(value)[2:].zfill(32)
+
 class KeyFrameConverter:
     def __init__(self, phase, input_meta_path, input_blob_paths, output_path, input_seg_path=None,
         zip_output=False, compression=zipfile.ZIP_STORED, **conversion_args):
@@ -117,7 +120,7 @@ class KeyFrameConverter:
                 self.sample_order[cur] = (stoken, count)
 
                 # move to the next sample
-                token_list.append(hex(cur)[2:])
+                token_list.append(hex_pad32(cur))
                 if self.sample_table[cur]['next'] is None:
                     break
                 cur = self.sample_table[cur]['next']
@@ -128,7 +131,7 @@ class KeyFrameConverter:
             meta = dict(
                 nbr_samples=data['nbr_samples'],
                 description=data['description'],
-                token=hex(stoken)[2:],
+                token=hex_pad32(stoken),
                 map=self.scene_map_table[stoken],
                 sample_tokens=token_list
             )
@@ -235,7 +238,7 @@ class KeyFrameConverter:
         static_speed_threshold = 0.01
         for itoken, data in self.instance_table.items():
             cur = data['first_annotation_token']
-            instance_id = hex(itoken)[2:]
+            instance_id = hex_pad32(itoken)
             instance_category = self.category_table[data['category_token']]['name']
 
             while True:

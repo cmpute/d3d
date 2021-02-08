@@ -329,7 +329,7 @@ def execute_official_evaluator(exec_path, label_path, result_path, output_path, 
     '''
     raise NotImplementedError()
 
-def create_submission(exec_path, result_path, output_path, meta_path, model_name=None):
+def create_submission(result_path, output_file, exec_path, meta_path, model_name=None):
     '''
     Execute create_submission from waymo_open_dataset
     :param exec_path: path to create_submission executable from waymo devkit
@@ -381,16 +381,16 @@ def create_submission(exec_path, result_path, output_path, meta_path, model_name
     ], cwd=cwd_path)
     proc.wait()
 
+    fsubmission = Path(output_file)
+    fsubmission.parent.mkdir(parents=True, exist_ok=True)
+    if fsubmission.suffix != ".tgz":
+        fsubmission = fsubmission.parent / (fsubmission.name + ".tgz")
+    with tarfile.open(fsubmission, "w:gz") as tar:
+        tar.add(temp_path, arcname=os.path.basename(temp_path))
+
     # create tarball
     print("Clean up...")
     if cwd_path != result_path: # remove combined files before zipping
         shutil.rmtree(cwd_path)
-    output_path = Path(output_path)
-    output_path.mkdir(parents=True, exist_ok=True)
-    fsubmission = output_path / (model_name + ".tgz")
-    with tarfile.open(fsubmission, "w:gz") as tar:
-        tar.add(temp_path, arcname=os.path.basename(temp_path))
-
-    # clean
     shutil.rmtree(temp_path)
     print("Submission created at", fsubmission)
