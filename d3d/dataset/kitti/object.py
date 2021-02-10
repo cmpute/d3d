@@ -290,7 +290,7 @@ class KittiObjectLoader(DetectionDatasetBase):
     def identity(self, idx):
         return (self.frames[idx],)
 
-    def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray, fout: RawIOBase) -> None:
+    def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray, fout: Union[str, Path, RawIOBase]) -> None:
         '''
         Save the detection in KITTI output format. We need raw calibration for R0_rect
         '''
@@ -350,7 +350,11 @@ class KittiObjectLoader(DetectionDatasetBase):
             output_values += (yaw, box.tag_score)
             output_lines.append(output_format % output_values)
 
-        fout.write("\n".join(output_lines).encode())
+        content = "\n".join(output_lines)
+        if isinstance(fout, (str, Path)):
+            Path(fout).write_text(content)
+        else:
+            fout.write(content.encode())
 
 def execute_official_evaluator(exec_path, label_path, result_path, output_path, model_name=None, show_output=True):
     '''

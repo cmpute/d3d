@@ -1,12 +1,13 @@
-import itertools
 import json
 import logging
-import os
+import shutil
+import tempfile
+import warnings
 import zipfile
 from enum import Enum, IntFlag, auto
-from io import BytesIO, RawIOBase
+from io import RawIOBase
 from pathlib import Path
-from typing import Dict, Union, ValuesView
+from typing import Dict, Union
 
 import msgpack
 import numpy as np
@@ -321,6 +322,7 @@ class NuscenesLoader(TrackingDatasetBase):
         self.inzip = inzip
 
         self._metadata = None
+        self._rawmapping = None
         self._segmapping = None
         self._load_metadata()
 
@@ -360,19 +362,21 @@ class NuscenesLoader(TrackingDatasetBase):
                 self._metadata[k] = edict(v)
 
         # load category mapping for segmentation
-        cat_path = self.base_path / "lidarseg_category.json"
-        if cat_path.exists():
-            with open(cat_path) as fin:
-                cat_json = json.load(fin)
-            cat_dict = {}
-            for item in cat_json:
-                cat_dict[item['index']] = NuscenesObjectClass.parse(item['name'])
-            
-            self._segmapping = np.empty(max(cat_dict.keys()) + 1, dtype='u4')
-            builtin_table = NuscenesObjectClass._get_nuscenes_id_table()
-            for idx, clsobj in cat_dict.items():
-                self._segmapping[idx] = clsobj.value
-                assert builtin_table[idx] == clsobj, "Builtin Nuscenes-lidarseg table is incorrect!"
+        with open(self.base_path / "category.json") as fin:
+            cat_json = json.load(fin)
+        cat_dict = {}
+        for item in cat_json:
+            if 'index' not in item: # no index means the lidarseg is not available
+                return
+            cat_dict[item['index']] = NuscenesObjectClass.parse(item['name'])
+
+        self._rawmapping = np.empty(max(cat_dict.keys()) + 1, dtype='u4')
+        self._segmapping = np.empty(max(cat_dict.keys()) + 1, dtype='u1')
+        builtin_table = NuscenesObjectClass._get_nuscenes_id_table()
+        for idx, clsobj in cat_dict.items():
+            assert builtin_table[idx] == clsobj, "Builtin Nuscenes-lidarseg table is incorrect! Please report this bug."
+            self._rawmapping[idx] = clsobj.value
+            self._segmapping[idx] = clsobj.to_segmentation().value
 
     def __len__(self):
         return len(self.frames)
@@ -535,9 +539,11 @@ class NuscenesLoader(TrackingDatasetBase):
         return outputs
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def annotation_3dpoints(self, idx, names='lidar_top', convert_tag=True):
-        # TODO: (v0.5) Force convert_tag from raw number to our number, convert_tag=True means convert to segmentation class
-        #       CAUTION, this is a breaking change
+    def annotation_3dpoints(self, idx, names='lidar_top', parse_tag=True, convert_tag=True):
+        '''
+        :param parse_tag: Parse tag from original nuscenes id defined in category.json into :class:`NuscenesObjectClass`
+        :param convert_tag: Convert tag from :class:`NuscenesObjectClass` to :class:`NuscenesSegmentationClass`
+        '''
         assert names == 'lidar_top'
         seq_id, frame_idx = idx
 
@@ -552,10 +558,13 @@ class NuscenesLoader(TrackingDatasetBase):
             buffer = (self.base_path / seq_id / fname).read_bytes()
         label = np.frombuffer(buffer, dtype='u1')
 
-        if convert_tag:
-            return edict(semantic=label)
+        if parse_tag:
+            if convert_tag:
+                return edict(semantic=self._segmapping[label])
+            else:
+                return edict(semantic=self._rawmapping[label])
         else:
-            return edict(semantic=self._segmapping[label])
+            return edict(semantic=label)
 
     @expand_idx
     def metadata(self, idx):
@@ -572,6 +581,23 @@ class NuscenesLoader(TrackingDatasetBase):
             vehicle=meta.vehicle,
             location=meta.location
         )
+
+    @expand_idx_name(VALID_CAM_NAMES + VALID_LIDAR_NAMES)
+    def token(self, idx, names='lidar_top'):
+        '''
+        Return the sample data token in original Nuscenes data given data index and sensor name
+        '''
+        seq_id, frame_idx = idx
+        fname = "scene/tokens.json"
+        assert not self._return_file_path, "The tokens are not stored in a single file!"
+
+        if self.inzip:
+            with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
+                token_data = json.loads(ar.read(fname))
+        else:
+            with (self.base_path / seq_id / fname).open() as fin:
+                token_data = json.load(fin)
+        return token_data[names][frame_idx]
 
     @expand_idx
     def calibration_data(self, idx):
@@ -647,7 +673,7 @@ class NuscenesLoader(TrackingDatasetBase):
         return EgoPose(t, r)
 
     @expand_idx
-    def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray, fout: RawIOBase,
+    def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray, fout: Union[str, Path, RawIOBase],
                               ranges: Dict[NuscenesObjectClass, float] = {}) -> None: # TODO: load ranges from preset
         calib = self.calibration_data(idx)
         ego_pose = self.pose(idx)
@@ -734,23 +760,51 @@ class NuscenesLoader(TrackingDatasetBase):
         if not output: # add token if no objects available
             output.append(sample_token)
 
-        fout.write(json.dumps(output).encode())
+        if isinstance(fout, (str, Path)):
+            Path(fout).write_text(json.dumps(output))
+        else:
+            fout.write(json.dumps(output).encode())
 
-def create_submission(result_path, output_file, task="detection", modality=None):
+    @expand_idx
+    def dump_segmentation_output(self, idx: Union[int, tuple], segmentation: np.ndarray,
+                                 folder_out: str, raw2seg: bool = True,
+                                 default_class: Union[int, NuscenesSegmentationClass] = 15):
+        '''
+        :param raw2seg: If set as true, input array will be considered as raw id (consistent with values stored in label)
+        :param default_class: Class to be selected when the label is 0 (ignore)
+        '''
+        folder_out = Path(folder_out)
+        folder_out.mkdir(exist_ok=True, parents=True)
+
+        if isinstance(default_class, NuscenesSegmentationClass):
+            default_class = default_class.value
+        if default_class == 0:
+            warnings.warn("Class 0 (ignored) is not removed!")
+
+        fname = "%s_lidarseg.bin" % self.token(idx, 'lidar_top')
+        arr = self._segmapping[segmentation] if raw2seg else segmentation.astype('u1')
+        arr = np.where(arr == 0, default_class, arr) # 0 is not acceptable in submission
+        arr.tofile(folder_out / fname)
+
+def create_submission(result_path, output_file, task="detection", modality=None, eval_set="test"):
     '''
+    For lidarseg submission, you need to have file name as f"{lidar_sample_data_token}_lidarseg.bin"
+
     :param result_path: path to the dump results
     :param output_file: path to the output file
     :param modality: modality used
+    :param eval_set: Evaluation split, required when create submission for lidarseg
     '''
+    if not modality:
+        modality = {
+            "use_camera":   False,  # Whether this submission uses camera data as an input.
+            "use_lidar":    True,   # Whether this submission uses lidar data as an input.
+            "use_radar":    False,  # Whether this submission uses radar data as an input.
+            "use_map":      False,  # Whether this submission uses map data as an input.
+            "use_external": False,  # Whether this submission uses external data as an input.
+        }
+
     if task == "detection":
-        if not modality:
-            modality = {
-                "use_camera":   False,  # Whether this submission uses camera data as an input.
-                "use_lidar":    True,   # Whether this submission uses lidar data as an input.
-                "use_radar":    False,  # Whether this submission uses radar data as an input.
-                "use_map":      False,  # Whether this submission uses map data as an input.
-                "use_external": False,  # Whether this submission uses external data as an input.
-            }
         nusc_submissions = {
             'meta': modality,
             'results': {},
@@ -771,6 +825,15 @@ def create_submission(result_path, output_file, task="detection", modality=None)
             fsubmission = fsubmission.parent / (fsubmission.name + ".json")
         fsubmission.parent.mkdir(exist_ok=True, parents=True)
         fsubmission.write_bytes(json.dumps(nusc_submissions).encode())
+    elif task == "lidarseg":
+        fsubmission = Path(output_file)
+        fsubmission.parent.mkdir(exist_ok=True, parents=True)
+        with zipfile.ZipFile(fsubmission, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(eval_set + '/submission.json', json.dumps(dict(meta=modality)))
+
+            fjsons = list(Path(result_path).iterdir())
+            for fdump in tqdm.tqdm(fjsons, "Reading dumped arrays"):
+                archive.write(fdump, 'lidarseg/' + eval_set + '/' + fdump.name)
     else:
         raise ValueError("Unrecognized task")
 
@@ -780,19 +843,52 @@ def execute_official_evaluator(nusc_path, result_path, output_path,
                                eval_version="detection_cvpr_2019",
                                verbose=True):
     '''
-    call official evaluator implemented in Nuscenes devkit
+    Call official evaluator implemented in Nuscenes devkit on evaluation set
+
+    :param result_path: For detection, it's the path to the submission json file; For lidarseg,
+        it's the path to the submission zip
     '''
     from nuscenes import NuScenes
-    from nuscenes.eval.detection.evaluate import NuScenesEval
-    from nuscenes.eval.detection.config import config_factory
-
     nusc = NuScenes(version=nusc_version, dataroot=nusc_path, verbose=verbose)
-    nusc_eval = NuScenesEval(
-        nusc,
-        config=config_factory(eval_version),
-        result_path=result_path,
-        eval_set='val',
-        output_dir=output_path,
-        verbose=verbose
-    )
-    nusc_eval.main(render_curves=False)
+
+    if task == "detection":
+        from nuscenes.eval.detection.config import config_factory
+        from nuscenes.eval.detection.evaluate import NuScenesEval
+
+        nusc_eval = NuScenesEval(
+            nusc,
+            config=config_factory(eval_version),
+            result_path=result_path,
+            eval_set='val',
+            output_dir=output_path,
+            verbose=verbose
+        )
+        nusc_eval.main(render_curves=False)
+    elif task == "lidarseg":
+        from nuscenes.eval.lidarseg.evaluate import LidarSegEval
+
+        tempfolder = tempfile.mkdtemp()
+        if verbose:
+            print("Extracting submission to", tempfolder)
+        with zipfile.ZipFile(result_path, "r") as archive:
+            archive.extractall(tempfolder)
+
+        try:
+            nusc_eval = LidarSegEval(
+                nusc,
+                results_folder=tempfolder,
+                eval_set='val',
+                verbose=verbose
+            )
+            results = nusc_eval.evaluate()
+            if verbose:
+                print("Results:", results)
+
+            output_path = Path(output_path)
+            output_path.mkdir(exist_ok=True, parents=True)
+            with open(output_path / "lidarseg_results.json", "w") as fout:
+                json.dump(results, fout)
+        finally:
+            shutil.rmtree(tempfolder)
+    else:
+        raise ValueError("Unsupported evaluation task!")

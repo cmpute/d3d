@@ -54,7 +54,7 @@ class KeyFrameConverter:
         self.output_path = Path(output_path)
         self.zip_output = zip_output
         self.zip_compression = compression
-        self.store_inter = conversion_args.get('store_inter', 0) # TODO: merge previous cloud
+        self.store_inter = conversion_args.get('store_inter', 0)
         self.estimate_velocity = conversion_args.get('estimate_velocity', False)
 
         # nuscenes tables
@@ -200,9 +200,9 @@ class KeyFrameConverter:
                             sensor=sensor,
                             rotation=pose['rotation'],
                             translation=pose['translation'],
-                            timestamp=data['timestamp']
+                            timestamp=data['timestamp'],
+                            token=token
                         ))
-
                         break
 
     def _save_calibrations(self):
@@ -301,7 +301,24 @@ class KeyFrameConverter:
         shutil.copy(self.table_path / "category.json", self.output_path)
         shutil.copy(self.table_path / "attribute.json", self.output_path)
         if self.seg_path is not None:
-            shutil.copy(self.table_path / "lidarseg_category.json", self.output_path)
+            shutil.copy(self.table_path / "lidarseg_category.json", self.output_path / "category.json")
+
+    def _save_tokens(self):
+        token_dicts = defaultdict(dict)
+
+        # organize tokens
+        for token, scene, sensor, order, ext in self.filename_table.values():
+            if sensor == "intermediate" or sensor.endswith("seg"):
+                continue
+
+            if sensor not in token_dicts[scene]:
+                nsamples = self.scene_table[scene]['nbr_samples']
+                token_dicts[scene][sensor] = [None] * nsamples
+            token_dicts[scene][sensor][order] = hex_pad32(token)
+
+        # save tokens
+        for scene, tokens in token_dicts.items():
+            self._save_file(scene, "scene/tokens.json", json.dumps(tokens).encode())
 
     def load_metadata(self):
         # extract metadata
@@ -354,10 +371,10 @@ class KeyFrameConverter:
 
         # iterate through all the sensor data
         for iblob, blob_path in tqdm(enumerate(blobs), desc="Loading blobs", unit="tars"):
-            blob_file = tarfile.open(blob_path)
             if debug and iblob > 0:
                 break
 
+            blob_file = tarfile.open(blob_path)
             for counter, tinfo in enumerate(tqdm(
                 blob_file, desc="Reading files",unit="files", leave=False)):
                 # skip files that are not samples
@@ -400,8 +417,10 @@ class KeyFrameConverter:
         self._save_calibrations()
         self._save_annotations()
         self._save_definitions()
+        self._save_tokens()
 
-    def clean_up(self):
+    def clean_up(self, debug):
+        print("Cleaning up...")
         # clean zip files and close handles
         if self.zip_output:
             for scene, handle in self.ohandles.items():
@@ -410,7 +429,8 @@ class KeyFrameConverter:
                 # remove archives where the data is incomplete
                 if scene not in self.oscenes or len(self.oframes[scene]) < nsamples:
                     handle.close()
-                    os.remove(handle.filename)
+                    if not debug:
+                        os.remove(handle.filename)
                 
                 else:
                     nlist = set(handle.namelist())
@@ -445,7 +465,8 @@ class KeyFrameConverter:
 
                 # remove archives where the data is incomplete
                 if scene not in self.oscenes or len(self.oframes[scene]) < nsamples:
-                    shutil.rmtree(path)
+                    if not debug:
+                        shutil.rmtree(path)
 
                 else:
                     for i in range(nsamples):
@@ -478,7 +499,7 @@ class KeyFrameConverter:
             self.load_metadata()
             self.load_blobs(debug=debug)
             self.save_metadata()
-            self.clean_up()
+            self.clean_up(debug=debug)
         finally:
             if self.temp_dir is not None:
                 shutil.rmtree(self.temp_dir)

@@ -320,7 +320,11 @@ class WaymoLoader(TrackingDatasetBase):
             waymo_target.frame_timestamp_micros = int(self.timestamp(idx) * 1e6)
             waymo_array.objects.append(waymo_target)
 
-        fout.write(waymo_array.SerializeToString())
+        bindata = waymo_array.SerializeToString()
+        if isinstance(fout, (str, Path)):
+            Path(fout).write_bytes(bindata)
+        else:
+            fout.write(bindata)
 
 def execute_official_evaluator(exec_path, label_path, result_path, output_path, model_name=None, show_output=True):
     '''
