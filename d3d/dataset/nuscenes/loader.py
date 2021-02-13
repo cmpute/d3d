@@ -139,7 +139,7 @@ class NuscenesObjectClass(IntFlag):
         return cls[string.replace('.', '_')]
     @classmethod
     def _get_nuscenes_id_table(cls):
-        # order is loaded from lidarseg_category.json
+        # order is loaded from category.json in lidarseg split
         return [
             cls.noise, # 0
             cls.animal,
@@ -290,6 +290,19 @@ class NuscenesObjectClass(IntFlag):
         else:
             return segmentation_mapping[self.category]
 
+_default_ranges = { # settings from detection_cvpr_2019
+    NuscenesDetectionClass.car: 50,
+    NuscenesDetectionClass.truck: 50,
+    NuscenesDetectionClass.bus: 50,
+    NuscenesDetectionClass.trailer: 50,
+    NuscenesDetectionClass.construction_vehicle: 50,
+    NuscenesDetectionClass.pedestrian: 40,
+    NuscenesDetectionClass.motorcycle: 40,
+    NuscenesDetectionClass.bicycle: 40,
+    NuscenesDetectionClass.traffic_cone: 30,
+    NuscenesDetectionClass.barrier: 30
+}
+
 class NuscenesLoader(TrackingDatasetBase):
     '''
     Load Nuscenes dataset into a usable format.
@@ -310,7 +323,7 @@ class NuscenesLoader(TrackingDatasetBase):
     VALID_CAM_NAMES = ["cam_front", "cam_front_left", "cam_front_right", "cam_back", "cam_back_left", "cam_back_right"]
     VALID_LIDAR_NAMES = ["lidar_top"]
     VALID_OBJ_CLASSES = NuscenesDetectionClass
-    VALID_PTS_CLASSES = NuscenesObjectClass._get_nuscenes_id_table()
+    VALID_PTS_CLASSES = NuscenesSegmentationClass
 
     def __init__(self, base_path, inzip=False, phase="training",
                  trainval_split=0.8, trainval_random=False, trainval_byseq=False, nframes=0):
@@ -366,15 +379,15 @@ class NuscenesLoader(TrackingDatasetBase):
             cat_json = json.load(fin)
         cat_dict = {}
         for item in cat_json:
-            if 'index' not in item: # no index means the lidarseg is not available
-                return
-            cat_dict[item['index']] = NuscenesObjectClass.parse(item['name'])
+            if 'index' in item:
+                cat_dict[item['index']] = NuscenesObjectClass.parse(item['name'])
 
-        self._rawmapping = np.empty(max(cat_dict.keys()) + 1, dtype='u4')
-        self._segmapping = np.empty(max(cat_dict.keys()) + 1, dtype='u1')
         builtin_table = NuscenesObjectClass._get_nuscenes_id_table()
-        for idx, clsobj in cat_dict.items():
-            assert builtin_table[idx] == clsobj, "Builtin Nuscenes-lidarseg table is incorrect! Please report this bug."
+        self._rawmapping = np.empty(len(builtin_table) + 1, dtype='u4')
+        self._segmapping = np.empty(len(builtin_table) + 1, dtype='u1')
+        for idx, clsobj in enumerate(builtin_table):
+            if idx in cat_dict: # test against offcial definition
+                assert cat_dict[idx] == clsobj, "Builtin Nuscenes-lidarseg table is incorrect! Please report this bug."
             self._rawmapping[idx] = clsobj.value
             self._segmapping[idx] = clsobj.to_segmentation().value
 
@@ -507,6 +520,8 @@ class NuscenesLoader(TrackingDatasetBase):
         ego_pose = self.pose(idx, bypass=True)
         ego_r, ego_t = ego_pose.orientation, ego_pose.position
         ego_t = ego_r.as_matrix().dot(ego_t) # convert to original representation
+        ego_ri = ego_r.inv()
+        ego_rim = ego_ri.as_matrix()
         outputs = Target3DArray(frame="ego")
         for label in labels:
             # convert tags
@@ -521,14 +536,14 @@ class NuscenesLoader(TrackingDatasetBase):
             # caculate relative pose
             r = Rotation.from_quat(label.rotation[1:] + [label.rotation[0]])
             t = label.translation
-            rel_r = ego_r.inv() * r
-            rel_t = np.dot(ego_r.inv().as_matrix(), t - ego_t)
+            rel_r = ego_ri * r
+            rel_t = np.dot(ego_rim, t - ego_t)
             size = [label.size[1], label.size[0], label.size[2]] # wlh -> lwh
             tid = int(label.instance[:8], 16) # truncate into uint64
 
             # create object
             if with_velocity:
-                v = np.dot(ego_r.inv().as_matrix(), label.velocity)
+                v = np.dot(ego_rim, label.velocity)
                 w = label.angular_velocity
                 target = TrackingTarget3D(rel_t, rel_r, size, v, w, tag, tid=tid)
                 outputs.append(target)
@@ -673,8 +688,9 @@ class NuscenesLoader(TrackingDatasetBase):
         return EgoPose(t, r)
 
     @expand_idx
-    def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray, fout: Union[str, Path, RawIOBase],
-                              ranges: Dict[NuscenesObjectClass, float] = {}) -> None: # TODO: load ranges from preset
+    def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray,
+                              fout: Union[str, Path, RawIOBase],
+                              ranges: Dict[NuscenesObjectClass, float] = _default_ranges) -> None:
         calib = self.calibration_data(idx)
         ego_pose = self.pose(idx)
         sample_token = self.metadata(idx).sample_token
@@ -694,10 +710,6 @@ class NuscenesLoader(TrackingDatasetBase):
         output = []
 
         for box in calib.transform_objects(detections, "ego"):
-            if box.tag_top in ranges:
-                if np.hypot(box.position[0], box.position[1]) > ranges[box.tag_top]:
-                    continue
-
             if isinstance(box.tag_top, NuscenesObjectClass):
                 box_cat = box.tag_top.to_detection()
                 box_attr = box.tag_top.attribute
@@ -706,6 +718,10 @@ class NuscenesLoader(TrackingDatasetBase):
                 box_attr = NuscenesObjectClass.unknown
             else:
                 raise ValueError("Incorrect object tag type")
+
+            if box_cat in ranges:
+                if np.hypot(box.position[0], box.position[1]) > ranges[box_cat]:
+                    continue
 
             # parse category and attribute
             if box_attr == NuscenesObjectClass.unknown:
@@ -737,8 +753,9 @@ class NuscenesLoader(TrackingDatasetBase):
             # calculate properties, this part is the exact inverse of annotation_3dobject
             rel_r, rel_t = box.orientation, box.position
             ego_r, ego_t = ego_pose.orientation, ego_pose.position
-            ego_t = ego_r.as_matrix().dot(ego_t)
-            t = ego_r.as_matrix().dot(rel_t) + ego_t
+            ego_rm = ego_r.as_matrix() 
+            ego_t = ego_rm.dot(ego_t)
+            t = ego_rm.dot(rel_t) + ego_t
             r = (ego_r * rel_r).as_quat().tolist()
             l, w, h = box.dimension.tolist()
 
@@ -752,7 +769,8 @@ class NuscenesLoader(TrackingDatasetBase):
                 attribute_name=attr
             )
             if isinstance(box, TrackingTarget3D):
-                odict['velocity'] = box.velocity[:2].tolist()
+                vel = ego_rm.dot(box.velocity)
+                odict['velocity'] = vel[:2].tolist()
             else:
                 odict['velocity'] = [0, 0]
             output.append(odict)
