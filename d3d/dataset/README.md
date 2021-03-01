@@ -23,6 +23,7 @@
 - [ ] [Cirrus](https://arxiv.org/pdf/2012.02938.pdf)
 - [ ] [SemanticKITTI](http://www.semantic-kitti.org/): To be added
 - [ ] [vKITTI3D](https://github.com/VisualComputingInstitute/vkitti3D-dataset): To be added
+- [ ] [AIO-Drive](https://klabcmu.github.io/index.html): To be added
 
 # Indoor datasets
 - [ ] [Objectron](https://github.com/google-research-datasets/Objectron): To be added

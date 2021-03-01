@@ -1,6 +1,6 @@
 # TODOs
 - [ ] add dataset support for KITTI and KITTI360
-- [ ] Include visualization based on [pptk (nvidia/kaolin has example), open3d, xviz]
+- [ ] Include visualization based on [pptk (nvidia/kaolin has example), open3d, xviz, [polyscope](https://github.com/nmwsharp/polyscope)]
 - [ ] add docs and polish readme (e.g. add images)
 - [ ] advertise this repository to official loaders
 - [ ] Fix Kitti detection output and add output for nuscenes

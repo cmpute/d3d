@@ -466,7 +466,7 @@ class NuscenesLoader(TrackingDatasetBase):
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 meta = json.loads(ar.read(fname))
         else:
-            with (self.base_path / seq_id / fname).open() as fin:
+            with Path(self.base_path, seq_id, fname).open() as fin:
                 meta = json.load(fin)
         if not meta:
             return []
@@ -625,7 +625,7 @@ class NuscenesLoader(TrackingDatasetBase):
             with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=calib_fname) as ar:
                 calib_data = json.loads(ar.read(calib_fname))
         else:
-            with (self.base_path / seq_id / calib_fname).open() as fin:
+            with Path(self.base_path, seq_id, calib_fname).open() as fin:
                 calib_data = json.load(fin)
 
         for frame, calib in calib_data.items():
@@ -663,7 +663,7 @@ class NuscenesLoader(TrackingDatasetBase):
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 tsdict = json.loads(ar.read(fname))
         else:
-            with (self.base_path / seq_id / fname).open() as fin:
+            with Path(self.base_path, seq_id, fname).open() as fin:
                 tsdict = json.load(fin)
         return tsdict[names]
 
@@ -676,7 +676,7 @@ class NuscenesLoader(TrackingDatasetBase):
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 data = json.loads(ar.read(fname))
         else:
-            with (self.base_path / seq_id / fname).open() as fin:
+            with Path(self.base_path, seq_id, fname).open() as fin:
                 data = json.load(fin)
 
         data = data[names]
@@ -905,7 +905,7 @@ def execute_official_evaluator(nusc_path, result_path, output_path,
             output_path = Path(output_path)
             output_path.mkdir(exist_ok=True, parents=True)
             with open(output_path / "lidarseg_results.json", "w") as fout:
-                json.dump(results, fout)
+                json.dump(results, fout, indent="  ")
         finally:
             shutil.rmtree(tempfolder)
     else:

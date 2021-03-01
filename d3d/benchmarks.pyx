@@ -1,16 +1,20 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True, embedsignature=True
 
 cimport cython
+from cython.operator cimport dereference as deref
 import numpy as np
 cimport numpy as np
 import scipy.stats as sps
 import torch
+from enum import Enum
 from addict import Dict as edict
 
 from numpy.math cimport NAN, isnan, PI, isinf, INFINITY
+from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t
 from libcpp.vector cimport vector
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
+from libcpp.pair cimport pair
 
 from d3d.abstraction cimport Target3DArray, TransformSet
 from d3d.tracking.matcher cimport ScoreMatcher, DistanceTypes
@@ -42,7 +46,7 @@ cdef class DetectionEvalStats:
     cdef public unordered_map[int, vector[int]] tp, fp, fn, ndt
     cdef public unordered_map[int, vector[float]] acc_iou, acc_angular, acc_dist, acc_box, acc_var
 
-    cdef void initialize(self, unordered_set[int] classes, int nsamples):
+    cdef void initialize(self, unordered_set[int] &classes, int nsamples):
         for k in classes:
             self.ngt[k] = 0
             self.ndt[k] = vector[int](nsamples, 0)
@@ -270,7 +274,7 @@ cdef class DetectionEvaluator:
             for i in range(self._pr_nsamples):
                 # aggregate accuracies
                 otp, ntp = self._stats.tp[k][i], stats.tp[k][i]
-                self._stats.acc_angular[k][i] = wmean(
+                self._stats.acc_angular[k][i] = wmean( # TODO store sum of acc in stats instead of using wmean
                     self._stats.acc_angular[k][i], otp, stats.acc_angular[k][i], ntp)
                 self._stats.acc_box[k][i] = wmean(
                     self._stats.acc_box[k][i], otp, stats.acc_box[k][i], ntp)
@@ -414,8 +418,6 @@ cdef class DetectionEvaluator:
 
         return '\n'.join(lines)
 
-ctypedef unsigned long long ull
-
 @cython.auto_pickle(True)
 cdef class TrackingEvalStats(DetectionEvalStats):
     ''' Tracking stats summary of a evaluation step '''
@@ -426,24 +428,24 @@ cdef class TrackingEvalStats(DetectionEvalStats):
     cdef public unordered_map[int, vector[int]] fragments
     ''' Number of ground-truth trajectory matched to different tracked tracjetories '''
 
-    cdef public unordered_map[int, unordered_map[ull, int]] ngt_ids
+    cdef public unordered_map[int, unordered_map[uint64_t, int]] ngt_ids
     ''' Frame count of all ground-truth targets (represented by their IDs) '''
 
-    cdef public unordered_map[int, vector[unordered_map[ull, int]]] ngt_tracked
+    cdef public unordered_map[int, vector[unordered_map[uint64_t, int]]] ngt_tracked
     ''' Frame count of ground-truth targets being tracked '''
 
-    cdef public unordered_map[int, vector[unordered_map[ull, int]]] ndt_ids
+    cdef public unordered_map[int, vector[unordered_map[uint64_t, int]]] ndt_ids
     ''' Frame count of all proposal targets (represented by their IDs) '''
 
-    cdef void initialize(self, unordered_set[int] classes, int nsamples):
+    cdef void initialize(self, unordered_set[int] &classes, int nsamples):
         DetectionEvalStats.initialize(self, classes, nsamples)
         for k in classes:
             self.id_switches[k] = vector[int](nsamples, 0)
             self.fragments[k] = vector[int](nsamples, 0)
 
-            self.ngt_ids[k] = unordered_map[ull, int]()
-            self.ngt_tracked[k] = vector[unordered_map[ull, int]](nsamples)
-            self.ndt_ids[k] = vector[unordered_map[ull, int]](nsamples)
+            self.ngt_ids[k] = unordered_map[uint64_t, int]()
+            self.ngt_tracked[k] = vector[unordered_map[uint64_t, int]](nsamples)
+            self.ndt_ids[k] = vector[unordered_map[uint64_t, int]](nsamples)
 
     def as_object(self):
         ret = dict(ngt=self.ngt, tp=self.tp, fp=self.fp, fn=self.fn, ndt=self.ndt,
@@ -461,8 +463,8 @@ cdef class TrackingEvaluator(DetectionEvaluator):
     cdef TrackingEvalStats _tstats
 
     # temporary variables for tracking
-    cdef vector[unordered_map[ull, ull]] _last_gt_assignment, _last_dt_assignment
-    cdef vector[unordered_map[ull, int]] _last_gt_tags, _last_dt_tags
+    cdef vector[unordered_map[uint64_t, uint64_t]] _last_gt_assignment, _last_dt_assignment
+    cdef vector[unordered_map[uint64_t, int]] _last_gt_tags, _last_dt_tags
 
     def __init__(self, classes, min_overlaps, int pr_sample_count=40, float min_score=0, str pr_sample_scale="log10"):
         '''
@@ -513,10 +515,10 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
         # forward definitions
         cdef int gt_idx, gt_tag, dt_idx, dt_tag
-        cdef ull dt_tid, gt_tid
+        cdef uint64_t dt_tid, gt_tid
         cdef float score_thres, angular_acc_cur, var_acc_cur
-        cdef unordered_map[ull, int] gt_assignment_idx, dt_assignment_idx # store tid -> matched idx mapping
-        cdef unordered_set[ull] gt_tid_set, dt_tid_set
+        cdef unordered_map[uint64_t, int] gt_assignment_idx, dt_assignment_idx # store tid -> matched idx mapping
+        cdef unordered_set[uint64_t] gt_tid_set, dt_tid_set
 
         # initialize matcher
         cdef ScoreMatcher matcher = ScoreMatcher()
@@ -691,7 +693,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
     cpdef void add_stats(self, DetectionEvalStats stats) except*:
         DetectionEvaluator.add_stats(self, stats)
         cdef TrackingEvalStats tstats = <TrackingEvalStats> stats
-        cdef ull gt_tid, dt_tid
+        cdef uint64_t gt_tid, dt_tid
         cdef int gt_count, dt_count
 
         for k in self._classes:
@@ -840,6 +842,304 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_box[k][score_idx]))
             if not isinf(self._stats.acc_var[k][score_idx]):
                 lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_var[k][score_idx]))
+        lines.append("========== Summary End ==========")
+
+        return '\n'.join(lines)
+
+cdef extern from "d3d/common.h":
+    pass
+
+cdef class SegmentationStats:
+    ''' Tracking stats summary of a data frame '''
+
+    cdef public unordered_map[uint8_t, int] tp
+    ''' Number of true negative data points in semantic segmentation'''
+
+    cdef public unordered_map[uint8_t, int] fp
+    ''' Number of false positive data points in semantic segmentation '''
+
+    cdef public unordered_map[uint8_t, int] fn
+    ''' Number of false negative data points in semantic segmentation '''
+
+    cdef public unordered_map[uint8_t, int] itp
+    ''' Number of true negative data segments in instance segmentation'''
+
+    cdef public unordered_map[uint8_t, int] ifp
+    ''' Number of false positives data segments in instance segmentation '''
+
+    cdef public unordered_map[uint8_t, int] ifn
+    ''' Number of false negative data segments in instance segmentation '''
+
+    cdef public unordered_map[uint8_t, float] cumiou
+    ''' Summation of IoU of TP segments in instance segmentation '''
+
+    cdef void initialize(self, unordered_set[uint8_t] &classes):
+        for k in classes:
+            self.tp[k] = 0
+            self.fp[k] = 0
+            self.fn[k] = 0
+            self.itp[k] = 0
+            self.ifp[k] = 0
+            self.ifn[k] = 0
+            self.cumiou[k] = 0
+
+cdef class SegmentationEvaluator:
+    '''Benchmark for semgentation'''
+    # REF: https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/evaluation/evalPanopticSemanticLabeling.py
+
+    cdef unordered_set[uint8_t] _classes
+    cdef SegmentationStats _stats
+    cdef uint8_t _background
+    cdef int _min_points
+    cdef object _class_type
+
+    def __init__(self, classes, background=0, min_points=0):
+        # parse parameters
+        if not isinstance(classes, (list, tuple)):
+            classes = [classes]
+        assert len(classes) > 0
+
+        if isinstance(classes[0], Enum):
+            self._class_type = type(classes[0])
+            self._classes = set(c.value for c in classes)
+        elif isinstance(classes[0], int):
+            self._class_type = None
+            self._classes = set(classes)
+        else:
+            raise ValueError("Classes should be int or Enum")
+
+        self._background = background if background >= 0 else 256 + background
+        self._min_points = min_points
+        self._stats = SegmentationStats()
+        self._stats.initialize(self._classes)
+
+        if len(self._classes) > 255:
+            raise ValueError("Only support up to 255 different categories!")
+
+    cpdef void reset(self):
+        self._stats.initialize(self._classes)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef void collect_labels(self, SegmentationStats stats, uint8_t[:] gt_labels, uint8_t[:] pred_labels) nogil:
+        for i in range(len(gt_labels)):
+            if gt_labels[i] != self._background and self._classes.find(gt_labels[i]) != self._classes.end():
+                if gt_labels[i] == pred_labels[i]:
+                    stats.tp[gt_labels[i]] += 1
+                else:
+                    stats.fn[gt_labels[i]] += 1
+            elif pred_labels[i] != self._background and self._classes.find(pred_labels[i]) != self._classes.end():
+                stats.fp[pred_labels[i]] += 1
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef void collect_labels_pano(self, SegmentationStats stats,
+        uint8_t[:] gt_labels, uint8_t[:] pred_labels,
+        uint16_t[:] gt_ids,   uint16_t[:] pred_ids): # TODO nogil:
+        self.collect_labels(stats, gt_labels, pred_labels)
+
+        # collect mappings
+        cdef unordered_map[uint32_t, int] gt_counter, pred_counter
+        cdef unordered_set[uint32_t] pred_unmatched
+        # (gt_label + gt_id) -> {(dt_label + dt_id) -> count}
+        cdef unordered_map[uint32_t, unordered_map[uint32_t, int]] counter = unordered_map[uint32_t, unordered_map[uint32_t, int]]()
+        cdef unordered_map[uint32_t, unordered_map[uint32_t, int]].iterator gt_iter
+        cdef unordered_map[uint32_t, int].iterator pred_iter
+        cdef uint32_t gt_key, pred_key, bg_key = self._background << 16
+        for i in range(len(gt_labels)):
+            if self._classes.find(gt_labels[i]) == self._classes.end():
+                gt_key = bg_key
+            else:
+                gt_key = gt_labels[i] << 16 | gt_ids[i]
+            if self._classes.find(pred_labels[i]) == self._classes.end():
+                pred_key = bg_key
+            else:
+                pred_key = pred_labels[i] << 16 | pred_ids[i]
+
+            # increase counter
+            gt_iter = counter.find(gt_key)
+            if gt_iter == counter.end():
+                gt_iter = counter.insert(gt_iter, pair[uint32_t, unordered_map[uint32_t, int]](gt_key, unordered_map[uint32_t, int]()))
+                gt_counter[gt_key] = 0
+            gt_counter[gt_key] += 1
+
+            pred_iter = deref(gt_iter).second.find(pred_key)
+            if pred_iter == deref(gt_iter).second.end():
+                pred_iter = deref(gt_iter).second.insert(pred_iter, pair[uint32_t, int](pred_key, 0))
+
+            deref(pred_iter).second = deref(pred_iter).second + 1
+            if pred_counter.find(pred_key) == pred_counter.end():
+                pred_counter[pred_key] = 0
+            pred_counter[pred_key] += 1
+
+            # collect predictions
+            if pred_unmatched.find(pred_key) == pred_unmatched.end():
+                pred_unmatched.insert(pred_key)
+
+        # collect tp
+        cdef uint8_t gt_label, pred_label
+        cdef float total, iou
+        cdef bint matched
+
+        for citer in counter:
+            matched = False
+            gt_key = citer.first
+            gt_label = gt_key >> 16
+            if gt_label == self._background:
+                continue
+            if gt_counter[gt_key] < self._min_points: # ignore segments with too few points
+                continue
+
+            for piter in citer.second:
+                pred_key = piter.first
+                pred_label = pred_key >> 16
+                if pred_label == self._background:
+                    continue
+                if gt_label != pred_label:
+                    continue
+
+                total = gt_counter[gt_key] + pred_counter[pred_key] - piter.second
+                if counter[bg_key].find(pred_key) == counter[bg_key].end():
+                    total -= counter[bg_key][pred_key] # TODO: is this necessary?
+                iou = piter.second / total
+                if iou > 0.5:
+                    stats.itp[gt_label] += 1
+                    stats.cumiou[gt_label] += iou
+                    matched = True
+
+                    if pred_unmatched.find(pred_key) != pred_unmatched.end():
+                        pred_unmatched.erase(pred_key)
+
+            if not matched:
+                stats.ifn[gt_label] += 1
+
+        for pred_key in pred_unmatched:
+            if pred_counter[pred_key] < self._min_points:
+                continue
+
+            pred_label = pred_key >> 16
+            if pred_label != self._background:
+                stats.ifp[pred_label] += 1
+
+    cpdef SegmentationStats calc_stats(self,
+            np.ndarray[ndim=1, dtype=uint8_t] gt_labels,
+            np.ndarray[ndim=1, dtype=uint8_t] pred_labels,
+            np.ndarray gt_ids=None, np.ndarray pred_ids=None):
+        '''
+        Please make sure the id are 0 if the label is in stuff category
+        '''
+
+        cdef SegmentationStats stats = SegmentationStats()
+        stats.initialize(self._classes)
+
+        if gt_ids is None or pred_ids is None:
+            self.collect_labels(stats, gt_labels, pred_labels)
+        else:
+            if gt_ids.dtype != np.uint16 or pred_ids.dtype != np.uint16:
+                raise ValueError("Please convert ids to uint16!")
+            self.collect_labels_pano(stats, gt_labels, pred_labels, gt_ids, pred_ids)
+
+        return stats
+
+    cpdef void add_stats(self, SegmentationStats stats) except*:
+        for k in self._classes:
+            self._stats.tp[k] += stats.tp[k]
+            self._stats.fp[k] += stats.fp[k]
+            self._stats.fn[k] += stats.fn[k]
+            self._stats.itp[k] += stats.itp[k]
+            self._stats.ifp[k] += stats.ifp[k]
+            self._stats.ifn[k] += stats.ifn[k]
+            self._stats.cumiou[k] += stats.cumiou[k]
+
+    def tp(self, bint instance=False):
+        if instance:
+            if self._class_type is None:
+                return self._stats.itp
+            return {self._class_type(diter.first): diter.second for diter in self._stats.itp}
+        else:
+            if self._class_type is None:
+                return self._stats.tp
+            return {self._class_type(diter.first): diter.second for diter in self._stats.tp}
+
+    def fp(self, bint instance=False):
+        if instance:
+            if self._class_type is None:
+                return self._stats.ifp
+            return {self._class_type(diter.first): diter.second for diter in self._stats.ifp}
+        else:
+            if self._class_type is None:
+                return self._stats.fp
+            return {self._class_type(diter.first): diter.second for diter in self._stats.fp}
+
+    def fn(self, bint instance=False):
+        if instance:
+            if self._class_type is None:
+                return self._stats.ifn
+            return {self._class_type(diter.first): diter.second for diter in self._stats.ifn}
+        else:
+            if self._class_type is None:
+                return self._stats.fn
+            return {self._class_type(diter.first): diter.second for diter in self._stats.fn}
+
+    def iou(self, bint instance=False):
+        cdef float iou, d
+        result = {}
+        for k in self._classes:
+            if instance:
+                d = self._stats.itp[k]
+                iou = (self._stats.cumiou[k] / d) if self._stats.itp[k] > 0 else NAN
+            else:
+                d = self._stats.tp[k] + self._stats.fp[k] + self._stats.fn[k]
+                iou = (self._stats.tp[k] / d) if d > 0 else NAN
+
+            if self._class_type is None:
+                result[k] = iou
+            else:
+                result[self._class_type(k)] = iou
+        return result
+
+    def sq(self):
+        ''' Segmentation Quality (SQ) in panoptic segmentation '''
+        return self.iou(instance=True)
+
+    def rq(self):
+        ''' Recognition Quality (RQ) in panoptic segmentation '''
+        cdef float rq, d
+        result = {}
+        for k in self._classes:
+            d = self._stats.itp[k] + self._stats.ifp[k] * 0.5 + self._stats.ifn[k] * 0.5
+            rq = (self._stats.itp[k] / d) if d > 0 else NAN
+            if self._class_type is None:
+                result[k] = rq
+            else:
+                result[self._class_type(k)] = rq
+        return result
+
+    def pq(self):
+        ''' Panoptic Quality (PQ) in panoptic segmentation '''
+        sq, rq = self.sq(), self.rq()
+        return {k: sq[k] * rq[k] for k in sq}
+
+    def summary(self):
+        lines = []
+
+        def mean_wo_nan(values):
+            valid = [v for v in values if not isnan(v)]
+            return sum(valid) / len(valid)
+
+        lines.append("========== Benchmark Summary ==========")
+        iou = self.iou()
+        sq, rq, pq = self.sq(), self.rq(), self.pq()
+        for k in self._classes:
+            typed_k = k if self._class_type is None else self._class_type(k)
+            name = str(k).rjust(4, " ") if self._class_type is None else typed_k.name.rjust(20, " ")
+            lines.append("%s: iou=%.3f, sq=%.3f, rq=%.3f, pq=%.3f" % (name,
+                iou[typed_k], sq[typed_k], rq[typed_k], pq[typed_k]))
+
+        lines.append("mean IoU: %.4f" % mean_wo_nan(iou.values()))
+        lines.append("mean SQ: %.4f" % mean_wo_nan(sq.values()))
+        lines.append("mean RQ: %.4f" % mean_wo_nan(rq.values()))
+        lines.append("mean PQ: %.4f" % mean_wo_nan(pq.values()))
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)
