@@ -139,7 +139,7 @@ static inline __device__ void atomAdd(int32_t *address, int32_t val) {
 static inline __device__ void atomAdd(int64_t *address, int64_t val) {
   AtomicAddIntegerImpl<int64_t, sizeof(int64_t)>()(address, val);
 }
-#if CUDA_VERSION < 10000
+#if CUDA_VERSION < 700
 static inline __device__ void atomAdd(at::Half *address, at::Half val) {
   AtomicAddDecimalImpl<at::Half, sizeof(at::Half)>()(address, val);
 }
@@ -151,7 +151,7 @@ static inline __device__ void atomAdd(at::Half *address, at::Half val) {
 static inline __device__ void atomAdd(float *address, float val) {
   atomicAdd(address, val);
 }
-#if CUDA_VERSION < 8000
+#if __CUDA_ARCH__ < 600
 static inline __device__ void atomAdd(double *address, double val) {
   AtomicAddDecimalImpl<double, sizeof(double)>()(address, val);
 }
