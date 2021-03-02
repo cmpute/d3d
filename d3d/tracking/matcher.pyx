@@ -7,6 +7,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from d3d.box import box2d_iou
+from d3d.abstraction cimport ObjectTarget3D
 
 cdef class BaseMatcher:
     ''' This class is the base class of various matchers'''

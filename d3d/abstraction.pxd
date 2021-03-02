@@ -1,5 +1,7 @@
 # cython: language_level=3, embedsignature=True
 
+from libc.stdint cimport uint8_t, uint16_t
+from libcpp cimport bool
 from libcpp.vector cimport vector
 cimport numpy as np
 
@@ -43,6 +45,7 @@ cdef class ObjectTarget3D:
     '''
 
     cpdef np.ndarray to_numpy(self, str box_type=*)
+    cdef _crop(self, const float[:,:] cloud, bool[:] result)
 
 cdef class TrackingTarget3D(ObjectTarget3D):
     cdef float[:] velocity_, angular_velocity_
@@ -69,6 +72,8 @@ cdef class Target3DArray(list):
     cdef TrackingTarget3D tget(self, int index)
     cdef Py_ssize_t size(self)
     cpdef np.ndarray to_numpy(self, str box_type=*)
+    cdef void _crop_points(self, const float[:,:] cloud, bool[:,:] result)
+    cdef void _paint_id(self, const bool[:,:] mask, const uint8_t[:] semantics, uint16_t[:] idarr)
 
 cdef class CameraMetadata:
     cdef public int width

@@ -5,21 +5,20 @@ from cython.operator cimport dereference as deref
 import numpy as np
 cimport numpy as np
 import scipy.stats as sps
-import torch
 from enum import Enum
 from addict import Dict as edict
 
 from numpy.math cimport NAN, isnan, PI, isinf, INFINITY
 from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t
+from libc.math cimport atan2, sqrt, fabs
 from libcpp.vector cimport vector
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
 from libcpp.pair cimport pair
 
-from d3d.abstraction cimport Target3DArray, TransformSet
+from d3d.abstraction cimport Target3DArray, TransformSet, ObjectTarget3D
 from d3d.tracking.matcher cimport ScoreMatcher, DistanceTypes
-from d3d.box import box2d_iou
-from d3d.math cimport wmean, diffnorm3
+from d3d.math cimport wmean, diffnorm3, cross3
 
 cdef inline int bisect(vector[float] &arr, float x) nogil:
     '''Cython version of bisect.bisect_left'''
@@ -38,6 +37,24 @@ cdef inline float calc_recall(int tp, int fn) nogil:
     else: return <float>tp / (tp + fn)
 cdef inline float calc_fscore(int tp, int fp, int fn, float b2) nogil:
     return (1+b2) * tp / ((1+b2)*tp + b2*fn + fp)
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef inline float quatdiff( # calculate |inv(p) * q|
+    const float[:] p, const float[:] q
+) nogil:
+    cdef float cx, cy, cz
+    cx, cy, cz = cross3(p, q)
+
+    cdef float rx, ry, rz, rw
+    rx =  p[3]*q[0] - q[3]*p[0] + cx
+    ry =  p[3]*q[1] - q[3]*p[1] + cy
+    rz =  p[3]*q[2] - q[3]*p[2] + cz
+    rw = -p[3]*q[3] - p[0]*q[0] - p[1]*q[1] - p[2]*q[2]
+
+    cdef float angle
+    angle = 2 * atan2(sqrt(rx*rx + ry*ry + rz*rz), fabs(rw))
+    return angle
 
 @cython.auto_pickle(True)
 cdef class DetectionEvalStats:
@@ -199,13 +216,15 @@ cdef class DetectionEvaluator:
             gt_indices.push_back(gt_idx)
 
         # loop over score thres
+        cdef ObjectTarget3D gt_box, dt_box
         for score_idx in range(self._pr_nsamples):
             score_thres = self._pr_thresholds[score_idx]
 
             # select detection boxes to match
             dt_indices.clear()
             for dt_idx in range(dt_boxes.size()):
-                dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
+                dt_box = dt_boxes.get(dt_idx)
+                dt_tag = dt_box.tag.labels[0]
                 if self._classes.find(dt_tag) == self._classes.end():
                     continue  # skip objects within ignored category
                 if dt_boxes.get(dt_idx).tag.scores[0] < score_thres:
@@ -220,19 +239,21 @@ cdef class DetectionEvaluator:
 
             # process ground-truth match results
             for gt_idx in gt_indices:
-                gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
+                gt_box = gt_boxes.get(gt_idx)
+                gt_tag = gt_box.tag.labels[0]
                 dt_idx = matcher.query_dst_match(gt_idx)
                 if dt_idx < 0:
                     summary.fn[gt_tag][score_idx] += 1
                     continue
                 summary.tp[gt_tag][score_idx] += 1
+                dt_box = dt_boxes.get(dt_idx)
 
                 # caculate accuracy values for various criteria
                 iou_acc[score_idx][gt_idx] = 1 - matcher._distance_cache[dt_idx, gt_idx] # FIXME: not elegant here
-                dist_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).position_, dt_boxes.get(dt_idx).position_)
-                box_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).dimension_, dt_boxes.get(dt_idx).dimension_)
+                dist_acc[score_idx][gt_idx] = diffnorm3(gt_box.position_, dt_box.position_)
+                box_acc[score_idx][gt_idx] = diffnorm3(gt_box.dimension_, dt_box.dimension_)
 
-                angular_acc_cur = (gt_boxes.get(gt_idx).orientation.inv() * dt_boxes.get(dt_idx).orientation).magnitude()
+                angular_acc_cur = quatdiff(gt_box.orientation_, dt_box.orientation_)
                 angular_acc[score_idx][gt_idx] = angular_acc_cur / PI
 
                 if dt_boxes[dt_idx].orientation_var > 0: # FIXME: these operations slow down the evaluator
@@ -551,6 +572,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             gt_indices.push_back(gt_idx)
 
         # loop over score thres
+        cdef ObjectTarget3D gt_box, dt_box
         for score_idx in range(self._pr_nsamples):
             score_thres = self._pr_thresholds[score_idx]
 
@@ -558,13 +580,14 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             dt_indices.clear()
             dt_tid_set.clear()
             for dt_idx in range(dt_boxes.size()):
-                dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
+                dt_box = dt_boxes.get(dt_idx)
+                dt_tag = dt_box.tag.labels[0]
                 if self._classes.find(dt_tag) == self._classes.end():
                     continue  # skip objects within ignored category
-                if dt_boxes.get(dt_idx).tag.scores[0] < score_thres:
+                if dt_box.tag.scores[0] < score_thres:
                     continue  # skip objects with lower scores
 
-                dt_tid = dt_boxes.get(dt_idx).tid
+                dt_tid = dt_box.tid
                 assert dt_tid > 0, "Tracking id should be greater than 0 for a valid object!"
                 dt_tid_set.insert(dt_tid)
                 summary.ndt[dt_tag][score_idx] += 1
@@ -590,17 +613,19 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
             # process ground-truth match results (gt_indices will always have all objects)
             for gt_idx in gt_indices:
-                gt_tag = gt_boxes.get(gt_idx).tag.labels[0]
-                gt_tid = gt_boxes.get(gt_idx).tid
+                gt_box = gt_boxes.get(gt_idx)
+                gt_tag = gt_box.tag.labels[0]
+                gt_tid = gt_box.tid
 
                 # update assignment
                 dt_idx = matcher.query_dst_match(gt_idx)
                 if dt_idx >= 0:
-                    dt_tid = dt_boxes.get(dt_idx).tid
+                    dt_box = dt_boxes.get(dt_idx)
+                    dt_tid = dt_box.tid
                     if gt_assignment_idx.find(gt_tid) != gt_assignment_idx.end():
                         # overwrite previous matching
                         dt_assignment_idx.erase(dt_boxes.get(gt_assignment_idx[gt_tid]).tid)
-                        dt_tag = dt_boxes.get(dt_idx).tag.labels[0]
+                        dt_tag = dt_box.tag.labels[0]
                         summary.fp[dt_tag][score_idx] += 1
                     gt_assignment_idx[gt_tid] = dt_idx
                     dt_assignment_idx[dt_tid] = gt_idx
@@ -609,15 +634,16 @@ cdef class TrackingEvaluator(DetectionEvaluator):
                     summary.fn[gt_tag][score_idx] += 1
                     continue
                 dt_idx = gt_assignment_idx[gt_tid]
+                dt_box = dt_boxes.get(dt_idx)
                 summary.tp[gt_tag][score_idx] += 1
                 summary.ngt_tracked[gt_tag][score_idx][gt_tid] = 1
 
                 # caculate accuracy values for various criteria
                 iou_acc[score_idx][gt_idx] = 1 - matcher._distance_cache[dt_idx, gt_idx] # FIXME: not elegant here
-                dist_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).position_, dt_boxes.get(dt_idx).position_)
-                box_acc[score_idx][gt_idx] = diffnorm3(gt_boxes.get(gt_idx).dimension_, dt_boxes.get(dt_idx).dimension_)
+                dist_acc[score_idx][gt_idx] = diffnorm3(gt_box.position_, dt_box.position_)
+                box_acc[score_idx][gt_idx] = diffnorm3(gt_box.dimension_, dt_box.dimension_)
 
-                angular_acc_cur = (gt_boxes.get(gt_idx).orientation.inv() * dt_boxes.get(dt_idx).orientation).magnitude()
+                angular_acc_cur = quatdiff(gt_box.orientation_, dt_box.orientation_)
                 angular_acc[score_idx][gt_idx] = angular_acc_cur / PI
 
                 if dt_boxes[dt_idx].orientation_var > 0:
@@ -846,9 +872,6 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
         return '\n'.join(lines)
 
-cdef extern from "d3d/common.h":
-    pass
-
 cdef class SegmentationStats:
     ''' Tracking stats summary of a data frame '''
 
@@ -883,6 +906,11 @@ cdef class SegmentationStats:
             self.ifn[k] = 0
             self.cumiou[k] = 0
 
+    def as_object(self):
+        return dict(tp=self.tp, fp=self.fp, fn=self.fn,
+            itp=self.itp, ifp=self.ifp, ifn=self.ifn,
+            cumiou=self.cumiou)
+
 cdef class SegmentationEvaluator:
     '''Benchmark for semgentation'''
     # REF: https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/evaluation/evalPanopticSemanticLabeling.py
@@ -894,6 +922,11 @@ cdef class SegmentationEvaluator:
     cdef object _class_type
 
     def __init__(self, classes, background=0, min_points=0):
+        '''
+        :param classes: classes to be considered during evaluation, other classes are all considered as background
+        :param background: class to be considered as background class
+        :param min_points: minimum number of points when calculating segments in panoptic evaluation
+        '''
         # parse parameters
         if not isinstance(classes, (list, tuple)):
             classes = [classes]
@@ -908,6 +941,8 @@ cdef class SegmentationEvaluator:
         else:
             raise ValueError("Classes should be int or Enum")
 
+        if isinstance(background, Enum):
+            background = background.value
         self._background = background if background >= 0 else 256 + background
         self._min_points = min_points
         self._stats = SegmentationStats()
@@ -1051,6 +1086,12 @@ cdef class SegmentationEvaluator:
             self._stats.ifn[k] += stats.ifn[k]
             self._stats.cumiou[k] += stats.cumiou[k]
 
+    cpdef SegmentationStats get_stats(self):
+        '''
+        Summarize current state of the benchmark counters
+        '''
+        return self._stats
+
     def tp(self, bint instance=False):
         if instance:
             if self._class_type is None:
@@ -1131,6 +1172,9 @@ cdef class SegmentationEvaluator:
         iou = self.iou()
         sq, rq, pq = self.sq(), self.rq(), self.pq()
         for k in self._classes:
+            if k == self._background:
+                continue
+
             typed_k = k if self._class_type is None else self._class_type(k)
             name = str(k).rjust(4, " ") if self._class_type is None else typed_k.name.rjust(20, " ")
             lines.append("%s: iou=%.3f, sq=%.3f, rq=%.3f, pq=%.3f" % (name,

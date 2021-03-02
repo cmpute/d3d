@@ -14,6 +14,9 @@ cimport cython
 from cpython.list cimport PyList_GetItem, PyList_Size
 from libc.math cimport atan2
 
+cdef extern from "d3d/dgal_wrap.h" nogil:
+    bool box3dr_contains(float x, float y, float z, float lx, float ly, float lz, float rz, float xq, float yq, float zq)
+
 def _d3d_enum_mapping():
     import d3d.dataset as dd
     return {
@@ -289,6 +292,21 @@ cdef class ObjectTarget3D:
 
     def __reduce__(self):
         return ObjectTarget3D.deserialize, (self.serialize(),)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef _crop(self, const float[:,:] cloud, bool[:] result):
+        cdef float x = self.position[0], y = self.position[1], z = self.position[2]
+        cdef float lx = self.dimension[0], ly = self.dimension[1], lz = self.dimension[2]
+        cdef float rz = quat2yaw(self.orientation_)
+        cdef Py_ssize_t i
+
+        with nogil:
+            for i in range(len(cloud)): # XXX: use prange
+                result[i] = box3dr_contains(
+                    x, y, z, lx, ly, lz, rz,
+                    cloud[i,0], cloud[i,1], cloud[i,2]
+                )
 
 cdef class TrackingTarget3D(ObjectTarget3D):
     '''
@@ -569,6 +587,41 @@ cdef class Target3DArray(list):
             result = [box for box in result if box.position[0] >= z_min]
         if z_max is not float('nan'):
             result = [box for box in result if box.position[0] < z_max]
+
+    def sort_score(self, descending=True): # TODO: implemented
+        raise NotImplementedError()
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef void _crop_points(self, const float[:,:] cloud, bool[:,:] result):
+        cdef ObjectTarget3D box
+        for i in range(self.size()):
+            box = self.get(i)
+            box._crop(cloud, result[i])
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef void _paint_id(self, const bool[:,:] mask, const uint8_t[:] semantics, uint16_t[:] idarr):
+        cdef uint8_t target_cls
+        cdef Py_ssize_t ib, ip
+        for ib in range(self.size() - 1, -1, -1): # assuming scores are sorted descendingly
+            target_cls = self.get(ib).tag.labels[0]
+
+            with nogil:
+                for ip in range(len(idarr)):
+                    if mask[ib, ip] and semantics[ip] == target_cls:
+                        idarr[ip] = ib + 1
+
+    def paint_label(self, np.ndarray cloud, np.ndarray semantics):
+        cdef float[:,:] cloud_view = cloud
+        cdef uint8_t[:] semantics_view = semantics
+        
+        cdef bool[:,:] mask = np.empty((len(self), len(cloud_view)), dtype=np.bool)
+        self._crop_points(cloud_view, mask)
+
+        cdef np.ndarray[ndim=1, dtype=uint16_t] idarr = np.zeros(len(cloud_view), dtype=np.uint16)
+        self._paint_id(mask, semantics_view, idarr)
+        return idarr
 
 cdef class EgoPose:
     '''

@@ -24,6 +24,26 @@ from sortedcontainers import SortedDict
 
 _logger = logging.getLogger("d3d")
 
+_value_color_map = [ # created from full nuscenes colormap
+    (0, 0, 0),
+    (112, 128, 144),  # Slategrey
+    (220, 20, 60),  # Crimson
+    (255, 127, 80),  # Coral
+    (255, 158, 0),  # Orange
+    (233, 150, 70),  # Darksalmon
+    (255, 61, 99),  # Red
+    (0, 0, 230),  # Blue
+    (47, 79, 79),  # Darkslategrey
+    (255, 140, 0),  # Darkorange
+    (255, 99, 71),  # Tomato
+    (0, 207, 191),  # nuTonomy green
+    (175, 0, 75),
+    (75, 0, 75),
+    (112, 180, 60),
+    (222, 184, 135),  # Burlywood
+    (0, 175, 0),  # Green
+]
+
 class NuscenesDetectionClass(Enum):
     '''
     Label classes for detection in Nuscenes dataset.
@@ -33,12 +53,16 @@ class NuscenesDetectionClass(Enum):
     bicycle = auto()
     bus = auto()
     car = auto()
-    construction_vehicle = auto()
+    construction_vehicle = auto() # 5
     motorcycle = auto()
     pedestrian = auto()
     traffic_cone = auto()
     trailer = auto()
-    truck = auto()
+    truck = auto() # 10
+
+    @property
+    def color(self):
+        return _value_color_map[self.value]
 
 class NuscenesSegmentationClass(Enum):
     '''
@@ -52,18 +76,22 @@ class NuscenesSegmentationClass(Enum):
     bicycle = auto()
     bus = auto()
     car = auto()
-    construction_vehicle = auto()
+    construction_vehicle = auto() # 5
     motorcycle = auto()
     pedestrian = auto()
     traffic_cone = auto()
     trailer = auto()
-    truck = auto()
+    truck = auto() # 10
     driveable_surface = auto()
     other_flat = auto()
     sidewalk = auto()
     terrain = auto()
-    manmade = auto()
+    manmade = auto() # 15
     vegetation = auto()
+
+    @property
+    def color(self):
+        return _value_color_map[self.value]
 
 class NuscenesObjectClass(IntFlag):
     '''
@@ -289,6 +317,49 @@ class NuscenesObjectClass(IntFlag):
             return NuscenesSegmentationClass.ignore
         else:
             return segmentation_mapping[self.category]
+
+    @property
+    def color(self):
+        color_map = {  # RGB, from nuscenes-devkit
+            NuscenesObjectClass.noise: (0, 0, 0),  # Black.
+            NuscenesObjectClass.animal: (70, 130, 180),  # Steelblue
+            NuscenesObjectClass.human_pedestrian_adult: (0, 0, 230),  # Blue
+            NuscenesObjectClass.human_pedestrian_child: (135, 206, 235),  # Skyblue,
+            NuscenesObjectClass.human_pedestrian_construction_worker: (100, 149, 237),  # Cornflowerblue
+            NuscenesObjectClass.human_pedestrian_personal_mobility: (219, 112, 147),  # Palevioletred
+            NuscenesObjectClass.human_pedestrian_police_officer: (0, 0, 128),  # Navy,
+            NuscenesObjectClass.human_pedestrian_stroller: (240, 128, 128),  # Lightcoral
+            NuscenesObjectClass.human_pedestrian_wheelchair: (138, 43, 226),  # Blueviolet
+            NuscenesObjectClass.movable_object_barrier: (112, 128, 144),  # Slategrey
+            NuscenesObjectClass.movable_object_debris: (210, 105, 30),  # Chocolate
+            NuscenesObjectClass.movable_object_pushable_pullable: (105, 105, 105),  # Dimgrey
+            NuscenesObjectClass.movable_object_trafficcone: (47, 79, 79),  # Darkslategrey
+            NuscenesObjectClass.static_object_bicycle_rack: (188, 143, 143),  # Rosybrown
+            NuscenesObjectClass.vehicle_bicycle: (220, 20, 60),  # Crimson
+            NuscenesObjectClass.vehicle_bus.bendy: (255, 127, 80),  # Coral
+            NuscenesObjectClass.vehicle_bus.rigid: (255, 69, 0),  # Orangered
+            NuscenesObjectClass.vehicle_car: (255, 158, 0),  # Orange
+            NuscenesObjectClass.vehicle_construction: (233, 150, 70),  # Darksalmon
+            NuscenesObjectClass.vehicle_emergency.ambulance: (255, 83, 0),
+            NuscenesObjectClass.vehicle_emergency.police: (255, 215, 0),  # Gold
+            NuscenesObjectClass.vehicle_motorcycle: (255, 61, 99),  # Red
+            NuscenesObjectClass.vehicle_trailer: (255, 140, 0),  # Darkorange
+            NuscenesObjectClass.vehicle_truck: (255, 99, 71),  # Tomato
+            NuscenesObjectClass.flat_driveable_surface: (0, 207, 191),  # nuTonomy green
+            NuscenesObjectClass.flat_other: (175, 0, 75),
+            NuscenesObjectClass.flat_sidewalk: (75, 0, 75),
+            NuscenesObjectClass.flat_terrain: (112, 180, 60),
+            NuscenesObjectClass.static_manmade: (222, 184, 135),  # Burlywood
+            NuscenesObjectClass.static_other: (255, 228, 196),  # Bisque
+            NuscenesObjectClass.static_vegetation: (0, 175, 0),  # Green
+            NuscenesObjectClass.vehicle_ego: (255, 240, 245)
+        }
+
+        if self.category not in color_map:
+            return (0, 0, 0)
+        else:
+            return color_map[self.category]
+
 
 _default_ranges = { # settings from detection_cvpr_2019
     NuscenesDetectionClass.car: 50,
