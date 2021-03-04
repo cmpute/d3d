@@ -4,7 +4,6 @@ import shutil
 import tempfile
 import warnings
 import zipfile
-from enum import Enum, IntFlag, auto
 from io import RawIOBase
 from pathlib import Path
 from typing import Dict, Union
@@ -22,344 +21,10 @@ from PIL import Image
 from scipy.spatial.transform import Rotation
 from sortedcontainers import SortedDict
 
+from .constants import (NuscenesDetectionClass, NuscenesObjectClass,
+                        NuscenesSegmentationClass, train_split, val_split)
+
 _logger = logging.getLogger("d3d")
-
-_value_color_map = [ # created from full nuscenes colormap
-    (0, 0, 0),
-    (112, 128, 144),  # Slategrey
-    (220, 20, 60),  # Crimson
-    (255, 127, 80),  # Coral
-    (255, 158, 0),  # Orange
-    (233, 150, 70),  # Darksalmon
-    (255, 61, 99),  # Red
-    (0, 0, 230),  # Blue
-    (47, 79, 79),  # Darkslategrey
-    (255, 140, 0),  # Darkorange
-    (255, 99, 71),  # Tomato
-    (0, 207, 191),  # nuTonomy green
-    (175, 0, 75),
-    (75, 0, 75),
-    (112, 180, 60),
-    (222, 184, 135),  # Burlywood
-    (0, 175, 0),  # Green
-]
-
-class NuscenesDetectionClass(Enum):
-    '''
-    Label classes for detection in Nuscenes dataset.
-    '''
-    ignore = 0
-    barrier = auto()
-    bicycle = auto()
-    bus = auto()
-    car = auto()
-    construction_vehicle = auto() # 5
-    motorcycle = auto()
-    pedestrian = auto()
-    traffic_cone = auto()
-    trailer = auto()
-    truck = auto() # 10
-
-    @property
-    def color(self):
-        return _value_color_map[self.value]
-
-class NuscenesSegmentationClass(Enum):
-    '''
-    Label classes for lidar segmentation task in Nuscenes dataset
-
-    Notice that there's a one-to-one correspondance between detection
-    and segmentation classes
-    '''
-    ignore = 0
-    barrier = auto()
-    bicycle = auto()
-    bus = auto()
-    car = auto()
-    construction_vehicle = auto() # 5
-    motorcycle = auto()
-    pedestrian = auto()
-    traffic_cone = auto()
-    trailer = auto()
-    truck = auto() # 10
-    driveable_surface = auto()
-    other_flat = auto()
-    sidewalk = auto()
-    terrain = auto()
-    manmade = auto() # 15
-    vegetation = auto()
-
-    @property
-    def color(self):
-        return _value_color_map[self.value]
-
-class NuscenesObjectClass(IntFlag):
-    '''
-    Categories and attributes of an annotation in Nuscenes dataset.
-
-    The ids are encoded into 4bytes integer::
-
-        0xFFFF
-          │││└: level0 category
-          ││└─: level1 category
-          │└──: level2 category
-          └───: attribute
-    '''
-    unknown = 0x0000
-    noise = 0x0010
-
-    # categories
-    animal = 0x0001
-    human = 0x0002
-    human_pedestrian = 0x0012
-    human_pedestrian_adult = 0x0112
-    human_pedestrian_child = 0x0212
-    human_pedestrian_construction_worker = 0x0312
-    human_pedestrian_personal_mobility = 0x0412
-    human_pedestrian_police_officer = 0x0512
-    human_pedestrian_stroller = 0x0612
-    human_pedestrian_wheelchair = 0x0712
-    movable_object = 0x0003
-    movable_object_barrier = 0x0013
-    movable_object_debris = 0x0023
-    movable_object_pushable_pullable = 0x0033
-    movable_object_trafficcone = 0x0043
-    vehicle_bicycle = 0x0004
-    vehicle_bus = 0x0014
-    vehicle_bus_bendy = 0x0114
-    vehicle_bus_rigid = 0x0214
-    vehicle_car = 0x0024
-    vehicle_construction = 0x0034
-    vehicle_emergency = 0x0044
-    vehicle_emergency_ambulance = 0x0144
-    vehicle_emergency_police = 0x0244
-    vehicle_motorcycle = 0x0054
-    vehicle_trailer = 0x0064
-    vehicle_truck = 0x0074
-    vehicle_ego = 0x0084
-    static_object = 0x0005
-    static_object_bicycle_rack = 0x0015
-    flat = 0x0006
-    flat_driveable_surface = 0x0016
-    flat_sidewalk = 0x0026
-    flat_terrain = 0x0036
-    flat_other = 0x0046
-    static = 0x0007
-    static_manmade = 0x0017
-    static_vegetation = 0x0027
-    static_other = 0x0037
-
-    # attributes
-    vehicle_moving = 0x1000
-    vehicle_stopped = 0x2000
-    vehicle_parked = 0x3000
-    cycle_with_rider = 0x4000
-    cycle_without_rider = 0x5000
-    pedestrian_sitting_lying_down = 0x6000
-    pedestrian_standing = 0x7000
-    pedestrian_moving = 0x8000
-
-    @classmethod
-    def parse(cls, string: str):
-        '''
-        Parse the Nuscenes class from string
-        '''
-        return cls[string.replace('.', '_')]
-    @classmethod
-    def _get_nuscenes_id_table(cls):
-        # order is loaded from category.json in lidarseg split
-        return [
-            cls.noise, # 0
-            cls.animal,
-            cls.human_pedestrian_adult,
-            cls.human_pedestrian_child,
-            cls.human_pedestrian_construction_worker,
-            cls.human_pedestrian_personal_mobility, # 5
-            cls.human_pedestrian_police_officer,
-            cls.human_pedestrian_stroller,
-            cls.human_pedestrian_wheelchair,
-            cls.movable_object_barrier,
-            cls.movable_object_debris, # 10
-            cls.movable_object_pushable_pullable,
-            cls.movable_object_trafficcone,
-            cls.static_object_bicycle_rack,
-            cls.vehicle_bicycle,
-            cls.vehicle_bus_bendy, # 15
-            cls.vehicle_bus_rigid,
-            cls.vehicle_car,
-            cls.vehicle_construction,
-            cls.vehicle_emergency_ambulance,
-            cls.vehicle_emergency_police, # 20
-            cls.vehicle_motorcycle,
-            cls.vehicle_trailer,
-            cls.vehicle_truck,
-            cls.flat_driveable_surface,
-            cls.flat_other, # 25
-            cls.flat_sidewalk,
-            cls.flat_terrain,
-            cls.static_manmade,
-            cls.static_other,
-            cls.static_vegetation, # 30
-            cls.vehicle_ego,
-        ]
-
-    @classmethod
-    def from_nuscenes_id(cls, nid: int):
-        '''
-        Get Nuscenes class object from Nuscenes ID
-        '''
-        return cls._get_nuscenes_id_table()[nid]
-
-    @property
-    def category(self):
-        ''' The category of the label '''
-        return self & 0x0fff
-    @property
-    def attribute(self):
-        ''' The attribute of the label '''
-        return self & 0xf000
-    @property
-    def category_name(self):
-        ''' Name of the category of the label '''
-        name = self.category.name
-        name = name.replace("icle_", "icle.").replace("an_", "an.")
-        name = name.replace("t_", "t.").replace("s_", "s.")
-        name = name.replace("y_", "y.")
-        return name
-    @property
-    def attribute_name(self):
-        ''' Name of the attribute of the label '''
-        name = self.attribute.name
-        name = name.replace("e_", "e.")
-        name = name.replace("n_", "n.")
-        return name
-    @property
-    def pretty_name(self):
-        ''' Get the full name of the label with category and attribute '''
-        return f"{self.category_name}[{self.attribute_name}]"
-    @property
-    def nuscenes_id(self):
-        ''' Get the Nuscenes ID of the label '''
-        try:
-            return self._get_nuscenes_id_table().index(self.category)
-        except ValueError:
-            return 0
-
-    def to_detection(self):
-        """
-        Convert the label to the class for detection
-        """
-        # following table is copied from nuscenes definition
-        detection_mapping = {
-            NuscenesObjectClass.movable_object_barrier: NuscenesDetectionClass.barrier,
-            NuscenesObjectClass.vehicle_bicycle: NuscenesDetectionClass.bicycle,
-            NuscenesObjectClass.vehicle_bus_bendy: NuscenesDetectionClass.bus,
-            NuscenesObjectClass.vehicle_bus_rigid: NuscenesDetectionClass.bus,
-            NuscenesObjectClass.vehicle_car: NuscenesDetectionClass.car,
-            NuscenesObjectClass.vehicle_construction: NuscenesDetectionClass.construction_vehicle,
-            NuscenesObjectClass.vehicle_motorcycle: NuscenesDetectionClass.motorcycle,
-            NuscenesObjectClass.human_pedestrian_adult: NuscenesDetectionClass.pedestrian,
-            NuscenesObjectClass.human_pedestrian_child: NuscenesDetectionClass.pedestrian,
-            NuscenesObjectClass.human_pedestrian_construction_worker: NuscenesDetectionClass.pedestrian,
-            NuscenesObjectClass.human_pedestrian_police_officer: NuscenesDetectionClass.pedestrian,
-            NuscenesObjectClass.movable_object_trafficcone: NuscenesDetectionClass.traffic_cone,
-            NuscenesObjectClass.vehicle_trailer: NuscenesDetectionClass.trailer,
-            NuscenesObjectClass.vehicle_truck: NuscenesDetectionClass.truck
-        }
-
-        if self.category not in detection_mapping:
-            return NuscenesDetectionClass.ignore
-        else:
-            return detection_mapping[self.category]
-
-    def to_segmentation(self):
-        """
-        Convert the label to the class for segmentation
-
-        Reference: https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/eval/lidarseg/README.md
-        """
-        segmentation_mapping = {
-            NuscenesObjectClass.animal: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.human_pedestrian_personal_mobility: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.human_pedestrian_stroller: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.human_pedestrian_wheelchair: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.movable_object_debris: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.movable_object_pushable_pullable: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.static_object_bicycle_rack: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.vehicle_emergency_ambulance: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.vehicle_emergency_police: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.noise: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.static_other: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.vehicle_ego: NuscenesSegmentationClass.ignore,
-            NuscenesObjectClass.movable_object_barrier: NuscenesSegmentationClass.barrier,
-            NuscenesObjectClass.vehicle_bicycle: NuscenesSegmentationClass.bicycle,
-            NuscenesObjectClass.vehicle_bus_bendy: NuscenesSegmentationClass.bus,
-            NuscenesObjectClass.vehicle_bus_rigid: NuscenesSegmentationClass.bus,
-            NuscenesObjectClass.vehicle_car: NuscenesSegmentationClass.car,
-            NuscenesObjectClass.vehicle_construction: NuscenesSegmentationClass.construction_vehicle,
-            NuscenesObjectClass.vehicle_motorcycle: NuscenesSegmentationClass.motorcycle,
-            NuscenesObjectClass.human_pedestrian_adult: NuscenesSegmentationClass.pedestrian,
-            NuscenesObjectClass.human_pedestrian_child: NuscenesSegmentationClass.pedestrian,
-            NuscenesObjectClass.human_pedestrian_construction_worker: NuscenesSegmentationClass.pedestrian,
-            NuscenesObjectClass.human_pedestrian_police_officer: NuscenesSegmentationClass.pedestrian,
-            NuscenesObjectClass.movable_object_trafficcone: NuscenesSegmentationClass.traffic_cone,
-            NuscenesObjectClass.vehicle_trailer: NuscenesSegmentationClass.trailer,
-            NuscenesObjectClass.vehicle_truck: NuscenesSegmentationClass.truck,
-            NuscenesObjectClass.flat_driveable_surface: NuscenesSegmentationClass.driveable_surface,
-            NuscenesObjectClass.flat_other: NuscenesSegmentationClass.other_flat,
-            NuscenesObjectClass.flat_sidewalk: NuscenesSegmentationClass.sidewalk,
-            NuscenesObjectClass.flat_terrain: NuscenesSegmentationClass.terrain,
-            NuscenesObjectClass.static_manmade: NuscenesSegmentationClass.manmade,
-            NuscenesObjectClass.static_vegetation: NuscenesSegmentationClass.vegetation,
-        }
-
-        if self.category not in segmentation_mapping:
-            return NuscenesSegmentationClass.ignore
-        else:
-            return segmentation_mapping[self.category]
-
-    @property
-    def color(self):
-        color_map = {  # RGB, from nuscenes-devkit
-            NuscenesObjectClass.noise: (0, 0, 0),  # Black.
-            NuscenesObjectClass.animal: (70, 130, 180),  # Steelblue
-            NuscenesObjectClass.human_pedestrian_adult: (0, 0, 230),  # Blue
-            NuscenesObjectClass.human_pedestrian_child: (135, 206, 235),  # Skyblue,
-            NuscenesObjectClass.human_pedestrian_construction_worker: (100, 149, 237),  # Cornflowerblue
-            NuscenesObjectClass.human_pedestrian_personal_mobility: (219, 112, 147),  # Palevioletred
-            NuscenesObjectClass.human_pedestrian_police_officer: (0, 0, 128),  # Navy,
-            NuscenesObjectClass.human_pedestrian_stroller: (240, 128, 128),  # Lightcoral
-            NuscenesObjectClass.human_pedestrian_wheelchair: (138, 43, 226),  # Blueviolet
-            NuscenesObjectClass.movable_object_barrier: (112, 128, 144),  # Slategrey
-            NuscenesObjectClass.movable_object_debris: (210, 105, 30),  # Chocolate
-            NuscenesObjectClass.movable_object_pushable_pullable: (105, 105, 105),  # Dimgrey
-            NuscenesObjectClass.movable_object_trafficcone: (47, 79, 79),  # Darkslategrey
-            NuscenesObjectClass.static_object_bicycle_rack: (188, 143, 143),  # Rosybrown
-            NuscenesObjectClass.vehicle_bicycle: (220, 20, 60),  # Crimson
-            NuscenesObjectClass.vehicle_bus.bendy: (255, 127, 80),  # Coral
-            NuscenesObjectClass.vehicle_bus.rigid: (255, 69, 0),  # Orangered
-            NuscenesObjectClass.vehicle_car: (255, 158, 0),  # Orange
-            NuscenesObjectClass.vehicle_construction: (233, 150, 70),  # Darksalmon
-            NuscenesObjectClass.vehicle_emergency.ambulance: (255, 83, 0),
-            NuscenesObjectClass.vehicle_emergency.police: (255, 215, 0),  # Gold
-            NuscenesObjectClass.vehicle_motorcycle: (255, 61, 99),  # Red
-            NuscenesObjectClass.vehicle_trailer: (255, 140, 0),  # Darkorange
-            NuscenesObjectClass.vehicle_truck: (255, 99, 71),  # Tomato
-            NuscenesObjectClass.flat_driveable_surface: (0, 207, 191),  # nuTonomy green
-            NuscenesObjectClass.flat_other: (175, 0, 75),
-            NuscenesObjectClass.flat_sidewalk: (75, 0, 75),
-            NuscenesObjectClass.flat_terrain: (112, 180, 60),
-            NuscenesObjectClass.static_manmade: (222, 184, 135),  # Burlywood
-            NuscenesObjectClass.static_other: (255, 228, 196),  # Bisque
-            NuscenesObjectClass.static_vegetation: (0, 175, 0),  # Green
-            NuscenesObjectClass.vehicle_ego: (255, 240, 245)
-        }
-
-        if self.category not in color_map:
-            return (0, 0, 0)
-        else:
-            return color_map[self.category]
-
 
 _default_ranges = { # settings from detection_cvpr_2019
     NuscenesDetectionClass.car: 50,
@@ -397,7 +62,7 @@ class NuscenesLoader(TrackingDatasetBase):
     VALID_PTS_CLASSES = NuscenesSegmentationClass
 
     def __init__(self, base_path, inzip=False, phase="training",
-                 trainval_split=0.8, trainval_random=False, trainval_byseq=False, nframes=0):
+                 trainval_split="official", trainval_random=False, trainval_byseq=False, nframes=0):
         super().__init__(base_path, inzip=inzip, phase=phase, nframes=nframes,
                          trainval_split=trainval_split, trainval_random=trainval_random,
                          trainval_byseq=trainval_byseq)
@@ -411,6 +76,16 @@ class NuscenesLoader(TrackingDatasetBase):
         self._load_metadata()
 
         # split trainval
+        if trainval_split == "official":
+            if phase == "training":
+                trainval_split = train_split
+                trainval_byseq = True
+            elif phase == "validation":
+                trainval_split = val_split
+                trainval_byseq = True
+            else:
+                trainval_split = 1 # all samples
+
         frames_counts = SortedDict((k, v.nbr_samples) for k, v in self._metadata.items())
         self.frames = split_trainval_seq(phase, frames_counts, trainval_split, trainval_random, trainval_byseq)
 
@@ -581,7 +256,7 @@ class NuscenesLoader(TrackingDatasetBase):
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 labels = json.loads(ar.read(fname))
         else:
-            with (self.base_path / seq_id / fname).open() as fin:
+            with Path(self.base_path, seq_id, fname).open() as fin:
                 labels = json.load(fin)
         labels = list(map(edict, labels))
         if raw:
@@ -681,7 +356,7 @@ class NuscenesLoader(TrackingDatasetBase):
             with PatchedZipFile(self.base_path / (seq_id + ".zip"), to_extract=fname) as ar:
                 token_data = json.loads(ar.read(fname))
         else:
-            with (self.base_path / seq_id / fname).open() as fin:
+            with Path(self.base_path, seq_id, fname).open() as fin:
                 token_data = json.load(fin)
         return token_data[names][frame_idx]
 

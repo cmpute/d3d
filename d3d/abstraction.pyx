@@ -623,6 +623,11 @@ cdef class Target3DArray(list):
         self._paint_id(mask, semantics_view, idarr)
         return idarr
 
+    def crop_points(self, np.ndarray cloud):
+        result = np.empty((self.size(), len(cloud)), dtype=np.bool)
+        self._crop_points(cloud, result)
+        return result
+
 cdef class EgoPose:
     '''
     This object is used to store dynamic state of ego vehicle. All value is represented

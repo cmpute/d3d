@@ -1,7 +1,6 @@
-# Deal with rotation filtering: https://math.stackexchange.com/questions/2621677/extended-kalman-filter-equation-for-orientation-quaternion
+# TODO: Deal with rotation filtering: https://math.stackexchange.com/questions/2621677/extended-kalman-filter-equation-for-orientation-quaternion
 
 import logging
-import math
 from typing import List, Union
 from warnings import warn
 
@@ -10,6 +9,7 @@ import numpy as np
 import numpy.linalg as npl
 from d3d.abstraction import ObjectTarget3D, TrackingTarget3D
 from scipy.spatial.transform import Rotation
+from scipy.special import fresnel
 
 _logger = logging.getLogger("d3d")
 
@@ -29,7 +29,7 @@ def nearest_pd(A):
 
     - [1] https://www.mathworks.com/matlabcentral/fileexchange/42885-nearestspd
     - [2] N.J. Higham, "Computing a nearest symmetric positive semidefinite
-    matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
+          matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
     """
 
     B = (A + A.T) / 2
@@ -248,8 +248,8 @@ class Box_KF(PropertyFilter):
     '''
     def __init__(self, init: Union[ObjectTarget3D, TrackingTarget3D], Q: np.ndarray = np.eye(3)):
         '''
-        :param init: Initial state for the target
-        :param Q: System process noise
+        :param init: initial state for the target
+        :param Q: system process noise
         '''
         self._filter = kf.KalmanFilter(dim_x=3, dim_z=3)
 
@@ -291,17 +291,21 @@ class Box_KF(PropertyFilter):
 
 class Pose_3DOF_UKF_CV(PoseFilter):
     '''
-    UKF using constant velocity model for pose estimation, assuming 3DoF (x, y, yaw)
+    UKF using constant velocity (CV) model for pose estimation, assuming 3DoF (x, y, yaw)
 
-    States: [x, y, vx, vy]
-            [0  1  2   3 ]
-    Observe: [x, y]
-             [0  1]
+    States: ..
+
+        [x, y, vx, vy]
+        [0  1  2   3 ]
+    Observe: ..
+
+        [x, y]
+        [0  1]
     '''
     def __init__(self, init: Union[ObjectTarget3D, TrackingTarget3D], Q: np.ndarray = np.eye(4)):
         '''
-        :param init: Initial state for the target
-        :param Q: System process noise
+        :param init: initial state for the target
+        :param Q: system process noise
         '''
         # create filter
         sigma_points = kf.JulierSigmaPoints(6)
@@ -371,10 +375,16 @@ class Pose_3DOF_UKF_CTRV(PoseFilter):
     '''
     UKF using constant turning rate and velocity (CTRV) model for pose estimation
     
-    States: [x, y, rz, v, w]
-            [0  1  2   3  4]
-    Observe: [x, y, rz]
-             [0  1  2 ]
+    States: ..
+
+        [x, y, rz, v, w]
+        [0  1  2   3  4]
+
+    Observe: ..
+
+        [x, y, rz]
+        [0  1  2 ]
+
     '''
     def __init__(self):
         raise NotImplementedError()
@@ -383,10 +393,16 @@ class Pose_3DOF_UKF_CTRA(PoseFilter):
     '''
     UKF using constant turning rate and acceleration (CTRA) model for pose estimation
 
-    States: [x, y, rz, v, a, w]
-            [0  1  2   3  4  5]
-    Observe: [x, y, rz]
-             [0  1  2 ]
+    States: ..
+
+        [x, y, rz, v, a, w]
+        [0  1  2   3  4  5]
+
+    Observe: ..
+
+        [x, y, rz]
+        [0  1  2 ]
+
     '''
     def _state_mean(self, sigmas, Wm):
         x = np.average(sigmas, axis=0, weights=Wm)
@@ -509,7 +525,7 @@ class Pose_3DOF_UKF_CTRA(PoseFilter):
 
 class Pose_IMM(PoseFilter):
     '''
-    UKF using IMM (BR + CV + CA + CTRV + CTRA) model for pose estimation
+    UKF using IMM model for pose estimation
     '''
     def __init__(self):
         raise NotImplementedError()

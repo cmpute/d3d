@@ -54,6 +54,8 @@ def split_trainval(phase: str,
             frames = frames[:int(total_count * trainval_split)]
         elif phase == 'validation':
             frames = frames[int(total_count * trainval_split):]
+        else: # testing
+            pass
 
     return frames
 
@@ -100,6 +102,8 @@ def split_trainval_seq(phase: str,
             seqs = seqs[:int(len(seqs) * trainval_split)]
         elif phase == 'validation':
             seqs = seqs[int(len(seqs) * trainval_split):]
+        else: # testing
+            pass
 
     # generate frames
     frames = []
