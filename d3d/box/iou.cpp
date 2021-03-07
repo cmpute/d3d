@@ -185,10 +185,6 @@ tuple<Tensor, Tensor> iou2dr_backward(
 ) {
     Tensor grad_boxes1 = torch::zeros_like(boxes1);
     Tensor grad_boxes2 = torch::zeros_like(boxes2);
-    
-    const int total_ops = boxes1.size(0) * boxes2.size(0);
-    const int threads = THREADS_COUNT;
-    const int blocks = divup(total_ops, threads);
   
     AT_DISPATCH_FLOATING_TYPES(grad.scalar_type(), "iou2dr_backward", [&] {
         iou2dr_backward_templated<scalar_t>(
@@ -298,10 +294,6 @@ tuple<Tensor, Tensor> giou2dr_backward(
 ) {
     Tensor grad_boxes1 = torch::zeros_like(boxes1);
     Tensor grad_boxes2 = torch::zeros_like(boxes2);
-    
-    const int total_ops = boxes1.size(0) * boxes2.size(0);
-    const int threads = THREADS_COUNT;
-    const int blocks = divup(total_ops, threads);
   
     AT_DISPATCH_FLOATING_TYPES(grad.scalar_type(), "giou2dr_backward", [&] {
         giou2dr_backward_templated<scalar_t>(
@@ -411,10 +403,6 @@ tuple<Tensor, Tensor> diou2dr_backward(
 ) {
     Tensor grad_boxes1 = torch::zeros_like(boxes1);
     Tensor grad_boxes2 = torch::zeros_like(boxes2);
-    
-    const int total_ops = boxes1.size(0) * boxes2.size(0);
-    const int threads = THREADS_COUNT;
-    const int blocks = divup(total_ops, threads);
   
     AT_DISPATCH_FLOATING_TYPES(grad.scalar_type(), "diou2dr_backward", [&] {
         diou2dr_backward_templated<scalar_t>(

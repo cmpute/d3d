@@ -42,4 +42,4 @@ struct _BoxUtilCpu<scalar_t, dgal::AABox2<scalar_t>>
     }
 };
 
-torch::Tensor crop_2dr(const torch::Tensor cloud, const torch::Tensor boxes);
+torch::Tensor crop_2dr(const torch::Tensor points, const torch::Tensor boxes);

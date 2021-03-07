@@ -10,6 +10,8 @@ from .box_impl import (cuda_available,
     giou2dr_backward,
     diou2dr_forward,
     diou2dr_backward,
+    pdist2dr_forward,
+    pdist2dr_backward,
     nms2d as nms2d_cc,
     crop_2dr as crop_2dr_cc,
     IouType, SupressionType
@@ -25,7 +27,9 @@ if cuda_available:
         giou2dr_backward_cuda,
         diou2dr_forward_cuda,
         diou2dr_backward_cuda,
-        nms2d_cuda
+        pdist2dr_forward_cuda,
+        pdist2dr_backward_cuda,
+        nms2d_cuda,
     )
 
 # TODO: separate iou and iou loss (the latter one is the diagonal result of previous one)
@@ -122,6 +126,26 @@ class DIou2DR(torch.autograd.Function):
         else:
             return diou2dr_backward(boxes1, boxes2, grad, nxd, flags)
 
+class PDist2DR(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, points, boxes):
+        if boxes.is_cuda and points.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
+            dist, iedge = pdist2dr_forward_cuda(boxes, points)
+        else:
+            dist, iedge = pdist2dr_forward(boxes, points)
+        ctx.save_for_backward(points, boxes, iedge)
+        return dist
+
+    @staticmethod
+    def backward(ctx, grad):
+        points, boxes, iedge = ctx.saved_tensors
+        if grad.is_cuda:
+            assert cuda_available, "d3d was not built with CUDA support!"
+            return pdist2dr_backward_cuda(boxes, points, grad, iedge)
+        else:
+            return pdist2dr_backward(boxes, points, grad, iedge)
+
 def seg1d_iou(seg1, seg2):
     '''
     Calculate IoU of 1D segments
@@ -133,10 +157,13 @@ def seg1d_iou(seg1, seg2):
     assert torch.all(seg1[:,1] > 0)
     assert torch.all(seg2[:,1] > 0)
 
-    s1max = seg1[:,0] + seg1[:,1] / 2
-    s1min = seg1[:,0] - seg1[:,1] / 2
-    s2max = seg2[:,0] + seg2[:,1] / 2
-    s2min = seg2[:,0] - seg2[:,1] / 2
+    dseg1 = seg1[:,1] / 2
+    dseg2 = seg1[:,1] / 2
+
+    s1max = seg1[:,0] + dseg1
+    s1min = seg1[:,0] - dseg1
+    s2max = seg2[:,0] + dseg2
+    s2min = seg2[:,0] - dseg2
     
     imax = torch.where(s1max > s2max, s2max, s1max)
     imin = torch.where(s1min < s2min, s2min, s1min)
@@ -245,41 +272,104 @@ def box2d_nms(boxes, scores, iou_method="box", supression_method="hard",
         return mask.numpy()
     return mask
 
-def box2dr_crop(cloud, boxes):
+def box2dr_crop(points, boxes):
     '''
-    Crop point cloud points out given rotated boxes.
+    Crop point points points out given rotated boxes.
     The result is a list of indices tensor where each tensor is corresponding to indices of points lying in the box
 
-    :param cloud: The input point cloud, shape: N x 2
+    :param points: The input point points, shape: N x 2
     :param boxes: Input boxes array, shape: M x 5
     '''
-    result = crop_2dr_cc(cloud, boxes)
+    result = crop_2dr_cc(points, boxes)
     return result
 
-def box3dp_crop(cloud, boxes, project_axis=2):
+def box3dp_crop(points, boxes, project_axis=2):
     '''
-    Crop point cloud points out given rotated boxes with boxes projected to given axis
+    Crop point points points out given rotated boxes with boxes projected to given axis
 
-    :param cloud: The input point cloud, shape: N x 3
+    :param points: The input point points, shape: N x 3
     :param boxes: Input boxes array, shape: M x 7
     :param project_axis: Axis for the box to be projected to. {0: x, 1: y, 2: z}
     '''
 
     if project_axis == 0:
-        cloud_2d = cloud[:, [1,2]]
+        points_2d = points[:, [1,2]]
         boxes_2d = boxes[:, [1,2,4,5,6]]
     elif project_axis == 1:
-        cloud_2d = cloud[:, [0,2]]
+        points_2d = points[:, [0,2]]
         boxes_2d = boxes[:, [0,2,3,5,6]]
     elif project_axis == 2:
-        cloud_2d = cloud[:, [0,1]]
+        points_2d = points[:, [0,1]]
         boxes_2d = boxes[:, [0,1,3,4,6]]
     else:
         raise ValueError("The projection axis can only be 0-x, 1-y and 2-z!")
-    mask_2d = crop_2dr_cc(cloud_2d, boxes_2d)
+    mask_2d = crop_2dr_cc(points_2d, boxes_2d)
 
-    cloud_p = cloud[:, [project_axis]].t()
+    points_p = points[:, [project_axis]].t()
     boxes_p = boxes[:, [project_axis]]
     boxes_pd = boxes[:, [3+project_axis]] / 2
-    mask_p = (cloud_p - boxes_pd < boxes_p) & (boxes_p < cloud_p + boxes_pd)
+    mask_p = (points_p - boxes_pd < boxes_p) & (boxes_p < points_p + boxes_pd)
     return mask_2d & mask_p
+
+def seg1d_pdist(points, segs):
+    '''
+    Calculate distance from points to segments
+    The input segments should be n*2, where the last dim is [center, width]
+
+    :param points: Input points, shape is Nx1
+    :param segs: Input segments, shape is Nx2
+    '''
+    assert torch.all(segs[:,1] > 0)
+    dsegs = segs[:,1] / 2
+
+    smax = segs[:,0] + dsegs
+    smin = segs[:,0] - dsegs
+
+    return torch.where(points > segs[:,0], smax - points, points - smin)
+
+def box2dr_pdist(points, boxes, method="rbox"):
+    '''
+    Calculate signed distance from points to 2d boxes (surfaces)
+
+    :param points: target points, shape: N x 2
+    :param boxes: target boxes, shape: M x 5
+    :param method: 'rbox' - rotated box
+    '''
+    if len(boxes.shape) != 2:
+        raise ValueError("Input boxes should be Nx2 tensors!")
+    if boxes.shape[1] != 5:
+        raise ValueError("Input boxes should have 5 fields: x, y, w, h, r")
+    if method != "rbox":
+        raise ValueError("Only supported rotated boxes by now!")
+
+    result = PDist2DR.apply(points, boxes)
+    return result
+
+def box3dr_pdist(points, boxes, project_axis=2):
+    '''
+    Calculate signed distance from points to 3d boxes (surfaces)
+
+    :param points: target points, shape: N x 3
+    :param boxes: target boxes, shape: M x 7
+    :param project_axis: Axis for the box to be projected to. {0: x, 1: y, 2: z}
+    '''
+    if project_axis == 0:
+        points_2d = points[:, [1,2]]
+        boxes_2d = boxes[:, [1,2,4,5,6]]
+    elif project_axis == 1:
+        points_2d = points[:, [0,2]]
+        boxes_2d = boxes[:, [0,2,3,5,6]]
+    elif project_axis == 2:
+        points_2d = points[:, [0,1]]
+        boxes_2d = boxes[:, [0,1,3,4,6]]
+    else:
+        raise ValueError("The projection axis can only be 0-x, 1-y and 2-z!")
+    dist_2d = box2dr_pdist(points_2d, boxes_2d)
+
+    points_p = points[:, [project_axis]]
+    segs_p = boxes[:, [project_axis, 3+project_axis]]
+    dist_p = seg1d_pdist(points_p, segs_p)
+
+    sign = torch.min(dist_2d.sign(), dist_p.sign())
+    dist = torch.sqrt(dist_2d.square() + dist_p.square())
+    return sign * dist

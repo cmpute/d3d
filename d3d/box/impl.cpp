@@ -2,6 +2,7 @@
 
 #include "d3d/box/iou.h"
 #include "d3d/box/nms.h"
+#include "d3d/box/dist.h"
 #include "d3d/box/utils.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -19,6 +20,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("giou2dr_backward", &giou2dr_backward);
     m.def("diou2dr_forward", &diou2dr_forward, "Rotated GIoU of 2D boxes");
     m.def("diou2dr_backward", &diou2dr_backward);
+    m.def("pdist2dr_forward", &pdist2dr_forward, "Distances from point cloud to boxes");
+    m.def("pdist2dr_backward", &pdist2dr_backward);
     m.def("nms2d", &nms2d, "NMS on 2D boxes");
     m.def("crop_2dr", &crop_2dr, "Crop points from a point cloud within boxes");
 
@@ -31,6 +34,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("giou2dr_backward_cuda", &giou2dr_backward_cuda);
     m.def("diou2dr_forward_cuda", &diou2dr_forward_cuda, "Rotated GIoU of 2D boxes (using CUDA)");
     m.def("diou2dr_backward_cuda", &diou2dr_backward_cuda);
+    m.def("pdist2dr_forward_cuda", &pdist2dr_forward_cuda, "Distances from point cloud to boxes");
+    m.def("pdist2dr_backward_cuda", &pdist2dr_backward_cuda);
     m.def("nms2d_cuda", &nms2d_cuda, "NMS on 2D boxes (using CUDA)");
     #endif
     

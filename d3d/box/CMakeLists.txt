@@ -1,6 +1,6 @@
-set(BOX_SRC impl.cpp utils.cpp iou.cpp nms.cpp)
+set(BOX_SRC impl.cpp utils.cpp iou.cpp nms.cpp dist.cpp)
 if (BUILD_WITH_CUDA)
-    set(BOX_SRC ${BOX_SRC} iou_cuda.cu nms_cuda.cu)
+    set(BOX_SRC ${BOX_SRC} iou_cuda.cu nms_cuda.cu dist_cuda.cu)
 endif()
 
 add_library(box_impl MODULE ${BOX_SRC})

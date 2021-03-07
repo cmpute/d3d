@@ -8,11 +8,11 @@ using namespace dgal;
 
 template <typename scalar_t>
 void crop_2dr_templated(
-    const _CpuAccessor(2) cloud_,
+    const _CpuAccessor(2) points_,
     const _CpuAccessor(2) boxes_,
     _CpuAccessorT(bool, 2) indicators_
 ) {
-    const auto N = cloud_.size(0);
+    const auto N = points_.size(0);
     const auto M = boxes_.size(0);
 
     parallel_for(0, M, 1, [&](int64_t begin, int64_t end)
@@ -25,7 +25,7 @@ void crop_2dr_templated(
 
             for (int j = 0; j < N; j++)
             {
-                Point2<scalar_t> p {.x=cloud_[j][0], .y=cloud_[j][1]};
+                Point2<scalar_t> p {.x=points_[j][0], .y=points_[j][1]};
                 if (aabox.contains(p) && box.contains(p))
                     indicators_[i][j] = true;
                 else
@@ -35,12 +35,12 @@ void crop_2dr_templated(
     });
 }
 
-Tensor crop_2dr(const Tensor cloud, const Tensor boxes)
+Tensor crop_2dr(const Tensor points, const Tensor boxes)
 {
-    Tensor indicators = torch::empty({boxes.size(0), cloud.size(0)}, torch::dtype(torch::kBool));
-    AT_DISPATCH_FLOATING_TYPES(cloud.scalar_type(), "crop_2dr_templated", [&] {
+    Tensor indicators = torch::empty({boxes.size(0), points.size(0)}, torch::dtype(torch::kBool));
+    AT_DISPATCH_FLOATING_TYPES(points.scalar_type(), "crop_2dr_templated", [&] {
         crop_2dr_templated<scalar_t>(
-            cloud._cpu_accessor(2),
+            points._cpu_accessor(2),
             boxes._cpu_accessor(2),
             indicators._cpu_accessor_t(bool, 2));
     });
