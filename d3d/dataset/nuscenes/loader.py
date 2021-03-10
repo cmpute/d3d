@@ -21,8 +21,8 @@ from PIL import Image
 from scipy.spatial.transform import Rotation
 from sortedcontainers import SortedDict
 
-from .constants import (NuscenesDetectionClass, NuscenesObjectClass,
-                        NuscenesSegmentationClass, train_split, val_split)
+from d3d.dataset.nuscenes.constants import (NuscenesDetectionClass,
+    NuscenesObjectClass, NuscenesSegmentationClass, train_split, val_split)
 
 _logger = logging.getLogger("d3d")
 
@@ -656,3 +656,29 @@ def execute_official_evaluator(nusc_path, result_path, output_path,
             shutil.rmtree(tempfolder)
     else:
         raise ValueError("Unsupported evaluation task!")
+
+if __name__ == "__main__":
+    # validate detection
+    create_submission(
+        "/home/jacobz/PointCloud/mmdetection3d/work_dirs/temp/submission_detection/",
+        "/home/jacobz/PointCloud/mmdetection3d/work_dirs/temp/submission_detection.json"
+    )
+    execute_official_evaluator(
+        "/mnt/cache2t/jacobz/nuscenes_extracted/",
+        "/home/jacobz/PointCloud/mmdetection3d/work_dirs/temp/submission_detection.json",
+        "/home/jacobz/PointCloud/mmdetection3d/work_dirs/temp/submission_detection_results/"
+    )
+
+    # validate segmentation
+    create_submission(
+        "/home/jacobz/PointCloud/mmdetection3d/work_dirs/temp/submission_segmentation/",
+        "/home/jacobz/PointCloud/mmdetection3d/work_dirs/temp/submission_segmentation.zip",
+        task="lidarseg",
+        eval_set="val",
+    )
+    execute_official_evaluator(
+        "/mnt/cache2t/jacobz/nuscenes_extracted/",
+        "/home/jacobz/PointCloud/mmdetection3d/work_dirs/temp/submission_segmentation.zip",
+        "/home/jacobz/PointCloud/mmdetection3d/work_dirs/temp/submission_segmentation_results/",
+        task="lidarseg"
+    )
