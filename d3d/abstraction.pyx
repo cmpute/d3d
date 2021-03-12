@@ -129,7 +129,7 @@ cdef class ObjectTarget3D:
     This class stands for a target in cartesian coordinate. The body coordinate is FLU (front-left-up).
     '''
     def __init__(self, position, orientation, dimension, tag,
-        tid=0, position_var=None, orientation_var=None, dimension_var=None):
+        tid=0, position_var=None, orientation_var=None, dimension_var=None, aux=None):
         '''
         :param position: Position of object center (x,y,z)
         :param orientation: Object heading (direction of x-axis attached on body)
@@ -141,10 +141,10 @@ cdef class ObjectTarget3D:
         :param orientation_var: The uncertainty of target orientation
         :param dimension_var: The uncertainty of target dimension
         '''
-
         self.position_ = create_vector3(position)
         self.dimension_ = create_vector3(dimension)
         self.orientation_ = _parse_rotation(orientation)
+        self.aux = aux
 
         assert isinstance(tag, ObjectTag), "Label should be of type ObjectTag"
         self.tag = tag
@@ -275,7 +275,8 @@ cdef class ObjectTarget3D:
             self.orientation.as_quat().tolist(),
             self.orientation_var,
             self.tid,
-            self.tag.serialize()
+            self.tag.serialize(),
+            dict(self.aux)
         )
 
     @classmethod
@@ -321,7 +322,7 @@ cdef class TrackingTarget3D(ObjectTarget3D):
     '''
     def __init__(self, position, orientation, dimension, velocity, angular_velocity, tag,
         tid=0, position_var=None, orientation_var=None, dimension_var=None,
-        velocity_var=None, angular_velocity_var=None, history=None):
+        velocity_var=None, angular_velocity_var=None, history=None, aux=None):
 
         self.position_ = create_vector3(position)
         self.dimension_ = create_vector3(dimension)
@@ -333,6 +334,7 @@ cdef class TrackingTarget3D(ObjectTarget3D):
         self.tag = tag
         self.tid = tid
         self.history = history or float('nan')
+        self.aux = aux
 
         self.position_var_ = create_matrix33(position_var)
         self.dimension_var_ = create_matrix33(dimension_var)
@@ -392,7 +394,8 @@ cdef class TrackingTarget3D(ObjectTarget3D):
             np.ravel(self.angular_velocity_var_).tolist(),
             self.tid,
             self.tag.serialize(),
-            self.history
+            self.history,
+            dict(self.aux)
         )
 
     @classmethod
@@ -537,6 +540,12 @@ cdef class Target3DArray(list):
 
     def __reduce__(self):
         return Target3DArray.deserialize, (self.serialize(),)
+
+    def filter(self, predicate):
+        '''
+        Filter the list of objects by predicate
+        '''
+        return Target3DArray([box for box in self if predicate(box)], self.frame, self.timestamp)
 
     def filter_tag(self, tags):
         '''
@@ -902,14 +911,14 @@ cdef class TransformSet:
                     dimension=obj.dimension, dimension_var=obj.dimension_var,
                     velocity=velocity, velocity_var=obj.velocity_var,
                     angular_velocity=obj.angular_velocity, angular_velocity_var=obj.angular_velocity_var,
-                    tag=obj.tag, tid=obj.tid, history=obj.history
+                    tag=obj.tag, tid=obj.tid, history=obj.history, aux=obj.aux
                 ))
             elif isinstance(obj, ObjectTarget3D):
                 new_objs.append(ObjectTarget3D(
                     position=position, position_var=obj.position_var,
                     orientation=orientation, orientation_var=obj.orientation_var,
                     dimension=obj.dimension, dimension_var=obj.dimension_var,
-                    tag=obj.tag, tid=obj.tid
+                    tag=obj.tag, tid=obj.tid, aux=obj.aux
                 ))
             else:
                 raise ValueError("Unsupported target type!")

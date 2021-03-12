@@ -44,6 +44,11 @@ cdef class ObjectTarget3D:
     The tag attached to the target
     '''
 
+    cdef public dict aux
+    '''
+    Auxiliary data attached to the object
+    '''
+
     cpdef np.ndarray to_numpy(self, str box_type=*)
     cdef _crop(self, const float[:,:] cloud, bool[:] result)
 

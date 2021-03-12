@@ -278,6 +278,7 @@ class NuscenesLoader(TrackingDatasetBase):
                 tag = ObjectTag(tag.to_detection(), NuscenesDetectionClass)
             else:
                 tag = ObjectTag(tag, NuscenesObjectClass)
+            aux = dict(num_lidar_pts=label['num_lidar_pts'], num_radar_pts=label['num_radar_pts'])
 
             # caculate relative pose
             r = Rotation.from_quat(label.rotation[1:] + [label.rotation[0]])
@@ -291,10 +292,10 @@ class NuscenesLoader(TrackingDatasetBase):
             if with_velocity:
                 v = np.dot(ego_rim, label.velocity)
                 w = label.angular_velocity
-                target = TrackingTarget3D(rel_t, rel_r, size, v, w, tag, tid=tid)
+                target = TrackingTarget3D(rel_t, rel_r, size, v, w, tag, tid=tid, aux=aux)
                 outputs.append(target)
             else:
-                target = ObjectTarget3D(rel_t, rel_r, size, tag, tid=tid)
+                target = ObjectTarget3D(rel_t, rel_r, size, tag, tid=tid, aux=aux)
                 outputs.append(target)
 
         return outputs
