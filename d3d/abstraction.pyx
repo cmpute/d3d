@@ -284,10 +284,10 @@ cdef class ObjectTarget3D:
         '''
         Deserialize data from python primitives
         '''
-        pos, pos_var, dim, dim_var, ori_data, ori_var, tid, tag_data = data
+        pos, pos_var, dim, dim_var, ori_data, ori_var, tid, tag_data, aux = data
         ori = Rotation.from_quat(ori_data)
         tag = ObjectTag.deserialize(tag_data)
-        return cls(pos, ori, dim, tag, tid=tid,
+        return cls(pos, ori, dim, tag, tid=tid, aux=aux,
             position_var=pos_var, orientation_var=ori_var, dimension_var=dim_var
         )
 
@@ -401,12 +401,12 @@ cdef class TrackingTarget3D(ObjectTarget3D):
     @classmethod
     def deserialize(cls, data):
         (pos, pos_var, dim, dim_var, ori_data, ori_var,
-            vel, vel_var, avel, avel_var, tid, tag_data, history) = data
+            vel, vel_var, avel, avel_var, tid, tag_data, history, aux) = data
         ori = Rotation.from_quat(ori_data)
         tag = ObjectTag.deserialize(tag_data)
         return cls(pos, ori, dim, vel, avel, tag, tid=tid,
             position_var=pos_var, orientation_var=ori_var, dimension_var=dim_var,
-            velocity_var=vel_var, angular_velocity_var=avel_var, history=history
+            velocity_var=vel_var, angular_velocity_var=avel_var, history=history, aux=aux
         )
 
     cpdef np.ndarray to_numpy(self, str box_type="ground"):
