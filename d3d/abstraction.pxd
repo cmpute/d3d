@@ -51,6 +51,9 @@ cdef class ObjectTarget3D:
 
     cpdef np.ndarray to_numpy(self, str box_type=*)
     cdef _crop(self, const float[:,:] cloud, bool[:] result)
+    cpdef crop_points(self, np.ndarray cloud)
+    cdef _pdist(self, const float[:,:] cloud, float[:] result)
+    cpdef points_distance(self, np.ndarray cloud)
 
 cdef class TrackingTarget3D(ObjectTarget3D):
     cdef float[:] velocity_, angular_velocity_

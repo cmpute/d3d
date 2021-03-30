@@ -370,6 +370,9 @@ def box3dr_pdist(points, boxes, project_axis=2):
     segs_p = boxes[:, [project_axis, 3+project_axis]]
     dist_p = seg1d_pdist(points_p, segs_p)
 
-    sign = torch.min(dist_2d.sign(), dist_p.sign())
-    dist = torch.sqrt(dist_2d.square() + dist_p.square())
-    return sign * dist
+    dist = torch.where(
+        dist_p > 0,
+        torch.where(dist_2d > 0, torch.min(dist_p, dist_2d), dist_2d),
+        torch.where(dist_2d > 0, dist_p, -torch.sqrt(dist_2d.square() + dist_p.square()))
+    )
+    return dist

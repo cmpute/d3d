@@ -16,6 +16,7 @@ from libc.math cimport atan2
 
 cdef extern from "d3d/dgal_wrap.h" nogil:
     bool box3dr_contains(float x, float y, float z, float lx, float ly, float lz, float rz, float xq, float yq, float zq)
+    float box3dr_pdist(float x, float y, float z, float lx, float ly, float lz, float rz, float xq, float yq, float zq)
 
 def _d3d_enum_mapping():
     import d3d.dataset as dd
@@ -308,6 +309,31 @@ cdef class ObjectTarget3D:
                     x, y, z, lx, ly, lz, rz,
                     cloud[i,0], cloud[i,1], cloud[i,2]
                 )
+
+    cpdef crop_points(self, np.ndarray cloud):
+        result = np.empty(len(cloud), dtype=np.bool)
+        self._crop(cloud, result)
+        return result
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef _pdist(self, const float[:,:] cloud, float[:] result):
+        cdef float x = self.position[0], y = self.position[1], z = self.position[2]
+        cdef float lx = self.dimension[0], ly = self.dimension[1], lz = self.dimension[2]
+        cdef float rz = quat2yaw(self.orientation_)
+        cdef Py_ssize_t i
+
+        with nogil:
+            for i in range(len(cloud)): # XXX: use prange
+                result[i] = box3dr_pdist(
+                    x, y, z, lx, ly, lz, rz,
+                    cloud[i,0], cloud[i,1], cloud[i,2]
+                )
+
+    cpdef points_distance(self, np.ndarray cloud):
+        result = np.empty(len(cloud), dtype=np.float32)
+        self._pdist(cloud, result)
+        return result
 
 cdef class TrackingTarget3D(ObjectTarget3D):
     '''

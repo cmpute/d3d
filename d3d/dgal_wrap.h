@@ -18,6 +18,30 @@ bool box3dr_contains(float x, float y, float z, float lx, float ly, float lz, fl
     return true;
 }
 
+float box3dr_pdist(float x, float y, float z, float lx, float ly, float lz, float rz, float xq, float yq, float zq)
+{
+    dgal::Quad2<float> box = dgal::poly2_from_xywhr(x, y, lx, ly, rz);
+    dgal::Point2<float> p {.x=xq, .y=yq};
+
+    float dist2d = distance(box, p);
+    float distz;
+    if (zq > z)
+        distz = z + lz / 2 - zq;
+    else
+        distz = zq - z + lz / 2;
+
+    if (distz > 0) 
+        if (dist2d > 0)
+            return dgal::_min(distz, dist2d);
+        else
+            return dist2d;
+    else
+        if (dist2d > 0)
+            return distz;
+        else
+            return -hypot(distz, dist2d);
+}
+
 float box2dr_iou(float x1, float y1, float lx1, float ly1, float rz1,
                 float x2, float y2, float lx2, float ly2, float rz2)
 {
