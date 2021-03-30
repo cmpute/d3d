@@ -956,7 +956,7 @@ cdef class SegmentationEvaluator:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void collect_labels(self, SegmentationStats stats, uint8_t[:] gt_labels, uint8_t[:] pred_labels) nogil:
+    cdef void collect_labels(self, SegmentationStats stats, const uint8_t[:] gt_labels, const uint8_t[:] pred_labels) nogil:
         for i in range(len(gt_labels)):
             if gt_labels[i] != self._background and self._classes.find(gt_labels[i]) != self._classes.end():
                 if gt_labels[i] == pred_labels[i]:
@@ -969,8 +969,8 @@ cdef class SegmentationEvaluator:
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef void collect_labels_pano(self, SegmentationStats stats,
-        uint8_t[:] gt_labels, uint8_t[:] pred_labels,
-        uint16_t[:] gt_ids,   uint16_t[:] pred_ids): # TODO nogil:
+        const uint8_t[:] gt_labels, const uint8_t[:] pred_labels,
+        const uint16_t[:] gt_ids,   const uint16_t[:] pred_ids) nogil:
         self.collect_labels(stats, gt_labels, pred_labels)
 
         # collect mappings

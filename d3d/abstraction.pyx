@@ -276,7 +276,7 @@ cdef class ObjectTarget3D:
             self.orientation_var,
             self.tid,
             self.tag.serialize(),
-            dict(self.aux)
+            dict(self.aux) if self.aux else None
         )
 
     @classmethod
@@ -395,7 +395,7 @@ cdef class TrackingTarget3D(ObjectTarget3D):
             self.tid,
             self.tag.serialize(),
             self.history,
-            dict(self.aux)
+            dict(self.aux) if self.aux else None
         )
 
     @classmethod
@@ -622,8 +622,8 @@ cdef class Target3DArray(list):
                         idarr[ip] = ib + 1
 
     def paint_label(self, np.ndarray cloud, np.ndarray semantics):
-        cdef float[:,:] cloud_view = cloud
-        cdef uint8_t[:] semantics_view = semantics
+        cdef const float[:,:] cloud_view = cloud
+        cdef const uint8_t[:] semantics_view = semantics
         
         cdef bool[:,:] mask = np.empty((len(self), len(cloud_view)), dtype=np.bool)
         self._crop_points(cloud_view, mask)
