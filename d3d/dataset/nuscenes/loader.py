@@ -512,7 +512,7 @@ class NuscenesLoader(TrackingDatasetBase):
                 size=[w, l, h], # lwh -> wlh
                 rotation=[r[3]] + r[:3], # xyzw -> wxyz
                 detection_name=box_cat.name,
-                detection_score=box.tag_score,
+                detection_score=box.tag_top_score,
                 attribute_name=attr
             )
             if isinstance(box, TrackingTarget3D):

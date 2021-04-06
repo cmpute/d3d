@@ -343,11 +343,11 @@ class KittiObjectLoader(DetectionDatasetBase):
             orientation = RRect * HR * orientation
             yaw = orientation.as_euler("YZX")[0]
 
-            output_values = (box.tag_name,)
+            output_values = (box.tag_top.name,)
             output_values += (umin, vmin, umax, vmax)
             output_values += (h, w, l)
             output_values += tuple(position.tolist())
-            output_values += (yaw, box.tag_score)
+            output_values += (yaw, box.tag_top_score)
             output_lines.append(output_format % output_values)
 
         content = "\n".join(output_lines)

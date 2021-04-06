@@ -314,7 +314,7 @@ class WaymoLoader(TrackingDatasetBase):
 
             # convert label
             waymo_target.object.type = label_map[target.tag_top]
-            waymo_target.score = target.tag.scores[0]
+            waymo_target.score = target.tag_top_score
 
             waymo_target.context_name = idx[0] # the name of the sequence is the context
             waymo_target.frame_timestamp_micros = int(self.timestamp(idx) * 1e6)

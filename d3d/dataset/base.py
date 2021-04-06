@@ -1,19 +1,21 @@
 import functools
 import inspect
+from collections import defaultdict
 from enum import Enum
 from multiprocessing import Manager, Pool
 from pathlib import Path
 from threading import Event
-from typing import (Any, Callable, Dict, Iterable, List, Optional, Dict, Tuple,
-                    Union, ContextManager)
+from typing import (Any, Callable, ContextManager, Dict, Iterable, List,
+                    NewType, Optional, Tuple, Union)
 
 import numpy as np
 import numpy.random as npr
 from d3d.abstraction import EgoPose, Target3DArray, TransformSet
 from numpy import ndarray as NdArray
 from PIL.Image import Image
-from tqdm import tqdm
 from sortedcontainers import SortedDict
+from tqdm import tqdm, trange
+
 
 def split_trainval(phase: str,
                    total_count: int,
@@ -59,8 +61,10 @@ def split_trainval(phase: str,
 
     return frames
 
+_SortedCountDict = NewType('SortedCountDict', (SortedDict, Dict[Any, int]))
+
 def split_trainval_seq(phase: str,
-                       seq_counts: Dict[Any, int],
+                       seq_counts: _SortedCountDict,
                        trainval_split: Union[float, List[int]],
                        trainval_random: Union[bool, int, str],
                        by_seq: bool = False) -> Iterable[int]:
@@ -300,6 +304,19 @@ class DetectionDatasetBase(DatasetBase):
         :param idx: index of requested frame to be parsed
         '''
         raise NotImplementedError("abstract function")
+
+    def analyze_3dobject(self) -> dict:
+        '''
+        Report statistics on 3D object labels
+
+        :return: Statistics containing mean dimension
+        '''
+        dimensions = defaultdict(list)
+        for i in trange(len(self), desc="Analyzing"):
+            for obj in self.annotation_3dobject(i):
+                dimensions[obj.tag_top].append(obj.dimension)
+        mean_dimensions = {k: np.mean(v, axis=0) for k, v in dimensions.items()}
+        return dict(mean_dimension=mean_dimensions)
 
 class TrackingDatasetBase(DetectionDatasetBase):
     """

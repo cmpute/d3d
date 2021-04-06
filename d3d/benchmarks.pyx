@@ -295,7 +295,7 @@ cdef class DetectionEvaluator:
             for i in range(self._pr_nsamples):
                 # aggregate accuracies
                 otp, ntp = self._stats.tp[k][i], stats.tp[k][i]
-                self._stats.acc_angular[k][i] = wmean( # TODO store sum of acc in stats instead of using wmean
+                self._stats.acc_angular[k][i] = wmean(
                     self._stats.acc_angular[k][i], otp, stats.acc_angular[k][i], ntp)
                 self._stats.acc_box[k][i] = wmean(
                     self._stats.acc_box[k][i], otp, stats.acc_box[k][i], ntp)
@@ -407,7 +407,7 @@ cdef class DetectionEvaluator:
         cdef int score_idx = self._get_score_idx(score)
         return {self._class_type(diter.first): diter.second[score_idx] for diter in self._stats.acc_angular}
 
-    def summary(self, float score_thres = 0.8):
+    def summary(self, float score_thres = 0.8, bint verbose = False):
         '''
         Print default summary (into returned string)
         '''
@@ -420,21 +420,27 @@ cdef class DetectionEvaluator:
         lines.append("========== Benchmark Summary ==========")
         for k in self._classes:
             typed_k = self._class_type(k)
-            lines.append("Results for %s:" % typed_k.name)
-            lines.append("\tTotal processed targets:\t%d gt boxes, %d dt boxes" % (
-                self._stats.ngt[k], max(self._stats.ndt[k])
-            ))
-            lines.append("\tPrecision (score > %.2f):\t%.3f" % (score_thres, precision[typed_k]))
-            lines.append("\tRecall (score > %.2f):\t\t%.3f" % (score_thres, recall[typed_k]))
-            lines.append("\tMax F1:\t\t\t\t%.3f" % max(fscore[typed_k]))
-            lines.append("\tAP:\t\t\t\t%.3f" % ap[typed_k])
-            lines.append("")
-            lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_iou[k][score_idx]))
-            lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_angular[k][score_idx]))
-            lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_dist[k][score_idx]))
-            lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_box[k][score_idx]))
-            if not isinf(self._stats.acc_var[k][score_idx]):
-                lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_var[k][score_idx]))
+
+            if verbose:
+                lines.append("Results for %s:" % typed_k.name)
+                lines.append("\tTotal processed targets:\t%d gt boxes, %d dt boxes" % (
+                    self._stats.ngt[k], max(self._stats.ndt[k])
+                ))
+                lines.append("\tPrecision (score > %.2f):\t%.3f" % (score_thres, precision[typed_k]))
+                lines.append("\tRecall (score > %.2f):\t\t%.3f" % (score_thres, recall[typed_k]))
+                lines.append("\tMax F1:\t\t\t\t%.3f" % max(fscore[typed_k]))
+                lines.append("\tAP:\t\t\t\t%.3f" % ap[typed_k])
+                lines.append("")
+                lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_iou[k][score_idx]))
+                lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_angular[k][score_idx]))
+                lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_dist[k][score_idx]))
+                lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_box[k][score_idx]))
+                if not isinf(self._stats.acc_var[k][score_idx]):
+                    lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_var[k][score_idx]))
+            else:
+                lines.append("\tResults for %s: AP=%.3f" % (typed_k.name, ap[typed_k]))
+
+        lines.append("mAP: %.3f" % np.mean(list(ap.values())))
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)
@@ -822,7 +828,11 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             / self._stats.ngt[k] for k in self._classes}
         return ret
 
-    def summary(self, float score_thres = 0.8, float tracked_ratio_thres = 0.8, float lost_ratio_thres = 0.2, str note = None):
+    def summary(self, float score_thres = 0.8,
+                      float tracked_ratio_thres = 0.8,
+                      float lost_ratio_thres = 0.2,
+                      str note = None,
+                      bint verbose = False):
         '''
         Print default summary (into returned string)
         '''
@@ -842,32 +852,38 @@ cdef class TrackingEvaluator(DetectionEvaluator):
             lines.append("========== Benchmark Summary ==========")
         for k in self._classes:
             typed_k = self._class_type(k)
-            lines.append("Results for %s:" % typed_k.name)
-            lines.append("\tTotal processed targets:\t%d gt boxes, %d dt boxes" % (
-                self._stats.ngt[k], max(self._stats.ndt[k])
-            ))
-            lines.append("\tTotal processed trajectories:\t%d gt tracklets, %d dt tracklets" % (
-                self.gt_traj_count()[typed_k], max(len(self._tstats.ndt_ids[k][i]) for i in range(self._pr_nsamples))
-            ))
-            lines.append("\tPrecision (score > %.2f):\t%.3f" % (score_thres, precision[typed_k]))
-            lines.append("\tRecall (score > %.2f):\t\t%.3f" % (score_thres, recall[typed_k]))
-            lines.append("\tMax F1:\t\t\t\t%.3f" % max(fscore[typed_k]))
-            lines.append("\tAP:\t\t\t\t%.3f" % ap[typed_k])
-            lines.append("")
-            lines.append("\tID switches (score > %.2f):\t\t\t%d" % (score_thres, self._tstats.id_switches[k][score_idx]))
-            lines.append("\tFragments (score > %.2f):\t\t\t%d" % (score_thres, self._tstats.fragments[k][score_idx]))
-            lines.append("\tMOTA (score > %.2f):\t\t\t\t%.2f" % (score_thres, mota[typed_k]))
-            lines.append("\tMostly tracked (score > %.2f, ratio > %.2f):\t%.3f" % (
-                score_thres, tracked_ratio_thres, mlt[typed_k]))
-            lines.append("\tMostly lost (score > %.2f, ratio < %.2f):\t%.3f" % (
-                score_thres, lost_ratio_thres, mll[typed_k]))
-            lines.append("")
-            lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_iou[k][score_idx]))
-            lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_angular[k][score_idx]))
-            lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_dist[k][score_idx]))
-            lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_box[k][score_idx]))
-            if not isinf(self._stats.acc_var[k][score_idx]):
-                lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_var[k][score_idx]))
+
+            if verbose:
+                lines.append("Results for %s:" % typed_k.name)
+                lines.append("\tTotal processed targets:\t%d gt boxes, %d dt boxes" % (
+                    self._stats.ngt[k], max(self._stats.ndt[k])
+                ))
+                lines.append("\tTotal processed trajectories:\t%d gt tracklets, %d dt tracklets" % (
+                    self.gt_traj_count()[typed_k], max(len(self._tstats.ndt_ids[k][i]) for i in range(self._pr_nsamples))
+                ))
+                lines.append("\tPrecision (score > %.2f):\t%.3f" % (score_thres, precision[typed_k]))
+                lines.append("\tRecall (score > %.2f):\t\t%.3f" % (score_thres, recall[typed_k]))
+                lines.append("\tMax F1:\t\t\t\t%.3f" % max(fscore[typed_k]))
+                lines.append("\tAP:\t\t\t\t%.3f" % ap[typed_k])
+                lines.append("")
+                lines.append("\tID switches (score > %.2f):\t\t\t%d" % (score_thres, self._tstats.id_switches[k][score_idx]))
+                lines.append("\tFragments (score > %.2f):\t\t\t%d" % (score_thres, self._tstats.fragments[k][score_idx]))
+                lines.append("\tMOTA (score > %.2f):\t\t\t\t%.2f" % (score_thres, mota[typed_k]))
+                lines.append("\tMostly tracked (score > %.2f, ratio > %.2f):\t%.3f" % (
+                    score_thres, tracked_ratio_thres, mlt[typed_k]))
+                lines.append("\tMostly lost (score > %.2f, ratio < %.2f):\t%.3f" % (
+                    score_thres, lost_ratio_thres, mll[typed_k]))
+                lines.append("")
+                lines.append("\tMean IoU (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_iou[k][score_idx]))
+                lines.append("\tMean angular error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_angular[k][score_idx]))
+                lines.append("\tMean distance (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_dist[k][score_idx]))
+                lines.append("\tMean box error (score > %.2f):\t\t%.3f" % (score_thres, self._stats.acc_box[k][score_idx]))
+                if not isinf(self._stats.acc_var[k][score_idx]):
+                    lines.append("\tMean variance error (score > %.2f):\t%.3f" % (score_thres, self._stats.acc_var[k][score_idx]))
+            else:
+                lines.append("Results for %s: AP=%.3f, MOTA=%.3f" % (typed_k.name, ap[typed_k], mota[typed_k]))
+
+        lines.append("mAP: %.3f" % np.mean(list(ap.values())))
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)

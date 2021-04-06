@@ -3,6 +3,7 @@
 import base64
 import enum
 import pickle
+from numbers import Integral
 from collections import namedtuple
 from pathlib import Path
 
@@ -208,19 +209,27 @@ cdef class ObjectTarget3D:
         Return the object of the target's top tag
         '''
         return self.tag.mapping(self.tag.labels[0])
+    @tag_top.setter
+    def tag_top(self, value):
+        if isinstance(value, Integral):
+            self.tag.labels[0] = value
+        elif isinstance(value, self.tag.mapping):
+            self.tag.labels[0] = value.value
+        else:
+            raise ValueError("Invalid tag type!")
     @property
-    def tag_name(self):
-        '''
-        Return the name of the target's top tag
-        '''
-        return self.tag_top.name
-    @property
-    def tag_score(self):
+    def tag_top_score(self):
         '''
         Return the score of the target's top tag
         '''
         return self.tag.scores[0]
-
+    @tag_top_score.setter
+    def tag_top_score(self, value):
+        if self.tag.scores.size() == 1:
+            self.tag.scores[0] = value
+        else:
+            # TODO: need to preserve score order
+            raise NotImplementedError("Cannot change score when multiple classes are present!")
     @property
     def yaw(self):
         '''
@@ -585,15 +594,15 @@ cdef class Target3DArray(list):
             tags = [tags]
         tags = [str(t) if not isinstance(t, str) else t for t in tags] # use tag name to filter
         tags = [t.lower() for t in tags]
-        return Target3DArray([box for box in self if box.tag_name.lower() in tags], self.frame, self.timestamp)
+        return Target3DArray([box for box in self if box.tag_top.name.lower() in tags], self.frame, self.timestamp)
 
     def filter_score(self, score):
         '''
         Filter the list by select only objects higher than certain score
 
-        :param score: The minimun score to tag_score field
+        :param score: The minimun score for tag_top_score field
         '''
-        return Target3DArray([box for box in self if box.tag_score >= score], self.frame, self.timestamp)
+        return Target3DArray([box for box in self if box.tag_top_score >= score], self.frame, self.timestamp)
 
     def filter_position(self,
                         float x_min=float('nan'), float x_max=float('nan'),
@@ -623,8 +632,13 @@ cdef class Target3DArray(list):
         if z_max is not float('nan'):
             result = [box for box in result if box.position[0] < z_max]
 
-    def sort_score(self, descending=True): # TODO: implemented
-        raise NotImplementedError()
+    def sort_by_score(self, reverse=False):
+        '''
+        Sort the box list (in place) by the score
+
+        :param reverse: sorting is done ascendingly by default, reverse means descending
+        '''
+        self.sort(key=lambda b: b.tag_top_score)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)

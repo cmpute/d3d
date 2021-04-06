@@ -70,12 +70,12 @@ def visualize_detections(visualizer: Visualizer, visualizer_frame: str, targets:
         if text_scale >= 0:
             text_id = (id_prefix + "target%d/tag") % i
             if target.tid:
-                disp_text = "%s: %s" % (target.tid64, target.tag_name)
+                disp_text = "%s: %s" % (target.tid64, target.tag_top.name)
             else:
-                disp_text = "#%d: %s" % (i, target.tag_name)
+                disp_text = "#%d: %s" % (i, target.tag_top.name)
             aux_text = []
-            if target.tag_score < 1:
-                aux_text.append("%.2f" % target.tag_score)
+            if target.tag_top_score < 1:
+                aux_text.append("%.2f" % target.tag_top_score)
             position_var = np.power(np.linalg.det(target.position_var), 1/6) # display standard deviation
             if position_var > 0:
                 aux_text.append("%.2f" % position_var)
