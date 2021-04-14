@@ -18,6 +18,8 @@ from libc.math cimport atan2
 cdef extern from "d3d/dgal_wrap.h" nogil:
     bool box3dr_contains(float x, float y, float z, float lx, float ly, float lz, float rz, float xq, float yq, float zq)
     float box3dr_pdist(float x, float y, float z, float lx, float ly, float lz, float rz, float xq, float yq, float zq)
+    float box3dr_iou(float x1, float y1, float z1, float lx1, float ly1, float lz1, float rz1,
+                     float x2, float y2, float z2, float lx2, float ly2, float lz2, float rz2)
 
 def _d3d_enum_mapping():
     import d3d.dataset as dd
@@ -343,6 +345,16 @@ cdef class ObjectTarget3D:
         result = np.empty(len(cloud), dtype=np.float32)
         self._pdist(cloud, result)
         return result
+
+    cpdef box_iou(self, ObjectTarget3D other):
+        return box3dr_iou(
+            self.position[0], self.position[1], self.position[2],
+            self.dimension[0], self.dimension[1], self.dimension[2],
+            quat2yaw(self.orientation_),
+            other.position[0], other.position[1], other.position[2],
+            other.dimension[0], other.dimension[1], other.dimension[2],
+            quat2yaw(other.orientation_)
+        )
 
 cdef class TrackingTarget3D(ObjectTarget3D):
     '''

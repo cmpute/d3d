@@ -42,20 +42,26 @@ float box3dr_pdist(float x, float y, float z, float lx, float ly, float lz, floa
             return -hypot(distz, dist2d);
 }
 
-float box2dr_iou(float x1, float y1, float lx1, float ly1, float rz1,
-                float x2, float y2, float lx2, float ly2, float rz2)
+float box3dr_iou(float x1, float y1, float z1, float lx1, float ly1, float lz1, float rz1,
+                 float x2, float y2, float z2, float lx2, float ly2, float lz2, float rz2)
 {
     dgal::Quad2<float> box1 = dgal::poly2_from_xywhr(x1, y1, lx1, ly1, rz1),
                        box2 = dgal::poly2_from_xywhr(x2, y2, lx2, ly2, rz2);
-    return dgal::iou(box1, box2);
-}
+    float iou2d = dgal::iou(box1, box2);
 
-float box2d_iou(float x1, float y1, float lx1, float ly1, float rz1,
-                float x2, float y2, float lx2, float ly2, float rz2)
-{
-    dgal::Quad2<float> box1 = dgal::poly2_from_xywhr(x1, y1, lx1, ly1, rz1),
-                       box2 = dgal::poly2_from_xywhr(x2, y2, lx2, ly2, rz2);
-    dgal::AABox2<float> aabox1 = dgal::aabox2_from_poly2(box1),
-                        aabox2 = dgal::aabox2_from_poly2(box2);
-    return dgal::iou(aabox1, aabox2);
+    float z1max = z1 + lz1 / 2;
+    float z1min = z1 - lz1 / 2;
+    float z2max = z2 + lz2 / 2;
+    float z2min = z2 - lz2 / 2;
+
+    float imax = dgal::_min(z1max, z2max);
+    float imin = dgal::_max(z1min, z2min);
+    float umax = dgal::_max(z1max, z2max);
+    float umin = dgal::_min(z1min, z2min);
+    
+    float i = dgal::_max(imax - imin, 0.f);
+    float u = dgal::_max(umax - umin, float(1e-6));
+    float ziou = i / u;
+
+    return iou2d * ziou;
 }
