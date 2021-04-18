@@ -979,7 +979,7 @@ cdef class SegmentationEvaluator:
                     stats.tp[gt_labels[i]] += 1
                 else:
                     stats.fn[gt_labels[i]] += 1
-            elif pred_labels[i] != self._background and self._classes.find(pred_labels[i]) != self._classes.end():
+            if pred_labels[i] != self._background and self._classes.find(pred_labels[i]) != self._classes.end() and gt_labels[i] != pred_labels[i]:
                 stats.fp[pred_labels[i]] += 1
 
     @cython.boundscheck(False)
