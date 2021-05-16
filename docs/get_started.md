@@ -3,7 +3,6 @@
 Installation requirements:
 - `python >= 3.6`
 - `numpy >= 1.17.0`
-- `pytorch >= 1.4`
 - `scipy >= 1.4`
 - `addict`
 - `pillow`
@@ -19,6 +18,7 @@ Build requirements:
 
 Optional requirements:
 - `utm`: support converting GPS coordinate to local frame
+- `pytorch >= 1.4`: support custom pytorch operators
 - `pcl.py`: support visualization in PCL
 - `matplotlib`: support visualization in 2D figures
 - `waymo_open_dataset`: support converting Waymo Dataset

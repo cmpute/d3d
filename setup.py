@@ -20,6 +20,7 @@ try:
         use_cuda = torch.cuda.is_available()
 except ImportError:
     torch_root = torch_ver = ''
+    use_cuda = False
     print("Pytorch not found, pytorch related operators will not be built.")
 
 def full_version(): # get 
@@ -67,7 +68,7 @@ setup(
     download_url='https://github.com/cmpute/d3d/archive/master.zip',
     license='BSD-3-Clause',
     packages=find_packages(),
-    install_requires=['numpy>=1.17.0', 'torch', 'scipy>=1.4', 'addict', 'pillow', 'tqdm', 'msgpack', 'filterpy', 'sortedcontainers'],
+    install_requires=['numpy>=1.17.0', 'scipy>=1.4', 'addict', 'pillow', 'tqdm', 'msgpack', 'filterpy', 'sortedcontainers'],
     setup_requires=['scikit-build', 'setuptools_scm', 'cython>=0.29.16'],
     extras_require=extras,
     classifiers=[

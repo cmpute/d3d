@@ -1,6 +1,5 @@
 # runtime dependencies
 numpy >= 1.17.0
-torch >= 1.4
 scipy >= 1.4
 addict
 pillow
