@@ -888,6 +888,7 @@ cdef class TrackingEvaluator(DetectionEvaluator):
 
         return '\n'.join(lines)
 
+@cython.auto_pickle(True)
 cdef class SegmentationStats:
     ''' Tracking stats summary of a data frame '''
 
@@ -927,6 +928,7 @@ cdef class SegmentationStats:
             itp=self.itp, ifp=self.ifp, ifn=self.ifn,
             cumiou=self.cumiou)
 
+@cython.auto_pickle(True)
 cdef class SegmentationEvaluator:
     '''Benchmark for semgentation'''
     # REF: https://github.com/mcordts/cityscapesScripts/blob/master/cityscapesscripts/evaluation/evalPanopticSemanticLabeling.py

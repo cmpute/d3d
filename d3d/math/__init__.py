@@ -1,7 +1,9 @@
-import torch
-
-from .math_impl import (cuda_available,
-    i0e as i0e_cc, i1e as i1e_cc)
+try:
+    import torch
+    from .math_impl import (cuda_available,
+        i0e as i0e_cc, i1e as i1e_cc)
+except ImportError:
+    raise ImportError("Cannot find compiled library! D3D is probably compiled without pytorch!")
 
 if cuda_available:
     from .math_impl import i0e_cuda, i1e_cuda

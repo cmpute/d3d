@@ -1,7 +1,9 @@
-import torch
-
-from .point_impl import (cuda_available,
-    AlignType, aligned_scatter_forward, aligned_scatter_backward)
+try:
+    import torch
+    from .point_impl import (cuda_available,
+        AlignType, aligned_scatter_forward, aligned_scatter_backward)
+except ImportError:
+    raise ImportError("Cannot find compiled library! D3D is probably compiled without pytorch!")
 
 if cuda_available:
     from .point_impl import (aligned_scatter_backward_cuda,

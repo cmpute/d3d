@@ -1,9 +1,12 @@
-import torch
 from addict import Dict as edict
 
-from .voxel_impl import (MaxPointsFilterType, MaxVoxelsFilterType,
-                         ReductionType, voxelize_3d_dense, voxelize_3d_filter,
-                         voxelize_3d_sparse)
+try:
+    import torch
+    from .voxel_impl import (MaxPointsFilterType, MaxVoxelsFilterType,
+                            ReductionType, voxelize_3d_dense, voxelize_3d_filter,
+                            voxelize_3d_sparse)
+except ImportError:
+    raise ImportError("Cannot find compiled library! D3D is probably compiled without pytorch!")
 
 
 class VoxelGenerator:

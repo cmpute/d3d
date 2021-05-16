@@ -4,11 +4,14 @@ endif()
 
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
 
-add_subdirectory(box)
-add_subdirectory(math)
-add_subdirectory(point)
 add_subdirectory(tracking)
-add_subdirectory(voxel)
+
+if (BUILD_WITH_PYTORCH)
+    add_subdirectory(box)
+    add_subdirectory(math)
+    add_subdirectory(point)
+    add_subdirectory(voxel)
+endif ()
 
 # compile abstraction cython module
 add_cython_target(abstraction CXX)

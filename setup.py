@@ -20,7 +20,7 @@ try:
         use_cuda = torch.cuda.is_available()
 except ImportError:
     torch_root = torch_ver = ''
-    print("Pytorch not found, only building sdist in allowed.")
+    print("Pytorch not found, pytorch related operators will not be built.")
 
 def full_version(): # get 
     from subprocess import check_output
@@ -88,8 +88,9 @@ setup(
         ],
     },
     cmake_args=[
+        '-DBUILD_WITH_PYTORCH=ON',
         '-DCMAKE_PREFIX_PATH=%s' % torch_root,
         '-DBUILD_WITH_CUDA=%s' % ("ON" if use_cuda else "OFF"),
         '-DCYTHON_WITH_NO_DOCSTRINGS_ARG=FALSE',
-    ] if torch_root else []
+    ] if torch_root else ['-DBUILD_WITH_PYTORCH=OFF']
 )

@@ -1,21 +1,24 @@
 import numpy as np
-import torch
 
-from .box_impl import (cuda_available,
-    iou2d_forward,
-    iou2d_backward,
-    iou2dr_forward,
-    iou2dr_backward,
-    giou2dr_forward,
-    giou2dr_backward,
-    diou2dr_forward,
-    diou2dr_backward,
-    pdist2dr_forward,
-    pdist2dr_backward,
-    nms2d as nms2d_cc,
-    crop_2dr as crop_2dr_cc,
-    IouType, SupressionType
-)
+try:
+    import torch
+    from .box_impl import (cuda_available,
+        iou2d_forward,
+        iou2d_backward,
+        iou2dr_forward,
+        iou2dr_backward,
+        giou2dr_forward,
+        giou2dr_backward,
+        diou2dr_forward,
+        diou2dr_backward,
+        pdist2dr_forward,
+        pdist2dr_backward,
+        nms2d as nms2d_cc,
+        crop_2dr as crop_2dr_cc,
+        IouType, SupressionType
+    )
+except ImportError:
+    raise ImportError("Cannot find compiled library! D3D is probably compiled without pytorch!")
 
 if cuda_available:
     from .box_impl import (
