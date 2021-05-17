@@ -24,6 +24,10 @@
 - [ ] [SemanticKITTI](http://www.semantic-kitti.org/): To be added
 - [ ] [vKITTI3D](https://github.com/VisualComputingInstitute/vkitti3D-dataset): To be added
 - [ ] [AIO-Drive](https://klabcmu.github.io/index.html): To be added
+- [ ] [A2D2](https://www.a2d2.audi/a2d2/en.html): To be added
+- [ ] [Ford AVData](https://avdata.ford.com/): To be added
+
+More datasets: https://boschresearch.github.io/multimodalperception/dataset.html
 
 # Indoor datasets
 - [ ] [Objectron](https://github.com/google-research-datasets/Objectron): To be added

@@ -142,7 +142,7 @@ class KittiObjectLoader(DetectionDatasetBase):
     For description of constructor parameters, please refer to :class:`d3d.dataset.base.DetectionDatasetBase`
     """
 
-    VALID_CAM_NAMES = ["cam2", "cam3"]
+    VALID_CAM_NAMES = ["cam2", "cam3"] # TODO: rename to camera_gray_left, etc.
     VALID_LIDAR_NAMES = ["velo"]
     VALID_OBJ_CLASSES = KittiObjectClass
 
