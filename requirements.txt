@@ -6,6 +6,7 @@ pillow
 tqdm
 msgpack
 filterpy
+PyYAML
 sortedcontainers
 
 # build dependencies

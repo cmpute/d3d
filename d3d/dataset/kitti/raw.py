@@ -292,6 +292,9 @@ class KittiRawLoader(TrackingDatasetBase):
                 oxt = utils.load_oxt_file(data, file_name)[0]
         else:
             oxt = utils.load_oxt_file(self.base_path, file_name)[0]
+
+        if raw:
+            return oxt
         return utils.parse_pose_from_oxt(oxt)
 
     @expand_idx_name(VALID_CAM_NAMES)

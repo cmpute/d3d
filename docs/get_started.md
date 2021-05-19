@@ -9,6 +9,7 @@ Installation requirements:
 - `tqdm`
 - `msgpack`
 - `filterpy`
+- `PyYAML`
 - `sortedcontainers`
 
 Build requirements:

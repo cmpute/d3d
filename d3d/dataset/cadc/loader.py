@@ -1,17 +1,16 @@
-from collections import defaultdict
+import json
 from itertools import chain
 from pathlib import Path
 from zipfile import ZipFile
 
 import numpy as np
-from d3d.abstraction import (ObjectTag, ObjectTarget3D, Target3DArray,
-                             TransformSet)
+import yaml
+from addict import Dict as edict
+from d3d.abstraction import TransformSet
 from d3d.dataset.base import (TrackingDatasetBase, expand_idx, expand_idx_name,
                               split_trainval_seq)
-from d3d.dataset.kitti import utils
-from d3d.dataset.kitti.utils import KittiObjectClass, OxtData
+from d3d.dataset.cadc import utils
 from d3d.dataset.zip import PatchedZipFile
-from scipy.spatial.transform import Rotation
 from sortedcontainers import SortedDict
 
 
@@ -59,11 +58,11 @@ class CADCDLoader(TrackingDatasetBase):
 
     VALID_CAM_NAMES = ["camera_F", "camera_FR", "camera_RF", "camera_RB", "camera_B", "camera_LB", "camera_LF", "camera_FL"]
     VALID_LIDAR_NAMES = ["lidar"]
-    VALID_OBJ_CLASSES = KittiObjectClass
+    VALID_OBJ_CLASSES = None
     _frame2folder = {
         "camera_F": "image_00", "camera_FR": "image_01", "camera_RF": "image_02", "camera_RB": "image_03",
         "camera_B": "image_04", "cmaera_LB": "image_05", "camera_LF": "image_06", "camera_FL": "image_07",
-        "lidar": "lidar_points"
+        "lidar": "lidar_points", "novatel": "novatel"
     }
 
     def __init__(self, base_path, datatype: str = 'labeled', inzip=True, phase="training",
@@ -88,7 +87,7 @@ class CADCDLoader(TrackingDatasetBase):
                 with ZipFile(archive) as data:
                     velo_files = (name for name in data.namelist() if name.endswith(".bin"))
 
-                    seq = archive.stem
+                    seq = '-'.join(archive.parent.parts[-2:])
                     frame_count[seq] = sum(1 for _ in velo_files)
         else:
             for date in _dates:
@@ -111,7 +110,7 @@ class CADCDLoader(TrackingDatasetBase):
         self._calib_cache = {} # used to store parsed calibration data
         self._timestamp_cache = {} # used to store parsed timestamp
         self._pose_cache = {} # used to store parsed pose data
-        self._tracklet_cache = {} # used to store parsed tracklet data
+        self._3dann_cache = {} # used to store parsed tracklet data
         self._tracklet_mapping = {} # inverse mapping for tracklets
 
     def __len__(self):
@@ -125,8 +124,8 @@ class CADCDLoader(TrackingDatasetBase):
     def sequence_sizes(self):
         return dict(self.frame_dict)
 
-    def _get_date(self, seq_id):
-        return seq_id[:10]
+    def _split_seqid(self, seq_id):
+        return seq_id[:10], seq_id[11:]
 
     def _locate_frame(self, idx):
         # use underlying frame index
@@ -139,77 +138,47 @@ class CADCDLoader(TrackingDatasetBase):
         raise ValueError("Index larger than dataset size")
 
     def _preload_calib(self, seq_id):
-        date = self._get_date(seq_id)
+        date = self._split_seqid(seq_id)[0]
         if date in self._calib_cache:
             return
 
+        calib = TransformSet("base_link")
+
+        def add_cam_intrisic(data):
+            data = edict(data)
+            P = np.array(data.camera_matrix.data).reshape(3, 3)
+            calib.set_intrinsic_camera(data.camera_name, P, (data.image_width, data.image_height),
+                distort_coeffs=data.distortion_coefficients.data, intri_matrix=P)
+
+        def add_extrinsics(data):
+            data = edict(data)
+            calib.set_extrinsic(np.reshape(data.T_BASELINK_LIDAR, (4,4)), "base_link", "lidar")
+            for i in range(8):
+                calib.set_extrinsic(np.reshape(data['T_LIDAR_CAM%02d' % i], (4,4)), "lidar", self.VALID_CAM_NAMES[i])
+            calib.set_extrinsic(np.reshape(data.T_00CAMERA_00IMU, (4,4)), 'camera_F', 'xsens_300')
+            calib.set_extrinsic(np.reshape(data.T_03CAMERA_03IMU, (4,4)), 'camera_RB', 'xsens_30')
+            calib.set_extrinsic(np.reshape(data.T_LIDAR_GPSIMU, (4,4)), 'lidar', 'novatel')
+
+        # sensors with no intrinsic params
+        calib.set_intrinsic_lidar("lidar")
+        calib.set_intrinsic_general("novatel")
+        calib.set_intrinsic_general("xsens_30")
+        calib.set_intrinsic_general("xsens_300")
+
         if self.inzip:
-            with ZipFile(self.base_path / f"{date}_calib.zip") as source:    
-                self._calib_cache[date] = {
-                    "cam_to_cam": utils.load_calib_file(source, f"{date}/calib_cam_to_cam.txt"),
-                    "imu_to_velo": utils.load_calib_file(source, f"{date}/calib_imu_to_velo.txt"),
-                    "velo_to_cam": utils.load_calib_file(source, f"{date}/calib_velo_to_cam.txt")
-                }
+            with ZipFile(self.base_path / date / "calib.zip") as source:
+                for i in range(8):
+                    add_cam_intrisic(yaml.safe_load(source.read("calib/%02d.yaml" % i)))
+                add_extrinsics(yaml.safe_load(source.read("calib/extrinsics.yaml")))
+
+
         else:
             source = self.base_path / date
-            self._calib_cache[date] = {
-                    "cam_to_cam": utils.load_calib_file(source, "calib_cam_to_cam.txt"),
-                    "imu_to_velo": utils.load_calib_file(source, "calib_imu_to_velo.txt"),
-                    "velo_to_cam": utils.load_calib_file(source, "calib_velo_to_cam.txt")
-                }
+            for i in range(8):
+                add_cam_intrisic(yaml.safe_load(source.read_bytes("calib/%02d.yaml" % i)))
+            add_extrinsics(yaml.safe_load(source.read_bytes("calib/extrinsics.yaml")))
 
-    def _load_calib(self, seq, raw=False):
-        # load the calibration file data
-        self._preload_calib(seq)
-        date = self._get_date(seq)
-        filedata = self._calib_cache[date]
-        if raw:
-            return filedata
-
-        # load matrics
-        data = TransformSet("velo")
-        velo_to_cam = np.empty((3, 4))
-        velo_to_cam[:3, :3] = filedata['velo_to_cam']['R'].reshape(3, 3)
-        velo_to_cam[:3, 3] = filedata['velo_to_cam']['T']
-        for i in range(4):
-            S = filedata['cam_to_cam']['S_rect_%02d' % i].tolist()
-            # TODO: here we have different R_rect's, what's the difference of them against the one used in object detection
-            R = filedata['cam_to_cam']['R_rect_%02d' % i].reshape(3, 3)
-            P = filedata['cam_to_cam']['P_rect_%02d' % i].reshape(3, 4)
-            intri, offset = P[:, :3], P[:, 3]
-            projection = intri.dot(R)
-            offset_cartesian = np.linalg.inv(projection).dot(offset)
-            extri = np.vstack([velo_to_cam, np.array([0,0,0,1])])
-            extri[:3, 3] += offset_cartesian
-
-            frame = "cam%d" % i
-            data.set_intrinsic_camera(frame, projection, S, rotate=False)
-            data.set_extrinsic(extri, frame_to=frame)
-
-        imu_to_velo = np.empty((3, 4))
-        imu_to_velo[:3, :3] = filedata['imu_to_velo']['R'].reshape(3, 3)
-        imu_to_velo[:3, 3] = filedata['imu_to_velo']['T']
-        data.set_intrinsic_general("imu")
-        data.set_extrinsic(imu_to_velo, frame_from="imu")
-
-        # add position of vehicle bottom center and rear axis center
-        bc_rt = np.array([
-            [1, 0, 0, -0.27],
-            [0, 1, 0, 0],
-            [0, 0, 1, 1.73]
-        ], dtype='f4')
-        data.set_intrinsic_general("bottom_center")
-        data.set_extrinsic(bc_rt, frame_to="bottom_center")
-
-        rc_rt = np.array([
-            [1, 0, 0, -0.805],
-            [0, 1, 0, 0],
-            [0, 0, 1, 0.30]
-        ])
-        data.set_intrinsic_general("rear_center")
-        data.set_extrinsic(rc_rt, frame_from="bottom_center", frame_to="rear_center")
-
-        return data
+        self._calib_cache[date] = calib
 
     def calibration_data(self, idx, raw=False):
         assert not self._return_file_path, "The calibration is not stored in single file!"
@@ -218,110 +187,115 @@ class CADCDLoader(TrackingDatasetBase):
         else:
             seq_id, _ = idx
 
-        return self._load_calib(seq_id, raw=raw)
+        self._preload_calib(seq_id)
+        date = self._split_seqid(seq_id)[0]
+        return self._calib_cache[date]
 
-    def _preload_timestamp(self, seq_id):
-        date = self._get_date(seq_id)
+    def _preload_timestamp(self, seq_id, name):
+        date, drive = self._split_seqid(seq_id)
         if seq_id in self._timestamp_cache:
             return
 
+        drive_path = self.base_path / date / drive
         tsdict = {}
+
         for frame, folder in self._frame2folder.items():
-            fname = Path(date, seq_id, folder, "timestamps.txt")
+            fname = Path(self.datatype, folder, "timestamps.txt")
             if self.inzip:
-                with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as data:
-                    tsdict[frame] = utils.load_timestamps(data, fname, formatted=True).astype(int) // 1000
+                with PatchedZipFile(drive_path / f"{self.datatype}.zip", to_extract=fname) as data:
+                    tsdict[frame] = utils.load_timestamps(data, fname).astype(int) // 1000
             else:
-                tsdict[frame] = utils.load_timestamps(self.base_path, fname, formatted=True).astype(int) // 1000
+                tsdict[frame] = utils.load_timestamps(self.base_path, fname).astype(int) // 1000
         self._timestamp_cache[seq_id] = tsdict
 
-    @expand_idx_name(VALID_CAM_NAMES + VALID_LIDAR_NAMES)
-    def timestamp(self, idx, names="velo"):
+    @expand_idx_name(VALID_CAM_NAMES + VALID_LIDAR_NAMES + ['novatel', 'xsens_30', 'xsens_300'])
+    def timestamp(self, idx, names="lidar"):
         assert not self._return_file_path, "The timestamp is not stored in single file!"
         seq_id, frame_idx = idx
-        self._preload_timestamp(seq_id)
+        self._preload_timestamp(seq_id, names)
         return self._timestamp_cache[seq_id][names][frame_idx]
 
-    def _preload_tracklets(self, seq_id):
-        if seq_id in self._tracklet_cache:
+    def _preload_ann_3d(self, seq_id):
+        if seq_id in self._3dann_cache:
             return
 
-        date = self._get_date(seq_id)
-        fname = Path(date, seq_id, "tracklet_labels.xml")
-        if self.inzip:
-            zname = seq_id[:-len(self.datatype)] + "tracklets"
-            with ZipFile(self.base_path / f"{zname}.zip") as data:
-                tracklets = utils.load_tracklets(data, fname)
-        else:
-            tracklets = utils.load_tracklets(self.base_path, fname)
-
-        # inverse mapping
-        objs = defaultdict(list) # (frame -> list of objects)
-        for tid, tr in enumerate(tracklets):
-            dim = [tr.l, tr.w, tr.h]
-            tag = ObjectTag(tr.objectType, KittiObjectClass)
-            for pose_idx, pose in enumerate(tr.poses):
-                pos = [pose.tx, pose.ty, pose.tz]
-                pos[2] += dim[2] / 2
-                ori = Rotation.from_euler("ZYX", (pose.rz, pose.ry, pose.rx))
-                objs[pose_idx + tr.first_frame].append(ObjectTarget3D(pos, ori, dim, tag, tid=tid))
-
-        self._tracklet_cache[seq_id] = {k: Target3DArray(l, frame="velo") for k, l in objs.items()}
+        date, drive = self._split_seqid(seq_id)
+        anno_file = self.base_path / date / drive / "3d_ann.json"
+        with open(anno_file) as fin:
+            data = json.load(fin)
+        self._3dann_cache[seq_id] = data
 
     @expand_idx
     def annotation_3dobject(self, idx):
         assert not self._return_file_path, "The annotation is not stored in single file!"
         seq_id, frame_idx = idx
-        self._preload_tracklets(seq_id)
-        return self._tracklet_cache[seq_id][frame_idx]
+        self._preload_ann_3d(seq_id)
+        return utils.load_3d_ann(self._3dann_cache[seq_id][frame_idx])
 
     @expand_idx
     def pose(self, idx, raw=False):
         seq_id, frame_idx = idx
-        date = self._get_date(seq_id)
+        date, drive = self._split_seqid(seq_id)
+        drive_path = self.base_path / date / drive
 
-        file_name = Path(date, seq_id, "oxts", "data", "%010d.txt" % frame_idx)
+        file_name = Path(self.datatype, "novatel", "data", "%010d.txt" % frame_idx)
+        drive_path = self.base_path / date / drive
         if self._return_file_path:
-            return self.base_path / file_name
+            return drive_path / file_name
 
         if self.inzip:
-            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=file_name) as data:
-                oxt = utils.load_oxt_file(data, file_name)[0]
+            with PatchedZipFile(drive_path / f"{self.datatype}.zip", to_extract=file_name) as source:
+                data = utils.load_inspvax(source, file_name)
         else:
-            oxt = utils.load_oxt_file(self.base_path, file_name)[0]
-        return utils.parse_pose_from_oxt(oxt)
+            data = utils.load_inspvax(drive_path, file_name)
+
+        if raw:
+            return data
+        return utils.parse_pose_from_inspvax(data)
 
     @expand_idx_name(VALID_CAM_NAMES)
-    def camera_data(self, idx, names='cam2'):
+    def camera_data(self, idx, names='camera_F'):
         seq_id, frame_idx = idx
-        date = self._get_date(seq_id)
+        date, drive = self._split_seqid(seq_id)
 
-        fname = Path(date, seq_id, self._frame2folder[names], 'data', '%010d.png' % frame_idx)
+        fname = Path(self.datatype, self._frame2folder[names], "data", "%010d.png" % frame_idx)
+        drive_path = self.base_path / date / drive
         if self._return_file_path:
-            return self.base_path / fname
+            return drive_path / fname
 
-        gray = names in ['cam0', 'cam1']
         if self.inzip:
-            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as source:
-                return utils.load_image(source, fname, gray=gray)
+            with PatchedZipFile(drive_path / f"{self.datatype}.zip", to_extract=fname) as source:
+                return utils.load_image(source, fname)
         else:
-            return utils.load_image(self.base_path, fname, gray=gray)
+            return utils.load_image(drive_path, fname)
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='velo'):
+    def lidar_data(self, idx, names='lidar'):
         seq_id, frame_idx = idx
-        date = self._get_date(seq_id)
+        date, drive = self._split_seqid(seq_id)
 
-        fname = Path(date, seq_id, 'velodyne_points', 'data', '%010d.bin' % frame_idx)
+        fname = Path(self.datatype, "lidar_points", "data", "%010d.bin" % frame_idx)
+        drive_path = self.base_path / date / drive
         if self._return_file_path:
-            return self.base_path / fname
+            return drive_path / fname
 
         if self.inzip:
-            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as source:
+            with PatchedZipFile(drive_path / f"{self.datatype}.zip", to_extract=fname) as source:
                 return utils.load_velo_scan(source, fname)
         else:
-            return utils.load_velo_scan(self.base_path, fname)
+            return utils.load_velo_scan(drive_path, fname)
 
     @expand_idx
     def identity(self, idx):
         return idx
+
+if __name__ == "__main__":
+    loader = CADCDLoader("/media/jacobz/Storage/Datasets/cadcd-raw")
+    print(len(loader))
+    print(loader.sequence_ids)
+    print(loader.calibration_data(0))
+    print(loader.lidar_data(0))
+    print(loader.camera_data(0))
+    print(loader.pose(0))
+    print(loader.timestamp(0))
+    print(loader.annotation_3dobject(0))
