@@ -1007,7 +1007,7 @@ cdef class TransformSet:
         dmask = d > 0
         mask = (0 < u) & (u < meta.width) & (0 < v) & (v < meta.height) & dmask
 
-        distorts = np.array(meta.distort_coeffs or [])
+        distorts = np.array(meta.distort_coeffs if meta.distort_coeffs is not None else [])
         if distorts.size > 0:
             # save old mask with tolerance
             tolerance = 20

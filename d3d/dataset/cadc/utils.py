@@ -138,7 +138,7 @@ def load_3d_ann(ditem: list) -> Target3DArray:
         obj_arr.append(ObjectTarget3D(
             [box.position.x, box.position.y, box.position.z],
             Rotation.from_euler('z', box.yaw),
-            [box.dimensions.x, box.dimensions.y, box.dimensions.z],
+            [box.dimensions.y, box.dimensions.x, box.dimensions.z],
             ObjectTag(label, CADCObjectClass),
             tid=int(box.uuid.replace('-', ''), 16) % (1 << 63)
         ))

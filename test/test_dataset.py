@@ -11,6 +11,7 @@ from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
 from d3d.dataset.kitti360.loader import KITTI360Loader
 from d3d.dataset.nuscenes.loader import (NuscenesDetectionClass,
                                          NuscenesLoader, NuscenesObjectClass)
+from d3d.dataset.cadc.loader import CADCDLoader
 from d3d.dataset.waymo.loader import WaymoLoader
 from d3d.vis.image import visualize_detections as img_vis
 from d3d.vis.pcl import visualize_detections as pcl_vis
@@ -24,6 +25,7 @@ kitti_location = os.environ['KITTI'] if 'KITTI' in os.environ else None
 waymo_location = os.environ['WAYMO'] if 'WAYMO' in os.environ else None
 nuscenes_location = os.environ['NUSCENES'] if 'NUSCENES' in os.environ else None
 kitti360_location = os.environ['KITTI360'] if 'KITTI360' in os.environ else None
+cadc_location = os.environ['CADC'] if 'CADC' in os.environ else None
 
 selection = int(os.environ['INDEX']) if 'INDEX' in os.environ else None
 if 'INZIP' in os.environ:
@@ -158,8 +160,8 @@ class CommonTrackingDSMixin:
             field="intensity", id="cloud1"
         )
         visualizer.addPointCloud(pcl.create_xyzi(cloud2), field="intensity", id="cloud2")
-        pcl_vis(visualizer, fname2, targets1, tf, box_color=(1, 1, 0), id_prefix="frame1")
-        pcl_vis(visualizer, fname2, targets2, tf, box_color=(0, 1, 1), id_prefix="frame2")
+        pcl_vis(visualizer, fname2, targets1, tf, box_color=(1, 1, 0), text_scale=0, id_prefix="frame1")
+        pcl_vis(visualizer, fname2, targets2, tf, box_color=(0, 1, 1), text_scale=0, id_prefix="frame2")
         visualizer.setRepresentationToWireframeForAllActors()
         visualizer.addCoordinateSystem()
         visualizer.setWindowName("Please check whether the gt boxes are aligned!")
@@ -340,6 +342,12 @@ class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTracking
         # vis.addPointCloud(semantic_cloud, field="label")
         # vis.spin()
 
+
+@unittest.skipIf(not cadc_location, "Path to CADC not set")
+class TestCADCDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
+    def setUp(self):
+        self.oloader = CADCDLoader(cadc_location, inzip=inzip, nframes=0)
+        self.tloader = CADCDLoader(cadc_location, inzip=inzip, nframes=2)
 
 if __name__ == "__main__":
     TestKittiObjectDataset().test_detection_output()
