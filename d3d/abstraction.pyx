@@ -722,8 +722,8 @@ cdef class EgoPose:
         Convert the pose to a homogeneous matrix representation
 
         Note that the pose is represented by position and orientation. The rotation operation is
-        performed after translation `R(x+T)`, which is different from homogeneous transform
-        matrix`Rx+T`.
+        performed after translation `R(x+T)`, which is different from common rigid transform
+        `Rx+T`.
         '''
         arr = np.eye(4)
         r = self.orientation.as_matrix()

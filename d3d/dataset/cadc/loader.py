@@ -147,6 +147,9 @@ class CADCDLoader(TrackingDatasetBase):
         def add_cam_intrisic(data):
             data = edict(data)
             P = np.array(data.camera_matrix.data).reshape(3, 3)
+            distorts = data.distortion_coefficients.data
+            if len(distorts) == 4:
+                distorts.append(0.0)
             calib.set_intrinsic_camera(data.camera_name, P, (data.image_width, data.image_height),
                 distort_coeffs=data.distortion_coefficients.data, intri_matrix=P)
 
@@ -170,8 +173,6 @@ class CADCDLoader(TrackingDatasetBase):
                 for i in range(8):
                     add_cam_intrisic(yaml.safe_load(source.read("calib/%02d.yaml" % i)))
                 add_extrinsics(yaml.safe_load(source.read("calib/extrinsics.yaml")))
-
-
         else:
             source = self.base_path / date
             for i in range(8):
@@ -288,14 +289,3 @@ class CADCDLoader(TrackingDatasetBase):
     @expand_idx
     def identity(self, idx):
         return idx
-
-if __name__ == "__main__":
-    loader = CADCDLoader("/media/jacobz/Storage/Datasets/cadcd-raw")
-    print(len(loader))
-    print(loader.sequence_ids)
-    print(loader.calibration_data(0))
-    print(loader.lidar_data(0))
-    print(loader.camera_data(0))
-    print(loader.pose(0))
-    print(loader.timestamp(0))
-    print(loader.annotation_3dobject(0))

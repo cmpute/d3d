@@ -347,7 +347,7 @@ class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTracking
 class TestCADCDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
         self.oloader = CADCDLoader(cadc_location, inzip=inzip, nframes=0)
-        self.tloader = CADCDLoader(cadc_location, inzip=inzip, nframes=2)
+        self.tloader = CADCDLoader(cadc_location, inzip=inzip, nframes=5)
 
 if __name__ == "__main__":
-    TestKittiObjectDataset().test_detection_output()
+    print("Please use pytest to run the tests.")
