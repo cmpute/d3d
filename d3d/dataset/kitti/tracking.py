@@ -109,7 +109,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
                             seq = int(seq)
                             frame_count[seq] = max(frame_count[seq],
-                                int(frame[:-4]) + 1) # idx starts from 0
+                                int(name.stem) + 1) # idx starts from 0
                     break
         else:
             for folder in ['image_02', 'image_03', 'velodyne']:

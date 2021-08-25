@@ -56,12 +56,14 @@ def split_trainval(phase: str,
             frames = frames[:int(total_count * trainval_split)]
         elif phase == 'validation':
             frames = frames[int(total_count * trainval_split):]
-        else: # testing
+        else:  # testing
             pass
 
     return frames
 
+
 _SortedCountDict = NewType('SortedCountDict', (SortedDict, Dict[Any, int]))
+
 
 def split_trainval_seq(phase: str,
                        seq_counts: _SortedCountDict,
@@ -106,8 +108,8 @@ def split_trainval_seq(phase: str,
             seqs = seqs[:int(len(seqs) * trainval_split)]
         elif phase == 'validation':
             seqs = seqs[int(len(seqs) * trainval_split):]
-        else: # testing
-            pass
+        elif phase != 'testing':  # testing
+            raise ValueError("Incorrect dataset phase!")
 
     # generate frames
     frames = []
@@ -117,7 +119,8 @@ def split_trainval_seq(phase: str,
             seqids = rng.permutation(len(seqs))
             for sid in seqids:
                 seq = seqs[sid]
-                frames.append(rng.permutation(seq_counts[seq]) + seqstarts[seq])
+                frames.append(rng.permutation(
+                    seq_counts[seq]) + seqstarts[seq])
         else:
             for seq in seqs:
                 frames.append(np.arange(seq_counts[seq]) + seqstarts[seq])
@@ -132,6 +135,7 @@ def split_trainval_seq(phase: str,
             frames.append(np.arange(seq_counts[seq])[::-1] + seqstarts[seq])
 
     return np.concatenate(frames)
+
 
 def check_frames(names: Union[List[str], str], valid: List[str]):
     '''
@@ -158,10 +162,12 @@ def check_frames(names: Union[List[str], str], valid: List[str]):
 
     return unpack_result, names
 
+
 class DatasetBase:
     """
     This class acts as the base for all dataset loaders
     """
+
     def __init__(self,
                  base_path: Union[str, Path],
                  inzip: bool = False,
@@ -177,23 +183,32 @@ class DatasetBase:
         :param trainval_random: whether select the train/val split randomly. See
                             documentation of :func:`split_trainval` for detail.
         """
+        del trainval_split, trainval_random
         self.base_path = Path(base_path)
         self.inzip = inzip
         self.phase = phase
         # trainval_split and trainval_random should be used only in constructor
-        
+
         if phase not in ['training', 'validation', 'testing']:
             raise ValueError("Invalid phase tag")
 
         self._return_file_path = False
 
+    def __len__(self) -> int:
+        '''
+        Return the total number of frames (in the given split)
+        '''
+        raise NotImplementedError("abstract function")
+
     class _ReturnPathContext:
         def __init__(self, ds: "DatasetBase"):
             self.ds = ds
+
         def __enter__(self):
             if self.ds.inzip:
                 raise RuntimeError("Cannot return path from a dataset in zip!")
             self.ds._return_file_path = True
+
         def __exit__(self, type, value, traceback):
             self.ds._return_file_path = False
 
@@ -204,9 +219,18 @@ class DatasetBase:
         """
         return DatasetBase._ReturnPathContext(self)
 
-class DetectionDatasetBase(DatasetBase):
+    def identity(self, idx: int) -> tuple:
+        '''
+        Return something that can track the data back to original dataset. The result tuple can be passed
+            to any accessors above and directly access given data.
+
+        :param idx: index of requested frame to be parsed
+        '''
+        raise NotImplementedError("abstract function")
+
+class MultiModalDatasetMixin:
     """
-    This class defines basic interface for object detection
+    This class defines basic interface for multi-modal datasets
     """
     VALID_CAM_NAMES: list
     '''
@@ -217,6 +241,51 @@ class DetectionDatasetBase(DatasetBase):
     '''
     List of valid sensor names of lidar
     '''
+
+    def lidar_data(self,
+                   idx: Union[int, tuple],
+                   names: Optional[Union[str, List[str]]] = None
+                   ) -> Union[NdArray, List[NdArray]]:
+        '''
+        Return the lidar point cloud data
+
+        :param names: name of requested lidar sensors. The default sensor is
+                      the first element in :attr:`VALID_LIDAR_NAMES`.
+        :param idx: index of requested lidar frames
+        '''
+        raise NotImplementedError("abstract function")
+
+    def camera_data(self,
+                    idx: Union[int, tuple],
+                    names: Optional[Union[str, List[str]]] = None
+                    ) -> Union[Image, List[Image]]:
+        '''
+        Return the camera image data
+
+        :param names: name of requested camera sensors. The default sensor is
+                      the first element in :attr:`VALID_CAM_NAMES`.
+        :param idx: index of requested image frames
+        '''
+        raise NotImplementedError("abstract function")
+
+    def calibration_data(self,
+                         idx: Union[int, tuple],
+                         raw: Optional[bool] = None) -> Union[TransformSet, Any]:
+        '''
+        Return the calibration data
+
+        :param idx: index of requested frame
+        :param raw: if false, converted :class:`d3d.abstraction.TransformSet`
+                    will be returned, otherwise raw data will be returned in
+                    original format.
+        '''
+        raise NotImplementedError("abstract function")
+
+
+class DetectionDatasetBase(DatasetBase, MultiModalDatasetMixin):
+    """
+    This class defines basic interface for object detection datasets
+    """
 
     VALID_OBJ_CLASSES: Enum
     '''
@@ -238,54 +307,11 @@ class DetectionDatasetBase(DatasetBase):
         :param trainval_random: whether select the train/val split randomly. See
                             documentation of :func:`split_trainval` for detail.
         """
-        super().__init__(base_path, inzip=inzip, phase=phase,
-                         trainval_split=trainval_split, trainval_random=trainval_random)
-
-    def __len__(self) -> int:
-        '''
-        Return the total number of frames (in the given split)
-        '''
-        raise NotImplementedError("abstract function")
-
-    def lidar_data(self,
-                   idx: Union[int, tuple],
-                   names: Optional[Union[str, List[str]]] = None
-                   ) -> Union[NdArray, List[NdArray]]:
-        '''
-        Return the lidar point cloud data
-
-        :param names: name of requested lidar sensors. The default sensor is
-                      the first element in :attr:`VALID_LIDAR_NAMES`.
-        :param idx: index of requested lidar frames
-        '''
-        raise NotImplementedError("abstract function")
-
-    def camera_data(self, idx: Union[int, tuple],
-                    names: Optional[Union[str, List[str]]] = None
-                    ) -> Union[Image, List[Image]]:
-        '''
-        Return the camera image data
-
-        :param names: name of requested camera sensors. The default sensor is
-                      the first element in :attr:`VALID_CAM_NAMES`.
-        :param idx: index of requested image frames
-        '''
-        raise NotImplementedError("abstract function")
-
-    def calibration_data(self, idx: Union[int, tuple],
-            raw: Optional[bool] = None) -> Union[TransformSet, Any]:
-        '''
-        Return the calibration data
-
-        :param idx: index of requested frame
-        :param raw: if false, converted :class:`d3d.abstraction.TransformSet`
-                    will be returned, otherwise raw data will be returned in
-                    original format.
-        '''
-        raise NotImplementedError("abstract function")
+        DatasetBase.__init__(self, base_path, inzip=inzip, phase=phase,
+            trainval_split=trainval_split, trainval_random=trainval_random)
 
     def annotation_3dobject(self, idx: Union[int, tuple],
-            raw: Optional[bool] = None) -> Union[Target3DArray, Any]:
+                            raw: Optional[bool] = None) -> Union[Target3DArray, Any]:
         '''
         Return list of converted ground truth targets in lidar frame.
 
@@ -293,15 +319,6 @@ class DetectionDatasetBase(DatasetBase):
         :param raw: if false, targets will be converted to d3d
                     :class:`d3d.abstraction.Target3DArray` format,
                     otherwise raw data will be returned in original format
-        '''
-        raise NotImplementedError("abstract function")
-
-    def identity(self, idx: int) -> tuple:
-        '''
-        Return something that can track the data back to original dataset. The result tuple can be passed
-            to any accessors above and directly access given data.
-
-        :param idx: index of requested frame to be parsed
         '''
         raise NotImplementedError("abstract function")
 
@@ -315,23 +332,22 @@ class DetectionDatasetBase(DatasetBase):
         for i in trange(len(self), desc="Analyzing"):
             for obj in self.annotation_3dobject(i):
                 dimensions[obj.tag_top].append(obj.dimension)
-        mean_dimensions = {k: np.mean(v, axis=0) for k, v in dimensions.items()}
+        mean_dimensions = {k: np.mean(v, axis=0)
+                           for k, v in dimensions.items()}
         return dict(mean_dimension=mean_dimensions)
 
-class TrackingDatasetBase(DetectionDatasetBase):
-    """
-    Tracking dataset is similarly defined with detection dataset. The two major differences are
-    1. Tracking dataset use (sequence_id, frame_id) as identifier.
-    2. Tracking dataset provide unique object id across time frames.
-    """
 
+class SequenceDatasetBase(DatasetBase):
+    """
+    This class defines basic interface for datasets of sequences
+    """
     def __init__(self,
                  base_path: Union[str, Path],
                  inzip: bool = False,
                  phase: str = "training",
                  trainval_split: Union[float, List[int]] = 1.,
                  trainval_random: Union[bool, int, str] = False,
-                 trainval_byseq = False,
+                 trainval_byseq=False,
                  nframes: int = 0):
         """
         :param base_path: directory containing the zip files, or the required data
@@ -348,6 +364,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
             * If it's zero, then it act like object detection dataset, which means the methods will return unpacked data
         :param trainval_byseq: Whether split trainval partitions by sequences instead of frames
         """
+        del trainval_byseq
         super().__init__(base_path, inzip=inzip, phase=phase,
                          trainval_split=trainval_split, trainval_random=trainval_random)
         self.nframes = abs(nframes)
@@ -360,6 +377,65 @@ class TrackingDatasetBase(DetectionDatasetBase):
         :return: (seq_id, frame_idx) where frame_idx is the index of starting frame
         '''
         raise NotImplementedError("_locate_frame is not implemented!")
+
+    def identity(self, idx: int) -> Union[tuple, List[tuple]]:
+        '''
+        Return something that can track the data back to original dataset
+
+        :param idx: index of requested frame to be parsed
+        :return: if :obj:`nframes` > 0, then the function return a list of ids
+                 which are consistent with other functions.
+        '''
+        raise NotImplementedError("abstract function")
+
+    @property
+    def sequence_sizes(self) -> Dict[Any, int]:
+        '''
+        Return the mapping from sequence id to sequence sizes
+        '''
+        raise NotImplementedError("abstract function")
+
+    @property
+    def sequence_ids(self) -> List[Any]:
+        '''
+        Return the list of sequence ids
+        '''
+        raise NotImplementedError("abstract function")
+
+    def timestamp(self,
+                  idx: Union[int, tuple],
+                  names: Optional[Union[str, List[str]]] = None
+                  ) -> Union[int, List[int]]:
+        '''
+        Return the timestamp of frame specified by the index, represented by
+        Unix timestamp in macroseconds (usually 16 digits integer)
+
+        :param idx: index of requested frame
+        :param names: specify the sensor whose pose is requested. This option
+                      only make sense when the dataset contains separate
+                      timestamps for data from each sensor.
+        '''
+        raise NotImplementedError("abstract function")
+
+    def intermediate_data(self, idx: Union[int, tuple],
+                          names: Optional[Union[str, List[str]]] = None,
+                          ninter_frames: int = 1) -> dict:
+        '''
+        Return the intermediate data (and annotations) between keyframes. For
+        key frames data, please use corresponding function to load them
+
+        :param idx: index of requested data frames
+        :param names: name of requested sensors.
+        :param ninter_frames: number of intermediate frames. If set to None,
+                              then all frames will be returned.
+        '''
+        return []
+
+
+class MultiModalSequenceDatasetMixin:
+    """
+    This class defines basic interface for multi-modal datasets of sequences
+    """
 
     def lidar_data(self,
                    idx: Union[int, tuple],
@@ -395,7 +471,7 @@ class TrackingDatasetBase(DetectionDatasetBase):
         raise NotImplementedError("abstract function")
 
     def calibration_data(self, idx: Union[int, tuple],
-            raw: Optional[bool] = False) -> Union[TransformSet, Any]:
+                         raw: Optional[bool] = False) -> Union[TransformSet, Any]:
         '''
         Return the calibration data. Notices that we assume the calibration is
         fixed among one squence, so it always return a single object.
@@ -407,24 +483,18 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def intermediate_data(self, idx: Union[int, tuple],
-            names: Optional[Union[str, List[str]]] = None,
-            ninter_frames: int = 1) -> dict:
-        '''
-        Return the intermediate data (and annotations) between keyframes. For
-        key frames data, please use corresponding function to load them
 
-        :param idx: index of requested data frames
-        :param names: name of requested sensors.
-        :param ninter_frames: number of intermediate frames. If set to None,
-                              then all frames will be returned.
-        '''
-        return []
+class TrackingDatasetBase(DetectionDatasetBase, MultiModalSequenceDatasetMixin):
+    """
+    Tracking dataset is similarly defined with detection dataset. The two major differences are
+    1. Tracking dataset use (sequence_id, frame_id) as identifier.
+    2. Tracking dataset provide unique object id across time frames.
+    """
 
     def annotation_3dobject(self,
                             idx: Union[int, tuple],
                             raw: Optional[bool] = False
-        ) -> Union[Target3DArray, List[Target3DArray]]:
+                            ) -> Union[Target3DArray, List[Target3DArray]]:
         '''
         Return list of converted ground truth targets in lidar frame.
 
@@ -435,21 +505,11 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def identity(self, idx: int) -> Union[tuple, List[tuple]]:
-        '''
-        Return something that can track the data back to original dataset
-
-        :param idx: index of requested frame to be parsed
-        :return: if :obj:`nframes` > 0, then the function return a list of ids
-                 which are consistent with other functions.
-        '''
-        raise NotImplementedError("abstract function")
-
     def pose(self,
              idx: Union[int, tuple],
              raw: Optional[bool] = False,
              names: Optional[Union[str, List[str]]] = None
-            ) -> Union[EgoPose, Any]:
+             ) -> Union[EgoPose, Any]:
         '''
         Return (relative) pose of the vehicle for the frame. The base frame should be ground attached
         which means the base frame will follow a East-North-Up axis order.
@@ -465,50 +525,20 @@ class TrackingDatasetBase(DetectionDatasetBase):
         '''
         raise NotImplementedError("abstract function")
 
-    def timestamp(self,
-                  idx: Union[int, tuple],
-                  names: Optional[Union[str, List[str]]] = None
-                 ) -> Union[int, List[int]]:
-        '''
-        Return the timestamp of frame specified by the index, represented by
-        Unix timestamp in macroseconds (usually 16 digits integer)
-
-        :param idx: index of requested frame
-        :param names: specify the sensor whose pose is requested. This option
-                      only make sense when the dataset contains separate
-                      timestamps for data from each sensor.
-        '''
-        raise NotImplementedError("abstract function")
-
-    @property
-    def sequence_sizes(self) -> Dict[Any, int]:
-        '''
-        Return the mapping from sequence id to sequence sizes
-        '''
-        raise NotImplementedError("abstract function")
-
-    @property
-    def sequence_ids(self) -> List[Any]:
-        '''
-        Return the list of sequence ids
-        '''
-        raise NotImplementedError("abstract function")
-
-
 # Some utilities for implementing tracking dataset
 # ref: https://stackoverflow.com/questions/2365701/decorating-python-class-methods-how-do-i-pass-the-instance-to-the-decorator
 
 
 def expand_idx(func):
     '''
-    This decorator wraps TrackingDatasetBase member functions with index input. It will delegates the situation
+    This decorator wraps SequenceDatasetBase member functions with index input. It will delegates the situation
         where self.nframe > 0 to the original function so that the original function can support only one index.
 
     There is a parameter :obj:bypass` added to decorated function, which is used to call
     the original underlying method without expansion.
     '''
     @functools.wraps(func)
-    def wrapper(self: TrackingDatasetBase, idx: Union[int, tuple], *kargs, **kwargs):
+    def wrapper(self: SequenceDatasetBase, idx: Union[int, tuple], *kargs, **kwargs):
         bypass = kwargs.pop("bypass", False)
 
         if isinstance(idx, int):
@@ -524,6 +554,7 @@ def expand_idx(func):
 
     return wrapper
 
+
 def expand_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
     '''
     This decorator works similar to expand_idx with support to distribute frame names.
@@ -534,7 +565,7 @@ def expand_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
     def decorator(func):
         default_names = inspect.signature(func).parameters["names"].default
         assert default_names != inspect.Parameter.empty, \
-               "The decorated function should have default names value"
+            "The decorated function should have default names value"
 
         @functools.wraps(func)
         def wrapper(self: TrackingDatasetBase, idx, names=default_names, *kargs, **kwargs):
@@ -549,6 +580,7 @@ def expand_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
 
     return decorator
 
+
 def expand_idx_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
     '''
     This decorator works similar to expand_idx with support to distribute both indices and
@@ -562,10 +594,10 @@ def expand_idx_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
     def decorator(func):
         default_names = inspect.signature(func).parameters["names"].default
         assert default_names != inspect.Parameter.empty, \
-               "The decorated function should have default names value"
+            "The decorated function should have default names value"
 
         @functools.wraps(func)
-        def wrapper(self: TrackingDatasetBase, idx, names=default_names, *kargs, **kwargs):
+        def wrapper(self: SequenceDatasetBase, idx, names=default_names, *kargs, **kwargs):
             bypass = kwargs.pop("bypass", False)
 
             if isinstance(idx, int):
@@ -577,7 +609,8 @@ def expand_idx_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
             results = []
             for name in names:
                 if self.nframes == 0 or bypass:
-                    results.append(func(self, (seq_id, frame_idx), names=name, *kargs, **kwargs))
+                    results.append(func(self, (seq_id, frame_idx),
+                                   names=name, *kargs, **kwargs))
                 else:
                     results.append([func(self, (seq_id, idx), names=name, *kargs, **kwargs)
                                     for idx in range(frame_idx, frame_idx + self.nframes + 1)])
@@ -586,6 +619,7 @@ def expand_idx_name(valid_names: List[str]) -> Callable[[Callable], Callable]:
         return wrapper
 
     return decorator
+
 
 class NumberPool:
     '''
@@ -615,11 +649,12 @@ class NumberPool:
             self._single_thread = True
         else:
             self._single_thread = False
-            self._ppool = Pool(processes, initializer=tqdm.set_lock, # pool of processes
-                            initargs=(tqdm.get_lock(),), *args, **kargs)
-            self._npool = Manager().Array('B', [0] * processes) # pool of position number
-            self._nlock = Manager().Lock() # lock for self._npool
-            self._nqueue = 0 # number of tasks in pool
+            self._ppool = Pool(processes, initializer=tqdm.set_lock,  # pool of processes
+                               initargs=(tqdm.get_lock(),), *args, **kargs)
+            self._npool = Manager().Array(
+                'B', [0] * processes)  # pool of position number
+            self._nlock = Manager().Lock()  # lock for self._npool
+            self._nqueue = 0  # number of tasks in pool
             self._offset = offset
             self._complete_event = Event()
 
@@ -660,12 +695,12 @@ class NumberPool:
     def wait_for_once(self, margin: int = 0):
         """
         Block current thread and wait for one available process
-        
+
         :param margin: Define when a process is available. The method will
                        return when there is :obj:`nprocess + margin` processes
                        in the pool.
         """
-        if self._nqueue >= len(self._npool) + margin: # only wait if the pool is full
+        if self._nqueue >= len(self._npool) + margin:  # only wait if the pool is full
             self._complete_event.wait()
         self._complete_event.clear()
 

@@ -62,6 +62,9 @@ class KittiObjectClass(Enum):
     Tram = auto()
     Misc = auto()
 
+class SemanticKittiClass(Enum):
+    pass
+
 # ========== Loaders ==========
 
 
