@@ -484,7 +484,7 @@ class MultiModalSequenceDatasetMixin:
         raise NotImplementedError("abstract function")
 
 
-class TrackingDatasetBase(DetectionDatasetBase, MultiModalSequenceDatasetMixin):
+class TrackingDatasetBase(SequenceDatasetBase, MultiModalSequenceDatasetMixin):
     """
     Tracking dataset is similarly defined with detection dataset. The two major differences are
     1. Tracking dataset use (sequence_id, frame_id) as identifier.

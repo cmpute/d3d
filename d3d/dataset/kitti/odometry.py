@@ -4,6 +4,7 @@ from pathlib import Path
 from zipfile import ZipFile
 import numpy as np
 from scipy.spatial.transform import Rotation
+from addict import Dict as edict
 
 from d3d.abstraction import EgoPose, TransformSet
 from d3d.dataset.base import DatasetBase, expand_idx, expand_idx_name, split_trainval_seq
@@ -11,23 +12,6 @@ from d3d.dataset.kitti import utils
 from d3d.dataset.kitti.utils import SemanticKittiClass
 from d3d.dataset.zip import PatchedZipFile
 from sortedcontainers import SortedDict
-
-# TODO: load bounding box from raw data
-"""
-Nr.     Sequence name     Start   End
----------------------------------------
-00: 2011_10_03_drive_0027 000000 004540
-01: 2011_10_03_drive_0042 000000 001100
-02: 2011_10_03_drive_0034 000000 004660
-03: 2011_09_26_drive_0067 000000 000800
-04: 2011_09_30_drive_0016 000000 000270
-05: 2011_09_30_drive_0018 000000 002760
-06: 2011_09_30_drive_0020 000000 001100
-07: 2011_09_30_drive_0027 000000 001100
-08: 2011_09_30_drive_0028 001100 005170
-09: 2011_09_30_drive_0033 000000 001590
-10: 2011_09_30_drive_0034 000000 001200
-"""
 
 
 class KittiOdometryLoader(DatasetBase):
@@ -112,7 +96,7 @@ class KittiOdometryLoader(DatasetBase):
         self._image_size_cache = {} # used to store the image size (for each sequence)
         self._pose_cache = {} # used to store parsed pose data
         self._calib_cache = {} # used to store parsed calibration data
-        self._time_cache = {}
+        self._timestamp_cache = {}
 
     def _locate_frame(self, idx):
         idx = self.frames[idx] # use underlying frame index
@@ -183,6 +167,7 @@ class KittiOdometryLoader(DatasetBase):
         return self._load_calib(seq_id, raw)
 
     def _preload_poses(self, seq_id):
+        # TODO: also support loading from SemanticKITTI archive
         if seq_id in self._pose_cache:
             return
 
@@ -248,39 +233,107 @@ class KittiOdometryLoader(DatasetBase):
 
     @expand_idx
     def pose(self, idx, raw=False):
-        # TODO: the matrix is actually in camera coordinate (see below)
-        """
-        The folder 'poses' contains the ground truth poses (trajectory) for the
-        first 11 sequences. This information can be used for training/tuning your
-        method. Each file xx.txt contains a N x 12 table, where N is the number of
-        frames of this sequence. Row i represents the i'th pose of the left camera
-        coordinate system (i.e., z pointing forwards) via a 3x4 transformation
-        matrix.
-        """
-
         seq_id, frame_idx = idx
 
         self._preload_poses(seq_id)
         rt = self._pose_cache[seq_id][frame_idx]
         if raw:
             return rt
-        return EgoPose(-rt[:3, 3], Rotation.from_matrix(rt[:3, :3]))
+
+        # the pose matrix is represented in the left camera coordinate system
+        cam2velo = self.calibration_data(idx).get_extrinsic(None, "cam0")
+        rt = cam2velo[:3,:3].dot(rt)
+        return EgoPose(rt[:3, 3], Rotation.from_matrix(rt[:3, :3]))
 
     @expand_idx
     def identity(self, idx):
         return idx
 
+    @expand_idx
+    def identity_in_raw(self, idx):
+        '''
+        This function will return the corresponding identity in the KITTI raw dataset.
+        '''
+        seq_map = {
+             0: "2011_10_03_drive_0027",
+             1: "2011_10_03_drive_0042",
+             2: "2011_10_03_drive_0034",
+             3: "2011_09_26_drive_0067",
+             4: "2011_09_30_drive_0016",
+             5: "2011_09_30_drive_0018",
+             6: "2011_09_30_drive_0020",
+             7: "2011_09_30_drive_0027",
+             8: "2011_09_30_drive_0028",
+             9: "2011_09_30_drive_0033",
+            10: "2011_09_30_drive_0034",
+        }
+
+        seq_id, frame_id = idx
+        if seq_id not in seq_map:
+            raise ValueError("Sequence mapping is not available for testing data!")
+        if seq_id == 8:
+            frame_id += 1100
+        return seq_map[seq_id] + "_sync", frame_id
+
     @expand_idx_name(VALID_LIDAR_NAMES)
     def annotation_3dpoints(self, idx, names='velo'):
-        pass
+        seq_id, frame_idx = idx
+        assert names == 'velo'
+
+        fname = Path('dataset', 'sequences', "%02d" % seq_id, 'labels', '%06d.label' % frame_idx)
+        if self._return_file_path:
+            return self.base_path / fname
+
+        if self.inzip:
+            with PatchedZipFile(self.base_path / "data_odometry_labels.zip", to_extract=fname) as ar:
+                buffer = ar.read(str(fname))
+        else:
+            buffer = (self.base_path / fname).read_bytes()
+        label = np.frombuffer(buffer, dtype='u4')
+
+        return edict(semantic=label)
+
+    def _preload_timestamp(self, seq_id):
+        if seq_id in self._timestamp_cache:
+            return
+
+        fname = Path('dataset', 'sequences', '%02d' % seq_id, 'times.txt')
+
+        if self.inzip:
+            with PatchedZipFile(self.base_path / "data_odometry_calib.zip", to_extract=fname) as data:
+                timelist = utils.load_timestamps(data, fname).astype(int) // 1000
+        else:
+            timelist = utils.load_timestamps(self.base_path, fname).astype(int) // 1000
+        self._timestamp_cache[seq_id] = timelist
 
     @expand_idx_name(VALID_LIDAR_NAMES[:1])
     def timestamp(self, idx, names="velo"):
-        pass
+        assert names == "velo"
+        assert not self._return_file_path, "The timestamp is not stored in single file!"
+        seq_id, frame_idx = idx
+        self._preload_timestamp(seq_id)
+        return self._timestamp_cache[seq_id][frame_idx]
 
 if __name__ == "__main__":
     loader = KittiOdometryLoader("/mnt/storage8t/datasets/kitti", inzip=True)
     print(loader.pose(0))
     print(loader.camera_data(0))
-    print(loader.lidar_data(0))
+    print(loader.lidar_data(0).shape)
     print(loader.calibration_data(0))
+    print(loader.identity_in_raw(0))
+    print(loader.timestamp(0))
+    print(loader.annotation_3dpoints(0).semantic.shape)
+
+    # from d3d.dataset.kitti.raw import KittiRawLoader
+    # rloader = KittiRawLoader("/mnt/storage8t/datasets/kitti", inzip=True)
+    # print(rloader.calibration_data(loader.identity_in_raw(0)))
+    
+    # print("Pose @ 100:", loader.pose(0))
+    # print("Pose @ 100:", loader.pose(100))
+    # p0 = rloader.pose(loader.identity_in_raw(0))
+    # p1 = rloader.pose(loader.identity_in_raw(100))
+    # print("Raw pose @ 0:", p0)
+    # print("Raw pose @ 100:", p1)
+    # pdiff = p1.homo().dot(np.linalg.inv(p0.homo()))
+    # rdiff = Rotation.from_matrix(pdiff[:3,:3])
+    # print("Rotation:", rdiff.as_euler("xyz"))

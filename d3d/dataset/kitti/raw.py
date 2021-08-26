@@ -176,7 +176,7 @@ class KittiRawLoader(TrackingDatasetBase):
         velo_to_cam[:3, 3] = filedata['velo_to_cam']['T']
         for i in range(4):
             S = filedata['cam_to_cam']['S_rect_%02d' % i].tolist()
-            # TODO: here we have different R_rect's, what's the difference of them against the one used in object detection
+            # TODO: here we have different R_rect's, what's the difference of them against the one used in object detection?
             R = filedata['cam_to_cam']['R_rect_%02d' % i].reshape(3, 3)
             P = filedata['cam_to_cam']['P_rect_%02d' % i].reshape(3, 4)
             intri, offset = P[:, :3], P[:, 3]

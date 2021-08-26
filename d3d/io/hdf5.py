@@ -1,4 +1,4 @@
-from d3d.dataset.base import MultiModalDatasetMixin, MultiModalSequenceDatasetMixin
+from d3d.dataset.base import DatasetBase, SequenceDatasetBase
 from pathlib import Path
 from typing import Union, Optional, List
 import tqdm
@@ -8,7 +8,7 @@ try:
 except ImportError:
     raise ImportError("h5py is required for this module!")
 
-def dump_dataset(dataset: MultiModalDatasetMixin,
+def dump_dataset(dataset: DatasetBase,
                  out_path: Union[str, Path],
                  indices: Optional[Union[int, List[int], slice]] = None,
                  size_limit: Optional[int] = None,
@@ -25,7 +25,7 @@ def dump_dataset(dataset: MultiModalDatasetMixin,
 
     print("Successfully created dataset")
 
-def dump_sequence_dataset(dataset: MultiModalSequenceDatasetMixin,
+def dump_sequence_dataset(dataset: SequenceDatasetBase,
                           out_path: Union[str, Path],
                           sequences: Optional[Union[int, List[int]]] = None,
                           size_limit: Optional[int] = None,
