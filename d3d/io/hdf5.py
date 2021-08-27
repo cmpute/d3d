@@ -27,7 +27,7 @@ def dump_dataset(dataset: DatasetBase,
 
 def dump_sequence_dataset(dataset: SequenceDatasetBase,
                           out_path: Union[str, Path],
-                          sequences: Optional[Union[int, List[int]]] = None,
+                          sequence: Optional[Union[int, List[int]]] = None,
                           size_limit: Optional[int] = None,
                           root_name: str = "dataset"):
     pass

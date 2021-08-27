@@ -163,7 +163,15 @@ class NuscenesLoader(TrackingDatasetBase):
         # TODO(v0.5): see https://jdhao.github.io/2019/02/23/crop_rotated_rectangle_opencv/ for image cropping
         raise NotImplementedError()
 
-    def _load_lidar_data(self, seq_id, fname):
+    @expand_idx_name(VALID_LIDAR_NAMES)
+    def lidar_data(self, idx, names='lidar_top', formatted=False):
+        seq_id, frame_idx = idx
+        assert names == 'lidar_top', "Only lidar_top is valid in Nuscenes dataset"
+        fname = "lidar_top/%03d.pcd" % frame_idx
+
+        if self._return_file_path:
+            return self.base_path / seq_id / fname
+
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
                 buffer = ar.read(fname)
@@ -171,26 +179,12 @@ class NuscenesLoader(TrackingDatasetBase):
             buffer = (self.base_path / seq_id / fname).read_bytes()
 
         scan = np.frombuffer(buffer, dtype=np.float32)
-        scan = np.copy(scan.reshape(-1, 5)) # (x, y, z, intensity, ring index)
-        return scan
+        scan = np.copy(scan.reshape(-1, 5))  # (x, y, z, intensity, ring index)
 
-    @expand_idx_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='lidar_top'):
-        seq_id, frame_idx = idx
-        assert names == 'lidar_top', "Only lidar_top is valid in Nuscenes dataset"
-        fname = "lidar_top/%03d.pcd" % frame_idx
-
-        if self._return_file_path:
-            return self.base_path / seq_id / fname
-        else:
-            return self._load_lidar_data(seq_id, fname)
-
-    def _load_camera_data(self, seq_id, fname):
-        if self.inzip:
-            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
-                return Image.open(ar.open(fname)).convert('RGB')
-        else:
-            return Image.open(self.base_path / seq_id / fname)
+        if not formatted:
+            return scan
+        columns = ['x', 'y', 'z', 'intensity', 'ring_index']
+        return scan.view([(c, 'f4') for c in columns])
 
     @expand_idx_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names=None):
@@ -199,8 +193,12 @@ class NuscenesLoader(TrackingDatasetBase):
 
         if self._return_file_path:
             return self.base_path / seq_id / fname
+
+        if self.inzip:
+            with PatchedZipFile(self.base_path / f"{seq_id}.zip", to_extract=fname) as ar:
+                return Image.open(ar.open(fname)).convert('RGB')
         else:
-            return self._load_camera_data(seq_id, fname)
+            return Image.open(self.base_path / seq_id / fname)
 
     @expand_idx_name(VALID_CAM_NAMES + VALID_LIDAR_NAMES)
     def intermediate_data(self, idx, names=None, ninter_frames=None):

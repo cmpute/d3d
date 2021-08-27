@@ -208,7 +208,7 @@ class KittiObjectLoader(DetectionDatasetBase):
         return image
 
     @expand_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='velo'):
+    def lidar_data(self, idx, names='velo', formatted=False):
         assert names == 'velo'
         uidx = self._parse_idx(idx)
 
@@ -218,9 +218,9 @@ class KittiObjectLoader(DetectionDatasetBase):
 
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_object_velodyne.zip", to_extract=fname) as source:
-                return utils.load_velo_scan(source, fname)
+                return utils.load_velo_scan(source, fname, formatted=formatted)
         else:
-            return utils.load_velo_scan(self.base_path, fname)
+            return utils.load_velo_scan(self.base_path, fname, formatted=formatted)
 
     def _load_calib(self, basepath, uidx, raw=False):
         # load the calibration file

@@ -232,7 +232,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
         return image
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='velo'):
+    def lidar_data(self, idx, names='velo', formatted=False):
         seq_id, frame_idx = idx
         
         # This is the problem in KITTI dataset itself
@@ -246,9 +246,9 @@ class KittiTrackingLoader(TrackingDatasetBase):
 
         if self.inzip:
             with PatchedZipFile(self.base_path / "data_tracking_velodyne.zip", to_extract=fname) as source:
-                return utils.load_velo_scan(source, fname)
+                return utils.load_velo_scan(source, fname, formatted=formatted)
         else:
-            return utils.load_velo_scan(self.base_path, fname)
+            return utils.load_velo_scan(self.base_path, fname, formatted=formatted)
 
     def _load_calib(self, seq, raw=False):
         # load the calibration file data

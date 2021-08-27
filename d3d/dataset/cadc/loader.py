@@ -61,7 +61,7 @@ class CADCDLoader(TrackingDatasetBase):
     VALID_OBJ_CLASSES = None
     _frame2folder = {
         "camera_F": "image_00", "camera_FR": "image_01", "camera_RF": "image_02", "camera_RB": "image_03",
-        "camera_B": "image_04", "cmaera_LB": "image_05", "camera_LF": "image_06", "camera_FL": "image_07",
+        "camera_B": "image_04", "camera_LB": "image_05", "camera_LF": "image_06", "camera_FL": "image_07",
         "lidar": "lidar_points", "novatel": "novatel"
     }
 
@@ -271,7 +271,7 @@ class CADCDLoader(TrackingDatasetBase):
             return utils.load_image(drive_path, fname)
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names='lidar'):
+    def lidar_data(self, idx, names='lidar', formatted=False):
         seq_id, frame_idx = idx
         date, drive = self._split_seqid(seq_id)
 
@@ -282,9 +282,9 @@ class CADCDLoader(TrackingDatasetBase):
 
         if self.inzip:
             with PatchedZipFile(drive_path / f"{self.datatype}.zip", to_extract=fname) as source:
-                return utils.load_velo_scan(source, fname)
+                return utils.load_velo_scan(source, fname, formatted=formatted)
         else:
-            return utils.load_velo_scan(drive_path, fname)
+            return utils.load_velo_scan(drive_path, fname, formatted=formatted)
 
     @expand_idx
     def identity(self, idx):

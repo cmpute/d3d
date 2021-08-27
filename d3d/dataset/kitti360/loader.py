@@ -201,7 +201,7 @@ class KITTI360Loader(TrackingDatasetBase):
             return load_image(self.base_path / "data_2d_raw", fname, gray=False)
 
     @expand_idx_name(['velo'])
-    def lidar_data(self, idx, names='velo'):
+    def lidar_data(self, idx, names='velo', formatted=False):
         assert names == 'velo'
         seq_id, frame_idx = idx
 
@@ -212,9 +212,9 @@ class KITTI360Loader(TrackingDatasetBase):
 
         if self.inzip:
             with PatchedZipFile(self.base_path / f"{seq_id}_velodyne.zip", to_extract=fname) as source:
-                return load_velo_scan(source, fname)
+                return load_velo_scan(source, fname, formatted=formatted)
         else:
-            return load_velo_scan(self.base_path / "data_3d_raw", fname)
+            return load_velo_scan(self.base_path / "data_3d_raw", fname, formatted=formatted)
             
     def _preload_3dobjects(self, seq_id):
         assert self.phase in ["training", "validation"], "Testing set doesn't contains label"

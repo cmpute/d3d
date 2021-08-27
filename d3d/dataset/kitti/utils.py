@@ -330,21 +330,20 @@ def load_image(basepath, file, gray=False):
         return Image.open(basepath.open(str(file))).convert('L' if gray else 'RGB')
 
 
-def load_velo_scan(basepath, file, binary=True):
+def load_velo_scan(basepath, file, formatted=False):
     """Load and parse a kitti point cloud file. Accept path or file object as basepath"""
-    if binary:
-        if isinstance(basepath, (str, Path)):
-            scan = np.fromfile(Path(basepath, file), dtype=np.float32)
-        else:
-            with basepath.open(str(file)) as fin:
-                buffer = fin.read()
-            scan = np.frombuffer(buffer, dtype=np.float32)
+    if isinstance(basepath, (str, Path)):
+        scan = np.fromfile(Path(basepath, file), dtype=np.float32)
     else:
-        if isinstance(basepath, (str, Path)):
-            scan = np.loadtxt(Path(basepath, file), dtype=np.float32)
-        else:
-            scan = np.loadtxt(basepath.open(str(file)), dtype=np.float32)
-    return scan.reshape((-1, 4))
+        with basepath.open(str(file)) as fin:
+            buffer = fin.read()
+        scan = np.frombuffer(buffer, dtype=np.float32)
+    scan = scan.reshape((-1, 4))
+
+    if not formatted:
+        return scan
+    columns = ['x', 'y', 'z', 'intensity']
+    return scan.view([(c, 'f4') for c in columns])
 
 # ===== Raw data tracklets =====
 class _TrackletPose(object):

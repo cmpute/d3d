@@ -107,7 +107,7 @@ class WaymoLoader(TrackingDatasetBase):
         raise ValueError("Index larger than dataset size")
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def lidar_data(self, idx, names=None):
+    def lidar_data(self, idx, names=None, formatted=False):
         # XXX: support return ri2 data
         seq_id, frame_idx = idx
 
@@ -120,13 +120,17 @@ class WaymoLoader(TrackingDatasetBase):
                 cloud = np.frombuffer(ar.read(fname), dtype='f4')
         else:
             cloud = np.fromfile(self.base_path / seq_id / fname, dtype='f4')
-        cloud = cloud.reshape(-1, 5) # x, y, z, intensity, elongation
+        cloud = cloud.reshape(-1, 5)  # (x, y, z, intensity, elongation)
 
         # point cloud is represented in base frame in Waymo dataset
         calib = self.calibration_data(idx)
         rt = calib.extrinsics[names]
         cloud[:,:3] = cloud[:,:3].dot(rt[:3,:3].T) + rt[:3, 3]
-        return cloud
+
+        if not formatted:
+            return cloud
+        columns = ['x', 'y', 'z', 'intensity', 'elongation']
+        return cloud.view([(c, 'f4') for c in columns])
 
     @expand_idx_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names=None):

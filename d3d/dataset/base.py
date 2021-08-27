@@ -232,26 +232,27 @@ class MultiModalDatasetMixin:
     """
     This class defines basic interface for multi-modal datasets
     """
-    VALID_CAM_NAMES: list
+    VALID_CAM_NAMES: List[str]
     '''
     List of valid sensor names of camera
     '''
 
-    VALID_LIDAR_NAMES: list
+    VALID_LIDAR_NAMES: List[str]
     '''
     List of valid sensor names of lidar
     '''
 
     def lidar_data(self,
                    idx: Union[int, tuple],
-                   names: Optional[Union[str, List[str]]] = None
-                   ) -> Union[NdArray, List[NdArray]]:
+                   names: Optional[Union[str, List[str]]] = None,
+                   formatted: bool = False) -> Union[NdArray, List[NdArray]]:
         '''
         Return the lidar point cloud data
 
         :param names: name of requested lidar sensors. The default sensor is
                       the first element in :attr:`VALID_LIDAR_NAMES`.
         :param idx: index of requested lidar frames
+        :param formatted: if true, the point cloud wrapped in a numpy record array will be returned 
         '''
         raise NotImplementedError("abstract function")
 
@@ -439,8 +440,8 @@ class MultiModalSequenceDatasetMixin:
 
     def lidar_data(self,
                    idx: Union[int, tuple],
-                   names: Optional[Union[str, List[str]]] = None
-                   ) -> Union[NdArray, List[NdArray], List[List[NdArray]]]:
+                   names: Optional[Union[str, List[str]]] = None,
+                   formatted: bool = False) -> Union[NdArray, List[NdArray], List[List[NdArray]]]:
         '''
         If multiple frames are requested, the results will be a list of list. Outer list
         corresponds to frame names and inner list corresponds to time sequence. So
@@ -449,6 +450,7 @@ class MultiModalSequenceDatasetMixin:
         :param names: name of requested lidar sensors. The default frame is
                       the first element in :attr:`VALID_LIDAR_NAMES`.
         :param idx: index of requested lidar frames
+        :param formatted: if true, the point cloud wrapped in a numpy record array will be returned
 
             * If single index is given, then the frame indexing is done on the whole dataset with trainval split
             * If a tuple is given, it's considered to be a unique id of the frame (from :meth:`identity` method),
