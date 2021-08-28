@@ -271,6 +271,10 @@ class WaymoLoader(TrackingDatasetBase):
         return EgoPose(-rt[:3, 3], Rotation.from_matrix(rt[:3, :3]))
 
     @property
+    def pose_name(self):
+        return 'vehicle'
+
+    @property
     def sequence_ids(self):
         return list(self._metadata.keys())
 

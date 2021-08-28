@@ -527,6 +527,14 @@ class TrackingDatasetBase(SequenceDatasetBase, MultiModalSequenceDatasetMixin):
         '''
         raise NotImplementedError("abstract function")
 
+    @property
+    def pose_name(self) -> str:
+        '''
+        Return the sensor frame name whose coordinate the pose is reported in. This frame can be different from
+        the default frame in the calibration TransformSet.
+        '''
+        raise NotImplementedError("abstract property")
+
 # Some utilities for implementing tracking dataset
 # ref: https://stackoverflow.com/questions/2365701/decorating-python-class-methods-how-do-i-pass-the-instance-to-the-decorator
 

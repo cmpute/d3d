@@ -619,6 +619,10 @@ class KITTI360Loader(TrackingDatasetBase):
 
         return EgoPose(self._poses_t[seq_id][frame_idx], self._poses_r[seq_id][frame_idx])
 
+    @property
+    def pose_name(self):
+        return 'pose'
+
     @expand_idx_name(['sick'])
     def intermediate_data(self, idx, names='sick', ninter_frames=None, report_semantic=True):
         assert names == 'sick', "Only intermediate data for sick lidar is available in Kitti360!"

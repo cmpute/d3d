@@ -320,3 +320,7 @@ class KittiTrackingLoader(TrackingDatasetBase):
         if raw:
             return raw_pose
         return utils.parse_pose_from_oxt(raw_pose)
+
+    @property
+    def pose_name(self):
+        return 'imu'

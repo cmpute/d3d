@@ -190,6 +190,9 @@ class PinMetadata:
 class TransformSet:
     def __init__(self, base_frame: str): ...
 
+    @property
+    def frames(self) -> List[str]: ...
+
     def set_intrinsic_general(self, frame_id: str,
                               metadata: Union[CameraMetadata, LidarMetadata,
                                               RadarMetadata, PinMetadata]) -> None: ...

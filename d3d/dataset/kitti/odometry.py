@@ -240,10 +240,11 @@ class KittiOdometryLoader(DatasetBase):
         if raw:
             return rt
 
-        # the pose matrix is represented in the left camera coordinate system
-        cam2velo = self.calibration_data(idx).get_extrinsic(None, "cam0")
-        rt = cam2velo[:3,:3].dot(rt)
         return EgoPose(rt[:3, 3], Rotation.from_matrix(rt[:3, :3]))
+
+    @property
+    def pose_name(self):
+        return 'cam0'
 
     @expand_idx
     def identity(self, idx):

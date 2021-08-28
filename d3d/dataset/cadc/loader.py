@@ -151,7 +151,7 @@ class CADCDLoader(TrackingDatasetBase):
             if len(distorts) == 4:
                 distorts.append(0.0)
             calib.set_intrinsic_camera(data.camera_name, P, (data.image_width, data.image_height),
-                distort_coeffs=data.distortion_coefficients.data, intri_matrix=P)
+                distort_coeffs=data.distortion_coefficients.data, intri_matrix=P, rotate=False)
 
         def add_extrinsics(data):
             data = edict(data)
@@ -253,6 +253,10 @@ class CADCDLoader(TrackingDatasetBase):
         if raw:
             return data
         return utils.parse_pose_from_inspvax(data)
+
+    @property
+    def pose_name(self):
+        return 'novatel'
 
     @expand_idx_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names='camera_F'):

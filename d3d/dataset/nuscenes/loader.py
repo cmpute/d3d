@@ -432,6 +432,10 @@ class NuscenesLoader(TrackingDatasetBase):
         t = r.inv().as_matrix().dot(np.array(data['translation']))
         return EgoPose(t, r)
 
+    @property
+    def pose_name(self):
+        return 'ego'
+
     @expand_idx
     def dump_detection_output(self, idx: Union[int, tuple], detections: Target3DArray,
                               fout: Union[str, Path, RawIOBase],

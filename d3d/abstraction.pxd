@@ -147,8 +147,17 @@ cdef class EgoPose:
 
 cdef class TransformSet:
     cdef public str base_frame
+    '''
+    The default frame for the transform set
+    '''
     cdef public dict intrinsics
+    '''
+    This dictionary defines all the valid sensor frames and store their projection matrix (for camera)
+    '''
     cdef public dict intrinsics_meta
+    '''
+    This dictionary defines the related metadata for sensors
+    '''
     cdef public dict extrinsics
 
     cdef bint _is_base(self, str frame)

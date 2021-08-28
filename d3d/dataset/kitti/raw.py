@@ -297,6 +297,10 @@ class KittiRawLoader(TrackingDatasetBase):
             return oxt
         return utils.parse_pose_from_oxt(oxt)
 
+    @property
+    def pose_name(self):
+        return 'imu'
+
     @expand_idx_name(VALID_CAM_NAMES)
     def camera_data(self, idx, names='cam2'):
         seq_id, frame_idx = idx

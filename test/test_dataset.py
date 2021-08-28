@@ -138,11 +138,17 @@ class CommonTrackingDSMixin:
         
         # create transforms
         tf = TransformSet("global")
-        fname1, fname2 = "pose1", "pose2"
-        tf.set_intrinsic_map_pin(fname1)
-        tf.set_intrinsic_map_pin(fname2)
-        tf.set_extrinsic(pose1.homo(), fname1)
-        tf.set_extrinsic(pose2.homo(), fname2)
+        fname1, fname2 = f"{lidar}1", f"{lidar}2"  # TODO(zyxin): use dataset pose_name
+        tf.set_intrinsic_map_pin("pose1")
+        tf.set_intrinsic_map_pin("pose2")
+        tf.set_intrinsic_lidar(fname1)
+        tf.set_intrinsic_lidar(fname2)
+        tf.set_extrinsic(pose1.homo(), "pose1")
+        tf.set_extrinsic(pose2.homo(), "pose2")
+        tf.set_extrinsic(calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar),
+                         frame_from="pose1", frame_to=fname1)
+        tf.set_extrinsic(calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar),
+                         frame_from="pose2", frame_to=fname2)
 
         # make coordinate unified in frame
         targets1 = calib.transform_objects(targets1, lidar)

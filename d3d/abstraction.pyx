@@ -823,7 +823,7 @@ cdef class TransformSet:
         self.intrinsics_meta[frame_id] = metadata
 
     cpdef void set_intrinsic_camera(self, str frame_id, np.ndarray transform, size, bint rotate=True,
-        distort_coeffs=None, np.ndarray intri_matrix=None, float mirror_coeff=float('nan')) except*:
+        distort_coeffs=[], np.ndarray intri_matrix=None, float mirror_coeff=float('nan')) except*:
         '''
         Set camera intrinsics
         :param size: (width, height)
@@ -864,7 +864,7 @@ cdef class TransformSet:
         '''
         P = np.array([[fx, s, cx], [0, fy, cy], [0, 0, 1]])
         self.set_intrinsic_camera(frame_id, P, size,
-            rotate=True, distort_coeffs=np.asarray(distort_coeffs), intri_matrix=P)
+            rotate=True, distort_coeffs=distort_coeffs, intri_matrix=P)
 
     cpdef void set_intrinsic_map_pin(self, str frame_id, lon=float('nan'), lat=float('nan')) except*:
         self.intrinsics[frame_id] = None
