@@ -7,7 +7,7 @@ import numpy as np
 import pcl
 from d3d.abstraction import EgoPose, Target3DArray, TransformSet
 from d3d.dataset.kitti import (KittiObjectClass, KittiObjectLoader,
-                               KittiRawLoader, KittiTrackingLoader)
+                               KittiRawLoader, KittiTrackingLoader, KittiOdometryLoader)
 from d3d.dataset.kitti360.loader import KITTI360Loader
 from d3d.dataset.nuscenes.loader import (NuscenesDetectionClass,
                                          NuscenesLoader, NuscenesObjectClass)
@@ -138,7 +138,7 @@ class CommonTrackingDSMixin:
         
         # create transforms
         tf = TransformSet("global")
-        fname1, fname2 = f"{lidar}1", f"{lidar}2"  # TODO(zyxin): use dataset pose_name
+        fname1, fname2 = f"{lidar}1", f"{lidar}2"
         tf.set_intrinsic_map_pin("pose1")
         tf.set_intrinsic_map_pin("pose2")
         tf.set_intrinsic_lidar(fname1)
@@ -157,7 +157,6 @@ class CommonTrackingDSMixin:
         targets2.frame = fname2
         print("HOMO1", pose1.homo())
         print("HOMO2", pose2.homo())
-        print(tf.get_extrinsic(fname1, fname2))
 
         # visualize both point cloud in frame2
         visualizer = pcl.Visualizer()
@@ -300,22 +299,70 @@ class TestNuscenesDataset(unittest.TestCase, CommonObjectDSMixin, CommonTracking
 @unittest.skipIf(not kitti_location, "Path to kitti not set")
 class TestKittiTrackingDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.oloader = KittiTrackingLoader(kitti_location, inzip=inzip, nframes=0)
-        self.tloader = KittiTrackingLoader(kitti_location, inzip=inzip, nframes=2)
+        self.oloader = KittiTrackingLoader(kitti_location, inzip=inzip, trainval_random=12345, nframes=0)
+        self.tloader = KittiTrackingLoader(kitti_location, inzip=inzip, trainval_random=12345, nframes=5)
 
+@unittest.skipIf(not kitti_location, "Path to kitti not set")
+class TestKittiOdometryDataset(unittest.TestCase):
+    def setUp(self):
+        self.oloader = KittiOdometryLoader(kitti_location, inzip=inzip, trainval_random=12345, nframes=0)
+        self.tloader = KittiOdometryLoader(kitti_location, inzip=inzip, trainval_random=12345, nframes=5)
+
+    def test_point_cloud_temporal_fusion(self):
+        # This function only compare point cloud alignment
+
+        idx = selection or random.randint(0, len(self.tloader))
+        lidar = self.tloader.VALID_LIDAR_NAMES[0]
+
+        # load data
+        clouds = self.tloader.lidar_data(idx, lidar)
+        poses = self.tloader.pose(idx)
+        calib = self.oloader.calibration_data(idx)
+
+        cloud1, cloud2 = clouds[0][:, :4], clouds[-1][:, :4]
+        pose1, pose2 = poses[0], poses[-1]
+        print("START", pose1)
+        print("END", pose2)
+        
+        # create transforms
+        tf = TransformSet("global")
+        fname1, fname2 = f"{lidar}1", f"{lidar}2"
+        tf.set_intrinsic_map_pin("pose1")
+        tf.set_intrinsic_map_pin("pose2")
+        tf.set_intrinsic_lidar(fname1)
+        tf.set_intrinsic_lidar(fname2)
+        tf.set_extrinsic(pose1.homo(), "pose1")
+        tf.set_extrinsic(pose2.homo(), "pose2")
+        tf.set_extrinsic(calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar),
+                         frame_from="pose1", frame_to=fname1)
+        tf.set_extrinsic(calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar),
+                         frame_from="pose2", frame_to=fname2)
+
+        # visualize both point cloud in frame2
+        visualizer = pcl.Visualizer()
+        visualizer.addPointCloud(
+            pcl.create_xyzi(tf.transform_points(cloud1, frame_from=fname1, frame_to=fname2)),
+            field="intensity", id="cloud1"
+        )
+        visualizer.addPointCloud(pcl.create_xyzi(cloud2), field="intensity", id="cloud2")
+        visualizer.setRepresentationToWireframeForAllActors()
+        visualizer.addCoordinateSystem()
+        visualizer.setWindowName("Please check whether the gt boxes are aligned!")
+        # visualizer.spinOnce(time=5000)
+        # visualizer.close()
+        visualizer.spin()
 
 @unittest.skipIf(not kitti_location, "Path to kitti not set")
 class TestKittiRawDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.oloader = KittiRawLoader(kitti_location, inzip=inzip, nframes=0)
-        self.tloader = KittiRawLoader(kitti_location, inzip=inzip, nframes=2)
-
+        self.oloader = KittiRawLoader(kitti_location, inzip=inzip, trainval_random=12345, nframes=0)
+        self.tloader = KittiRawLoader(kitti_location, inzip=inzip, trainval_random=12345, nframes=5)
 
 @unittest.skipIf(not kitti360_location, "Path to KITTI-360 not set")
 class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.oloader = KITTI360Loader(kitti360_location, inzip=inzip, nframes=0)
-        self.tloader = KITTI360Loader(kitti360_location, inzip=inzip, nframes=2)
+        self.oloader = KITTI360Loader(kitti360_location, inzip=inzip, trainval_random=12345, nframes=0)
+        self.tloader = KITTI360Loader(kitti360_location, inzip=inzip, trainval_random=12345, nframes=5)
 
     def test_3d_semantic(self):
         seq = "2013_05_28_drive_0000_sync"
@@ -352,8 +399,8 @@ class TestKitti360Dataset(unittest.TestCase, CommonObjectDSMixin, CommonTracking
 @unittest.skipIf(not cadc_location, "Path to CADC not set")
 class TestCADCDataset(unittest.TestCase, CommonObjectDSMixin, CommonTrackingDSMixin):
     def setUp(self):
-        self.oloader = CADCDLoader(cadc_location, inzip=inzip, nframes=0)
-        self.tloader = CADCDLoader(cadc_location, inzip=inzip, nframes=5)
+        self.oloader = CADCDLoader(cadc_location, inzip=inzip, trainval_random=12345, nframes=0)
+        self.tloader = CADCDLoader(cadc_location, inzip=inzip, trainval_random=12345, nframes=5)
 
 if __name__ == "__main__":
     print("Please use pytest to run the tests.")

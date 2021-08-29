@@ -240,7 +240,7 @@ class KittiOdometryLoader(DatasetBase):
         if raw:
             return rt
 
-        return EgoPose(rt[:3, 3], Rotation.from_matrix(rt[:3, :3]))
+        return EgoPose(-rt[:3, 3], Rotation.from_matrix(rt[:3, :3]).inv())
 
     @property
     def pose_name(self):
