@@ -240,7 +240,8 @@ class KittiOdometryLoader(DatasetBase):
         if raw:
             return rt
 
-        return EgoPose(-rt[:3, 3], Rotation.from_matrix(rt[:3, :3]).inv())
+        r = Rotation.from_matrix(rt[:3, :3])
+        return EgoPose(r.inv().as_matrix().dot(rt[:3, 3]), r)
 
     @property
     def pose_name(self):
@@ -307,9 +308,9 @@ class KittiOdometryLoader(DatasetBase):
             timelist = utils.load_timestamps(self.base_path, fname).astype(int) // 1000
         self._timestamp_cache[seq_id] = timelist
 
-    @expand_idx_name(VALID_LIDAR_NAMES[:1])
+    @expand_idx
     def timestamp(self, idx, names="velo"):
-        assert names == "velo"
+        del names
         assert not self._return_file_path, "The timestamp is not stored in single file!"
         seq_id, frame_idx = idx
         self._preload_timestamp(seq_id)

@@ -1,5 +1,3 @@
-from numpy.core.numeric import load
-from numpy.lib.arraysetops import isin
 from scipy.spatial.transform.rotation import Rotation
 from d3d.dataset.base import MultiModalSequenceDatasetMixin, SequenceDatasetBase
 from pathlib import Path
@@ -38,6 +36,7 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
     # write calibration information
     idx0 = sequence, 0
     t0 = rospy.Time.from_sec(dataset.timestamp(idx0) / 1e6)
+    tf0 = dataset.pose(idx0)
     calib = dataset.calibration_data(idx0)
     if hasattr(dataset, "VALID_CAM_NAMES"):
         for sensor in dataset.VALID_CAM_NAMES:
@@ -47,13 +46,15 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
             caminfo.header.frame_id = sensor
             caminfo.width, caminfo.height = meta.width, meta.height
             caminfo.distortion_model = 'plumb_bob'
-            caminfo.K = meta.intri_matrix.flatten().tolist()
-            caminfo.D = meta.distort_coeffs.tolist()
+            if meta.intri_matrix is not None:
+                caminfo.K = meta.intri_matrix.flatten().tolist()
+            if meta.distort_coeffs is not None:
+                caminfo.D = meta.distort_coeffs.tolist()
 
             bag.write(f"/camera_data/{sensor}/info", caminfo, t0)
 
     tfm = TFMessage()
-    for name in calib.frames:
+    for name in ([calib.base_frame] + calib.frames):
         if name == dataset.pose_name:
             continue
         tf_msg = TransformStamped()
@@ -61,7 +62,7 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
         tf_msg.header.frame_id = dataset.pose_name
         tf_msg.child_frame_id = name
         tf = calib.get_extrinsic(frame_from=name, frame_to=dataset.pose_name)
-        translation = tf[:3, :3].dot(tf[:3, 3])
+        translation = tf[:3, 3]
         tf_msg.transform.translation.x = translation[0]
         tf_msg.transform.translation.y = translation[1]
         tf_msg.transform.translation.z = translation[2]
@@ -70,26 +71,8 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
         tf_msg.transform.rotation.y = quat[1]
         tf_msg.transform.rotation.z = quat[2]
         tf_msg.transform.rotation.w = quat[3]
-
         tfm.transforms.append(tf_msg)
 
-    # write initial pose to construct odom coordinate
-    tf_msg = TransformStamped()
-    tf_msg.header.stamp = t0
-    tf_msg.header.frame_id = 'world'
-    tf_msg.child_frame_id = 'odom'
-
-    tf0 = dataset.pose(idx0)
-    tf_msg.transform.translation.x = tf0.position[0]
-    tf_msg.transform.translation.y = tf0.position[1]
-    tf_msg.transform.translation.z = tf0.position[2]
-    quat = tf0.orientation.as_quat() # Rotation.from_matrix(tf0[:3, :3]).as_quat()
-    tf_msg.transform.rotation.x = quat[0]
-    tf_msg.transform.rotation.y = quat[1]
-    tf_msg.transform.rotation.z = quat[2]
-    tf_msg.transform.rotation.w = quat[3]
-
-    tfm.transforms.append(tf_msg)
     bag.write('/tf_static', tfm, t=t0)
 
     for i in tqdm.trange(dataset.sequence_sizes[sequence], unit="frames"):
@@ -129,14 +112,14 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
         tfm = TFMessage()
         tf_msg = TransformStamped()
         tf_msg.header.stamp = t_pose
-        tf_msg.header.frame_id = 'world'
+        tf_msg.header.frame_id = 'odom'
         tf_msg.child_frame_id = dataset.pose_name
 
         tf = dataset.pose(uidx)
-        tf_msg.transform.translation.x = tf.position[0]
-        tf_msg.transform.translation.y = tf.position[1]
-        tf_msg.transform.translation.z = tf.position[2]
-        quat = tf.orientation.as_quat() # Rotation.from_matrix(tf[:3, :3]).as_quat()
+        tf_msg.transform.translation.x = tf.position[0] - tf0.position[0]
+        tf_msg.transform.translation.y = tf.position[1] - tf0.position[1]
+        tf_msg.transform.translation.z = tf.position[2] - tf0.position[2]
+        quat = tf.orientation.as_quat()
         tf_msg.transform.rotation.x = quat[0]
         tf_msg.transform.rotation.y = quat[1]
         tf_msg.transform.rotation.z = quat[2]
@@ -149,8 +132,11 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
     print("ROS bag creation finished")
 
 if __name__ == "__main__":
-    from d3d.dataset.cadc import CADCDLoader
-    loader = CADCDLoader("/home/jacobz/Datasets/cadcd-raw", inzip=True)
-    print(loader.sequence_ids)
+    # from d3d.dataset.cadc import CADCDLoader
+    # loader = CADCDLoader("/home/jacobz/Datasets/cadcd-raw", inzip=True)
 
+    from d3d.dataset.kitti import KittiTrackingLoader
+    loader = KittiTrackingLoader("/media/jacobz/Storage/Datasets/kitti-raw", inzip=True)
+
+    print(loader.sequence_ids)
     dump_sequence_dataset(loader, "test.bag", loader.sequence_ids[0])
