@@ -240,8 +240,7 @@ class KittiOdometryLoader(DatasetBase):
         if raw:
             return rt
 
-        r = Rotation.from_matrix(rt[:3, :3])
-        return EgoPose(r.inv().as_matrix().dot(rt[:3, 3]), r)
+        return EgoPose(rt[:3, 3], rt[:3, :3])
 
     @property
     def pose_name(self):
@@ -314,7 +313,7 @@ class KittiOdometryLoader(DatasetBase):
         assert not self._return_file_path, "The timestamp is not stored in single file!"
         seq_id, frame_idx = idx
         self._preload_timestamp(seq_id)
-        return self._timestamp_cache[seq_id][frame_idx]
+        return self._timestamp_cache[seq_id][frame_idx] + 1  # prepend a delay
 
 if __name__ == "__main__":
     loader = KittiOdometryLoader("/mnt/storage8t/datasets/kitti", inzip=True)

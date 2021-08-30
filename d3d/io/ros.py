@@ -1,3 +1,4 @@
+from numpy.core.fromnumeric import size
 from scipy.spatial.transform.rotation import Rotation
 from d3d.dataset.base import MultiModalSequenceDatasetMixin, SequenceDatasetBase
 from pathlib import Path
@@ -23,15 +24,20 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
                           sequence: Any,
                           size_limit: Optional[int] = None,
                           object_encoder: Callable[[Target3DArray], Any] = None,
-                          root_name: str = "dataset"):
+                          compression: str = None,
+                          odom_frame: str = None,
+                          root_name: str = "dataset"):  # TODO: apply root_name before topic
     """
-    :param object_encoder: Function to encoder Target3DArray as ROS message. If not present, then it will be serialized as 
+    :param object_encoder: Function to encoder Target3DArray as ROS message. If not present, then it will be serialized as msgpack binary
+    :param odom_frame: Which sensor frame to be selected as initial odom pose. If not present, the pose frame will be used for odom
     """
     if isinstance(sequence, list):
         raise ValueError("Only support converting single sequence into ROS bag.")
     if not out_path.endswith(".bag"):
         out_path += ".bag"
-    bag = rosbag.Bag(out_path, "w")
+    out_path = Path(out_path)
+
+    bag = rosbag.Bag(out_path, "w", compression=compression or "none")
 
     # write calibration information
     idx0 = sequence, 0
@@ -61,7 +67,25 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
         tf_msg.header.stamp = t0
         tf_msg.header.frame_id = dataset.pose_name
         tf_msg.child_frame_id = name
-        tf = calib.get_extrinsic(frame_from=name, frame_to=dataset.pose_name)
+        # TransformSet tf is the inverse of ROS tf
+        tf = calib.get_extrinsic(frame_to=dataset.pose_name, frame_from=name)
+        translation = tf[:3, 3]
+        tf_msg.transform.translation.x = translation[0]
+        tf_msg.transform.translation.y = translation[1]
+        tf_msg.transform.translation.z = translation[2]
+        quat = Rotation.from_matrix(tf[:3, :3]).as_quat()
+        tf_msg.transform.rotation.x = quat[0]
+        tf_msg.transform.rotation.y = quat[1]
+        tf_msg.transform.rotation.z = quat[2]
+        tf_msg.transform.rotation.w = quat[3]
+        tfm.transforms.append(tf_msg)
+
+    if odom_frame:
+        tf_msg = TransformStamped()
+        tf_msg.header.stamp = t0
+        tf_msg.header.frame_id = "odom"
+        tf_msg.child_frame_id = "odom_pose"
+        tf = calib.get_extrinsic(frame_to=odom_frame, frame_from=dataset.pose_name)
         translation = tf[:3, 3]
         tf_msg.transform.translation.x = translation[0]
         tf_msg.transform.translation.y = translation[1]
@@ -85,7 +109,6 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
                 bag.write(f'/lidar_data/{sensor}', points_msg,
                           t=rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6))
         if hasattr(dataset, "VALID_CAM_NAMES"):
-            # https://github.com/tomas789/kitti2bag/blob/master/kitti2bag/kitti2bag.py#L105
             for sensor in dataset.VALID_CAM_NAMES:
                 img = dataset.camera_data(uidx, names=sensor)
 
@@ -106,20 +129,23 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
                 msg.data = np.array(img).tobytes()
                 bag.write(f'/camera_data/{sensor}', msg,
                           t=rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6))
+        
+        # TODO: dump objects and semantics
 
         # write pose
         t_pose = rospy.Time.from_sec(dataset.timestamp(uidx, dataset.pose_name) / 1e6)
         tfm = TFMessage()
         tf_msg = TransformStamped()
         tf_msg.header.stamp = t_pose
-        tf_msg.header.frame_id = 'odom'
+        tf_msg.header.frame_id = 'odom_pose' if odom_frame else 'odom'
         tf_msg.child_frame_id = dataset.pose_name
 
         tf = dataset.pose(uidx)
-        tf_msg.transform.translation.x = tf.position[0] - tf0.position[0]
-        tf_msg.transform.translation.y = tf.position[1] - tf0.position[1]
-        tf_msg.transform.translation.z = tf.position[2] - tf0.position[2]
-        quat = tf.orientation.as_quat()
+        tfdiff = np.linalg.inv(tf0.homo()).dot(tf.homo())
+        tf_msg.transform.translation.x = tfdiff[0, 3]
+        tf_msg.transform.translation.y = tfdiff[1, 3]
+        tf_msg.transform.translation.z = tfdiff[2, 3]
+        quat = Rotation.from_matrix(tfdiff[:3, :3]).as_quat()
         tf_msg.transform.rotation.x = quat[0]
         tf_msg.transform.rotation.y = quat[1]
         tf_msg.transform.rotation.z = quat[2]
@@ -128,15 +154,22 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
         tfm.transforms.append(tf_msg)
         bag.write('/tf', tfm, t=t_pose)
 
+        if out_path.stat().st_size > size_limit:
+            print("Terminate because bag size reaches limit.")
+            break
+
     bag.close()
-    print("ROS bag creation finished")
+    print("ROS bag creation finished.")
 
 if __name__ == "__main__":
     # from d3d.dataset.cadc import CADCDLoader
     # loader = CADCDLoader("/home/jacobz/Datasets/cadcd-raw", inzip=True)
 
-    from d3d.dataset.kitti import KittiTrackingLoader
-    loader = KittiTrackingLoader("/media/jacobz/Storage/Datasets/kitti-raw", inzip=True)
+    from d3d.dataset.kitti import KittiTrackingLoader, KittiOdometryLoader
+    loader = KittiOdometryLoader("/media/jacobz/Storage/Datasets/kitti-raw", inzip=True)
+
+    # from d3d.dataset.nuscenes import NuscenesLoader
+    # loader = NuscenesLoader("/media/jacobz/Storage/Datasets/nuscenes", inzip=True)
 
     print(loader.sequence_ids)
-    dump_sequence_dataset(loader, "test.bag", loader.sequence_ids[0])
+    dump_sequence_dataset(loader, "test.bag", loader.sequence_ids[0], size_limit=1e9, odom_frame="velo") #, compression="bz2")

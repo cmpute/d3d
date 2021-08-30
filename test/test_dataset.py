@@ -145,10 +145,10 @@ class CommonTrackingDSMixin:
         tf.set_intrinsic_lidar(fname2)
         tf.set_extrinsic(np.linalg.inv(pose1.homo()), "pose1")
         tf.set_extrinsic(np.linalg.inv(pose2.homo()), "pose2")
-        tf.set_extrinsic(calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar),
-                         frame_from="pose1", frame_to=fname1)
-        tf.set_extrinsic(calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar),
-                         frame_from="pose2", frame_to=fname2)
+        pose2lidar = calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar)
+        tf.set_extrinsic(pose2lidar, frame_from="pose1", frame_to=fname1)
+        tf.set_extrinsic(pose2lidar, frame_from="pose2", frame_to=fname2)
+        print("TF", tf.get_extrinsic(frame_from=fname1, frame_to=fname2))
 
         # make coordinate unified in frame
         targets1 = calib.transform_objects(targets1, lidar)
@@ -331,10 +331,9 @@ class TestKittiOdometryDataset(unittest.TestCase):
         tf.set_intrinsic_lidar(fname2)
         tf.set_extrinsic(np.linalg.inv(pose1.homo()), "pose1")
         tf.set_extrinsic(np.linalg.inv(pose2.homo()), "pose2")
-        tf.set_extrinsic(calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar),
-                         frame_from="pose1", frame_to=fname1)
-        tf.set_extrinsic(calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar),
-                         frame_from="pose2", frame_to=fname2)
+        pose2lidar = calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar)
+        tf.set_extrinsic(pose2lidar, frame_from="pose1", frame_to=fname1)
+        tf.set_extrinsic(pose2lidar, frame_from="pose2", frame_to=fname2)
 
         # visualize both point cloud in frame2
         visualizer = pcl.Visualizer()

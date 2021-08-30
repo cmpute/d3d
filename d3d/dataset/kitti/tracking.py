@@ -329,4 +329,4 @@ class KittiTrackingLoader(TrackingDatasetBase):
     def timestamp(self, idx, names="velo"):
         del names
         _, fidx = idx
-        return fidx * 1e5 + 1  # assuming the data frequency is 10Hz
+        return fidx * 1e5 + 1  # assuming the data frequency is 10Hz and prepend a delay

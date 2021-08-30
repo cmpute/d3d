@@ -152,7 +152,7 @@ class KITTI360Loader(TrackingDatasetBase):
             raise ValueError("Cannot parse dataset, please check path, inzip option and file structure")
         self.frame_dict = SortedDict(frame_count)
 
-        self.frames = split_trainval_seq(phase, self.frame_dict, self.frame_dict, trainval_random, trainval_byseq)
+        self.frames = split_trainval_seq(phase, self.frame_dict, trainval_random, trainval_byseq)
         self._poses_idx = {} # store loaded poses indices
         self._poses_t = {} # pose translation
         self._poses_r = {} # pose rotation
@@ -260,7 +260,7 @@ class KITTI360Loader(TrackingDatasetBase):
             if np.linalg.norm(T) > visible_range:
                 continue
 
-            global_id = box.semanticID * 1000 + box.instanceID
+            global_id = box.semanticId * 1000 + box.instanceId
             tag = ObjectTag(kittiId2label[box.semanticId].name, Kitti360Class)
             boxes.append(ObjectTarget3D(T, R, S, tag, tid=global_id))
         return boxes

@@ -263,7 +263,6 @@ class NuscenesLoader(TrackingDatasetBase):
         # parse annotations
         ego_pose = self.pose(idx, bypass=True)
         ego_r, ego_t = ego_pose.orientation, ego_pose.position
-        ego_t = ego_r.as_matrix().dot(ego_t) # convert to original representation
         ego_ri = ego_r.inv()
         ego_rim = ego_ri.as_matrix()
         outputs = Target3DArray(frame="ego")
@@ -400,7 +399,7 @@ class NuscenesLoader(TrackingDatasetBase):
     def identity(self, idx):
         return idx
 
-    @expand_idx_name(VALID_LIDAR_NAMES + VALID_CAM_NAMES)
+    @expand_idx
     def timestamp(self, idx, names="lidar_top"):
         seq_id, frame_idx = idx
         fname = "timestamp/%03d.json" % frame_idx
@@ -410,7 +409,10 @@ class NuscenesLoader(TrackingDatasetBase):
         else:
             with Path(self.base_path, seq_id, fname).open() as fin:
                 tsdict = json.load(fin)
-        return tsdict[names]
+        if names in tsdict:
+            return tsdict[names]
+        else:
+            return tsdict["lidar_top"]
 
     @expand_idx_name(VALID_LIDAR_NAMES + VALID_CAM_NAMES)
     def pose(self, idx, names="lidar_top", raw=False):
@@ -429,7 +431,7 @@ class NuscenesLoader(TrackingDatasetBase):
             return data
 
         r = Rotation.from_quat(data['rotation'][1:] + [data['rotation'][0]])
-        t = r.inv().as_matrix().dot(np.array(data['translation']))
+        t = np.array(data['translation'])
         return EgoPose(t, r)
 
     @property

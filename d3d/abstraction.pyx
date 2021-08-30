@@ -122,6 +122,8 @@ cdef inline float quat2yaw(const float[:] q) nogil:
 def _parse_rotation(value):
     if isinstance(value, Rotation):
         return value.as_quat().astype(np.float32)
+    elif isinstance(value, np.ndarray) and value.ndim == 2:
+        return Rotation.from_matrix(value[:3, :3]).as_quat().astype(np.float32)
     elif len(value) == 4:
         return np.asarray(value, dtype=np.float32)
     else:
@@ -720,24 +722,19 @@ cdef class EgoPose:
     def homo(self):
         '''
         Convert the pose to a homogeneous matrix representation
-
-        Note that the pose is represented by position and orientation. The rotation operation is
-        performed after translation `R(x+T)`, which is different from common rigid transform
-        `Rx+T`.
         '''
         arr = np.eye(4)
-        r = self.orientation.as_matrix()
-        arr[:3, :3] = r
-        arr[:3, 3] = r.dot(self.position)
+        arr[:3, :3] = self.orientation.as_matrix()
+        arr[:3, 3] = self.position
         return arr
 
     def __repr__(self):
         return "<EgoPose %s>" % str(self)
 
     def __str__(self):
-        ypr = tuple(self.orientation.as_euler("ZYX").tolist())
+        rpy = tuple(self.orientation.as_euler("XYZ").tolist())
         return "position: [x=%.2f, y=%.2f, z=%.2f], orientation: [r=%.2f, p=%.2f, y=%.2f]" % \
-            (tuple(self.position.tolist()) + ypr[::-1])
+            (tuple(self.position.tolist()) + rpy)
 
 cdef class CameraMetadata:
     '''
