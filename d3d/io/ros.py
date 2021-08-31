@@ -1,4 +1,3 @@
-from numpy.core.fromnumeric import size
 from scipy.spatial.transform.rotation import Rotation
 from d3d.dataset.base import MultiModalSequenceDatasetMixin, SequenceDatasetBase
 from pathlib import Path
@@ -81,6 +80,8 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
         tfm.transforms.append(tf_msg)
 
     if odom_frame:
+        if odom_frame not in calib.frames and odom_frame != calib.base_frame:
+            raise ValueError("Invalid odom frame name!")
         tf_msg = TransformStamped()
         tf_msg.header.stamp = t0
         tf_msg.header.frame_id = "odom"
@@ -154,7 +155,7 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
         tfm.transforms.append(tf_msg)
         bag.write('/tf', tfm, t=t_pose)
 
-        if out_path.stat().st_size > size_limit:
+        if size_limit and out_path.stat().st_size > size_limit:
             print("Terminate because bag size reaches limit.")
             break
 

@@ -903,7 +903,7 @@ cdef class TransformSet:
         if frame_from in self.extrinsics:
             self.extrinsics[frame_to] = np.dot(transform, self.extrinsics[frame_from])
         elif frame_to in self.extrinsics:
-            self.extrinsics[frame_from] = np.dot(transform, np.linalg.inv(self.extrinsics[frame_to]))
+            self.extrinsics[frame_from] = np.dot(np.linalg.inv(transform), self.extrinsics[frame_to])
         else:
             raise ValueError("All frames are not present in extrinsics! "
                 "Please add one of them first!")

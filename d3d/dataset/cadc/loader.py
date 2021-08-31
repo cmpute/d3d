@@ -118,6 +118,33 @@ class CADCDLoader(TrackingDatasetBase):
 
     @property
     def sequence_ids(self):
+        # Sequence notes:
+        # 2018_03_06
+        # Seq | Snow  | Road Cover | Lens Cover
+        #   1 | None  |     N      |     N
+        #   5 | Med   |     N      |     Y
+        #   6 | Heavy |     N      |     Y
+        #   9 | Light |     N      |     Y
+        #  18 | Light |     N      |     N
+
+        # 2018_03_07
+        # Seq | Snow  | Road Cover | Lens Cover
+        #   1 | Heavy |     N      |     Y
+        #   4 | Light |     N      |     N
+        #   5 | Light |     N      |     Y
+
+        # 2019_02_27
+        # Seq | Snow  | Road Cover | Lens Cover
+        #   5 | Light |     Y      |     N
+        #   6 | Heavy |     Y      |     N
+        #  15 | Med   |     Y      |     N
+        #  28 | Light |     Y      |     N
+        #  37 | Extr  |     Y      |     N
+        #  46 | Extr  |     Y      |     N
+        #  59 | Med   |     Y      |     N
+        #  73 | Light |     Y      |     N
+        #  75 | Med   |     Y      |     N
+        #  80 | Heavy |     Y      |     N
         return list(self.frame_dict.keys())
 
     @property
@@ -154,13 +181,14 @@ class CADCDLoader(TrackingDatasetBase):
                 distort_coeffs=data.distortion_coefficients.data, intri_matrix=P, rotate=False)
 
         def add_extrinsics(data):
-            data = edict(data)
-            calib.set_extrinsic(np.reshape(data.T_BASELINK_LIDAR, (4,4)), "base_link", "lidar")
+            data = edict({k: np.array(v) for k, v in data.items()})
+            calib.set_extrinsic(data.T_BASELINK_LIDAR, "base_link", "lidar")
             for i in range(8):
-                calib.set_extrinsic(np.reshape(data['T_LIDAR_CAM%02d' % i], (4,4)), "lidar", self.VALID_CAM_NAMES[i])
-            calib.set_extrinsic(np.reshape(data.T_00CAMERA_00IMU, (4,4)), 'camera_F', 'xsens_300')
-            calib.set_extrinsic(np.reshape(data.T_03CAMERA_03IMU, (4,4)), 'camera_RB', 'xsens_30')
-            calib.set_extrinsic(np.reshape(data.T_LIDAR_GPSIMU, (4,4)), 'lidar', 'novatel')
+                # note that here the original matrix should be from cam to lidar
+                calib.set_extrinsic(data['T_LIDAR_CAM%02d' % i], "lidar", self.VALID_CAM_NAMES[i])
+            calib.set_extrinsic(data.T_00CAMERA_00IMU, 'camera_F', 'xsens_300')
+            calib.set_extrinsic(data.T_03CAMERA_03IMU, 'camera_RB', 'xsens_30')
+            calib.set_extrinsic(data.T_LIDAR_GPSIMU, 'lidar', 'novatel')
 
         # sensors with no intrinsic params
         calib.set_intrinsic_lidar("lidar")

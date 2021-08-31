@@ -97,10 +97,10 @@ def load_inspvax(basepath, file, labeled=True) -> INSPVAX:
 def parse_pose_from_inspvax(data: INSPVAX) -> EgoPose:
     import utm
     x, y, *_ = utm.from_latlon(data.latitude, data.longitude)
-    t = [x, y, data.altitude + data.undulation]
+    t = [-x, -y, data.altitude + data.undulation]
     r = Rotation.from_euler("yxz", [data.roll, data.pitch, -data.azimuth], degrees=True)
     
-    return EgoPose(t, r.inv(),
+    return EgoPose(t, r,
                    position_var=np.asarray([data.latitude_std, data.longitude_std, data.altitude_std]),
                    orientation_var=np.asarray([data.roll_std, data.pitch_std, data.azimuth_std]))
 
