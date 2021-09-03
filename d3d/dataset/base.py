@@ -72,6 +72,7 @@ def split_trainval_seq(phase: str,
                        by_seq: bool = False) -> Iterable[int]:
     '''
     Split frames for training or validation by frames or by sequence
+    TODO: consider nframes
 
     :param phase: training or validation
     :param total_count: total number of frames in trainval part of the dataset

@@ -1,12 +1,12 @@
 # cython: language_level=3, embedsignature=True
-
+cimport cython
 import torch
 cimport numpy as np
 import numpy as np
 
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
-from d3d.box import box2d_iou
+from d3d.dgal cimport box3d_iou, box3dr_iou
 from d3d.abstraction cimport ObjectTarget3D
 
 cdef class BaseMatcher:
@@ -19,6 +19,8 @@ cdef class BaseMatcher:
         self._src_assignment.clear()
         self._dst_assignment.clear()
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cpdef void prepare_boxes(self, Target3DArray src_boxes, Target3DArray dst_boxes, DistanceTypes distance_metric) except*:
         '''
         This method add two arrays of boxes and prepare related informations, it will also clean previous
@@ -35,8 +37,9 @@ cdef class BaseMatcher:
         self._src_boxes = src_boxes
         self._dst_boxes = dst_boxes
 
-        if len(src_boxes) == 0 or len(dst_boxes) == 0:
-            self._distance_cache = np.zeros((len(src_boxes), len(dst_boxes)), dtype=np.float32)
+        cdef int src_len = len(src_boxes), dst_len = len(dst_boxes)
+        if src_len == 0 or dst_len == 0:
+            self._distance_cache = np.zeros((src_len, dst_len), dtype=np.float32)
             return
 
         # sometimes pre-calculate these values will be slower?
@@ -48,16 +51,33 @@ cdef class BaseMatcher:
         dst_arr[:, 5:8] = np.clip(dst_arr[:, 5:8], -1e3, 1e3)
 
         # calculate metrics
-        if distance_metric == DistanceTypes.IoU:
-            self._distance_cache = 1 - box2d_iou( # use 1-iou as distance
-                src_arr[:, [2,3,5,6,8]],
-                dst_arr[:, [2,3,5,6,8]],
-                method="box") 
+        # TODO: remove dependency on box2d_iou
+        cdef float[:, :] src_view = src_arr
+        cdef float[:, :] dst_view = dst_arr
+        if distance_metric == DistanceTypes.IoU:  # use 1-iou as distance
+            self._distance_cache = np.empty([src_len, dst_len], dtype='f4')
+            with nogil:
+                for i in range(src_len):
+                    for j in range(dst_len):
+                        self._distance_cache[i, j] = 1 - box3d_iou(
+                            src_view[i, 2], src_view[i, 3], src_view[i, 4],
+                            src_view[i, 5], src_view[i, 6], src_view[i, 7],
+                            src_view[i, 8],
+                            dst_view[j, 2], dst_view[j, 3], dst_view[j, 4],
+                            dst_view[j, 5], dst_view[j, 6], dst_view[j, 7],
+                            dst_view[j, 8])
         if distance_metric == DistanceTypes.RIoU:
-            self._distance_cache = 1 - box2d_iou(
-                src_arr[:, [2,3,5,6,8]],
-                dst_arr[:, [2,3,5,6,8]],
-                method="rbox")
+            self._distance_cache = np.empty([src_len, dst_len], dtype='f4')
+            with nogil:
+                for i in range(src_len):
+                    for j in range(dst_len):
+                        self._distance_cache[i, j] = 1 - box3dr_iou(
+                            src_view[i, 2], src_view[i, 3], src_view[i, 4],
+                            src_view[i, 5], src_view[i, 6], src_view[i, 7],
+                            src_view[i, 8],
+                            dst_view[j, 2], dst_view[j, 3], dst_view[j, 4],
+                            dst_view[j, 5], dst_view[j, 6], dst_view[j, 7],
+                            dst_view[j, 8])
         elif distance_metric == DistanceTypes.Position:
             self._distance_cache = cdist(src_arr[:, :3], dst_arr[:, :3], metric='euclidean').astype(np.float32)
 

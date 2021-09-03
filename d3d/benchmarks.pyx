@@ -1184,6 +1184,8 @@ cdef class SegmentationEvaluator:
 
         def mean_wo_nan(values):
             valid = [v for v in values if not isnan(v)]
+            if len(valid) == 0:
+                return NAN
             return sum(valid) / len(valid)
 
         lines.append("========== Benchmark Summary ==========")
@@ -1195,13 +1197,17 @@ cdef class SegmentationEvaluator:
 
             typed_k = k if self._class_type is None else self._class_type(k)
             name = str(k).rjust(4, " ") if self._class_type is None else typed_k.name.rjust(20, " ")
-            lines.append("%s: iou=%.3f, sq=%.3f, rq=%.3f, pq=%.3f" % (name,
-                iou[typed_k], sq[typed_k], rq[typed_k], pq[typed_k]))
+            if isnan(pq[typed_k]):
+                lines.append("%s: iou=%.3f" % (name, iou[typed_k]))
+            else:
+                lines.append("%s: iou=%.3f, sq=%.3f, rq=%.3f, pq=%.3f" % (name,
+                    iou[typed_k], sq[typed_k], rq[typed_k], pq[typed_k]))
 
         lines.append("mean IoU: %.4f" % mean_wo_nan(iou.values()))
-        lines.append("mean SQ: %.4f" % mean_wo_nan(sq.values()))
-        lines.append("mean RQ: %.4f" % mean_wo_nan(rq.values()))
-        lines.append("mean PQ: %.4f" % mean_wo_nan(pq.values()))
+        if not isnan(mean_wo_nan(pq.values())):
+            lines.append("mean SQ: %.4f" % mean_wo_nan(sq.values()))
+            lines.append("mean RQ: %.4f" % mean_wo_nan(rq.values()))
+            lines.append("mean PQ: %.4f" % mean_wo_nan(pq.values()))
         lines.append("========== Summary End ==========")
 
         return '\n'.join(lines)

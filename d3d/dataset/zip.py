@@ -69,7 +69,7 @@ class PatchedZipFile(ZipFile):
             if len(centdir) != sizeCentralDir:
                 raise BadZipFile("Truncated central directory. This error "
                                  "might indicate that some files specified "
-                                 "in `to_extract` are found!")
+                                 "in `to_extract` are not found!")
             centdir = struct.unpack(structCentralDir, centdir)
             if centdir[_CD_SIGNATURE] != stringCentralDir:
                 raise BadZipFile("Bad magic number for central directory")

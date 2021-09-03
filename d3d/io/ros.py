@@ -132,6 +132,7 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
                           t=rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6))
         
         # TODO: dump objects and semantics
+        # TODO: also save intermediate sensor data
 
         # write pose
         t_pose = rospy.Time.from_sec(dataset.timestamp(uidx, dataset.pose_name) / 1e6)
