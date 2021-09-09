@@ -133,6 +133,7 @@ class CommonTrackingDSMixin:
         cloud1, cloud2 = clouds[0][:, :4], clouds[-1][:, :4]
         pose1, pose2 = poses[0], poses[-1]
         targets1, targets2 = targets[0], targets[-1]
+        print("IDX", idx)
         print("START", pose1)
         print("END", pose2)
         
@@ -143,8 +144,8 @@ class CommonTrackingDSMixin:
         tf.set_intrinsic_map_pin("pose2")
         tf.set_intrinsic_lidar(fname1)
         tf.set_intrinsic_lidar(fname2)
-        tf.set_extrinsic(np.linalg.inv(pose1.homo()), "pose1")
-        tf.set_extrinsic(np.linalg.inv(pose2.homo()), "pose2")
+        tf.set_extrinsic(pose1.homo(), frame_from="pose1")
+        tf.set_extrinsic(pose2.homo(), frame_from="pose2")
         pose2lidar = calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar)
         tf.set_extrinsic(pose2lidar, frame_from="pose1", frame_to=fname1)
         tf.set_extrinsic(pose2lidar, frame_from="pose2", frame_to=fname2)
@@ -329,8 +330,8 @@ class TestKittiOdometryDataset(unittest.TestCase):
         tf.set_intrinsic_map_pin("pose2")
         tf.set_intrinsic_lidar(fname1)
         tf.set_intrinsic_lidar(fname2)
-        tf.set_extrinsic(np.linalg.inv(pose1.homo()), "pose1")
-        tf.set_extrinsic(np.linalg.inv(pose2.homo()), "pose2")
+        tf.set_extrinsic(pose1.homo(), frame_from="pose1")
+        tf.set_extrinsic(pose2.homo(), frame_from="pose2")
         pose2lidar = calib.get_extrinsic(frame_from=self.tloader.pose_name, frame_to=lidar)
         tf.set_extrinsic(pose2lidar, frame_from="pose1", frame_to=fname1)
         tf.set_extrinsic(pose2lidar, frame_from="pose2", frame_to=fname2)
