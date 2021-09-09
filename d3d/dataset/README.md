@@ -1,8 +1,8 @@
 ## Outdoor datasets
 
-> - ✔: supported
-> - ✖: not supported yet
-> - ➖: absent in the dataset
+> - ✔ - supported
+> - ✖ - not supported yet
+> - ➖ - absent in the dataset
 
 | Dataset | Sensor Data & Calibration | 3D Box annotation | 3D points annotation | Timestamp & Pose |
 | :------ | :-----------------------: | :---------------: | :------------------: | :--------------: |
@@ -13,7 +13,7 @@
 | [Waymo](https://waymo.com/open/data/) | ✔ | ✔ | ➖ | ✔ |
 | [NuScenes](https://www.nuscenes.org/) | ✔ | ✔ | ✔ | ✔ |
 | [KITTI-360](http://www.cvlibs.net/datasets/kitti-360/) | ✔ | ✔ | ✔ | ✔ |
-| [CADC](http://cadcd.uwaterloo.ca/) | ✔ | ✔ | ✔ | ✔ |
+| [CADC](http://cadcd.uwaterloo.ca/) | ✔ | ✔ | ➖ | ✔ |
 
 To be supported:
 - [ ] [Livox](https://www.livoxtech.com/cn/dataset)

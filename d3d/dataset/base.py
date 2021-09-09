@@ -338,6 +338,28 @@ class DetectionDatasetBase(DatasetBase, MultiModalDatasetMixin):
                            for k, v in dimensions.items()}
         return dict(mean_dimension=mean_dimensions)
 
+class SegmentationDatasetMixin:
+    """
+    This class define basic interface for point cloud segmentation datasets
+    """
+
+    VALID_PTS_CLASSES: Enum
+    '''
+    List of valid points labels
+    '''
+
+    def annotation_3dpoints(self, idx: Union[int, tuple],
+                            names: Optional[Union[str, List[str]]] = None,
+                            formatted: Optional[bool] = False):
+        '''
+        Return list of point-wise labels in lidar frame.
+
+        :param idx: index of requested frame
+        :param formatted: if True, the point labels will be represented as a numpy record array,
+                          otherwise, the returned object will be a dictionary of numpy arrays.
+        '''
+        raise NotImplementedError("abstract function")
+
 
 class SequenceDatasetBase(DatasetBase):
     """

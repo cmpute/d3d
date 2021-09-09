@@ -38,6 +38,20 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
 
     bag = rosbag.Bag(out_path, "w", compression=compression or "none")
 
+    # find out which APIs are supported
+    try:
+        dataset.annotation_3dobject(0)
+        has_3dobject_anno = True
+    except (NotImplementedError, AttributeError) as e:
+        has_3dobject_anno = False
+    has_3dpoints_anno = {}
+    for sensor in getattr(dataset, "VALID_LIDAR_NAMES", []):
+        try:
+            dataset.annotation_3dpoints(0, names=sensor)
+            has_3dpoints_anno[sensor] = True
+        except (NotImplementedError, AttributeError) as e:
+            has_3dpoints_anno[sensor] = False
+
     # write calibration information
     idx0 = sequence, 0
     t0 = rospy.Time.from_sec(dataset.timestamp(idx0) / 1e6)
@@ -131,7 +145,22 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
                 bag.write(f'/camera_data/{sensor}', msg,
                           t=rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6))
         
-        # TODO: dump objects and semantics
+        # dump objects annotation
+        if has_3dobject_anno:
+            msg = object_encoder(dataset.annotation_3dobjects(uidx))
+            bag.write(f'/annotation_3dobject', msg, t=rospy.Time.from_sec(dataset.timestamp(uidx) / 1e6))
+
+        # dump points annotation
+        for sensor, valid in has_3dpoints_anno.items():
+            points = dataset.lidar_data(uidx, names=sensor, formatted=True)
+            points = pcl.PointCloud(points)
+            points_label = dataset.annotation_3dpoints(uidx, names=sensor)
+            points = points.append_fields(points_label)
+            points_msg = points.to_msg()
+            points_msg.header.frame_id = sensor
+            bag.write(f'/annotation_3dpoints', points_msg,
+                      t=rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6))
+
         # TODO: also save intermediate sensor data
 
         # write pose
@@ -165,7 +194,7 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
 
 if __name__ == "__main__":
     # from d3d.dataset.cadc import CADCDLoader
-    # loader = CADCDLoader("/home/jacobz/Datasets/cadcd-raw", inzip=True)
+    # loader = CADCDLoader("/media/jacobz/Storage/Datasets/cadcd-raw", inzip=True)
 
     from d3d.dataset.kitti import KittiTrackingLoader, KittiOdometryLoader
     loader = KittiOdometryLoader("/media/jacobz/Storage/Datasets/kitti-raw", inzip=True)
@@ -174,4 +203,10 @@ if __name__ == "__main__":
     # loader = NuscenesLoader("/media/jacobz/Storage/Datasets/nuscenes", inzip=True)
 
     print(loader.sequence_ids)
-    dump_sequence_dataset(loader, "test.bag", loader.sequence_ids[0], size_limit=1e9, odom_frame="velo") #, compression="bz2")
+    import random
+    dump_sequence_dataset(loader, "test.bag",
+        random.choice(loader.sequence_ids),
+        odom_frame=loader.VALID_LIDAR_NAMES[0],
+        size_limit=1e9,
+        # compression="bz2",
+    )

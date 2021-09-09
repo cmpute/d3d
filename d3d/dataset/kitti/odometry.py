@@ -314,27 +314,3 @@ class KittiOdometryLoader(DatasetBase):
         seq_id, frame_idx = idx
         self._preload_timestamp(seq_id)
         return self._timestamp_cache[seq_id][frame_idx] + 1  # prepend a delay
-
-if __name__ == "__main__":
-    loader = KittiOdometryLoader("/mnt/storage8t/datasets/kitti", inzip=True)
-    print(loader.pose(0))
-    print(loader.camera_data(0))
-    print(loader.lidar_data(0).shape)
-    print(loader.calibration_data(0))
-    print(loader.identity_in_raw(0))
-    print(loader.timestamp(0))
-    print(loader.annotation_3dpoints(0).semantic.shape)
-
-    # from d3d.dataset.kitti.raw import KittiRawLoader
-    # rloader = KittiRawLoader("/mnt/storage8t/datasets/kitti", inzip=True)
-    # print(rloader.calibration_data(loader.identity_in_raw(0)))
-    
-    # print("Pose @ 100:", loader.pose(0))
-    # print("Pose @ 100:", loader.pose(100))
-    # p0 = rloader.pose(loader.identity_in_raw(0))
-    # p1 = rloader.pose(loader.identity_in_raw(100))
-    # print("Raw pose @ 0:", p0)
-    # print("Raw pose @ 100:", p1)
-    # pdiff = p1.homo().dot(np.linalg.inv(p0.homo()))
-    # rdiff = Rotation.from_matrix(pdiff[:3,:3])
-    # print("Rotation:", rdiff.as_euler("xyz"))
