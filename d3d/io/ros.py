@@ -19,11 +19,10 @@ except ImportError:
 import pcl
 
 def dump_sequence_dataset(dataset: SequenceDatasetBase,
-                          out_path: Union[str, Path],
+                          bag: rosbag.Bag,
                           sequence: Any,
                           size_limit: Optional[int] = None,
                           object_encoder: Callable[[Target3DArray], Any] = None,
-                          compression: str = None,
                           odom_frame: str = None,
                           root_name: str = "dataset"):  # TODO: apply root_name before topic
     """
@@ -32,11 +31,6 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
     """
     if isinstance(sequence, list):
         raise ValueError("Only support converting single sequence into ROS bag.")
-    if not out_path.endswith(".bag"):
-        out_path += ".bag"
-    out_path = Path(out_path)
-
-    bag = rosbag.Bag(out_path, "w", compression=compression or "none")
 
     # find out which APIs are supported
     try:
@@ -120,9 +114,11 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
             for sensor in dataset.VALID_LIDAR_NAMES:
                 points = dataset.lidar_data(uidx, names=sensor, formatted=True)
                 points_msg = pcl.PointCloud(points).to_msg()
+                t = rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6)
+                points_msg.header.seq = i
+                points_msg.header.stamp = t
                 points_msg.header.frame_id = sensor
-                bag.write(f'/lidar_data/{sensor}', points_msg,
-                          t=rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6))
+                bag.write(f'/lidar_data/{sensor}', points_msg, t=t)
         if hasattr(dataset, "VALID_CAM_NAMES"):
             for sensor in dataset.VALID_CAM_NAMES:
                 img = dataset.camera_data(uidx, names=sensor)
@@ -142,16 +138,23 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
 
                 msg.is_bigendian = False
                 msg.data = np.array(img).tobytes()
-                bag.write(f'/camera_data/{sensor}', msg,
-                          t=rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6))
+
+                t = rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6)
+                msg.header.seq = i
+                msg.header.stamp = t
+                msg.header.frame_id = sensor
+                bag.write(f'/camera_data/{sensor}', msg, t=t)
         
         # dump objects annotation
-        if has_3dobject_anno:
-            msg = object_encoder(dataset.annotation_3dobjects(uidx))
+        if has_3dobject_anno and object_encoder is not None:
+            msg = object_encoder(dataset.annotation_3dobject(uidx))
             bag.write(f'/annotation_3dobject', msg, t=rospy.Time.from_sec(dataset.timestamp(uidx) / 1e6))
 
         # dump points annotation
         for sensor, valid in has_3dpoints_anno.items():
+            if not valid:
+                continue
+
             points = dataset.lidar_data(uidx, names=sensor, formatted=True)
             points = pcl.PointCloud(points)
             points_label = dataset.annotation_3dpoints(uidx, names=sensor)
@@ -185,7 +188,7 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
         tfm.transforms.append(tf_msg)
         bag.write('/tf', tfm, t=t_pose)
 
-        if size_limit and out_path.stat().st_size > size_limit:
+        if size_limit and bag.size > size_limit:
             print("Terminate because bag size reaches limit.")
             break
 
