@@ -36,6 +36,7 @@ To be supported:
 - [ ] [Ford AVData](https://avdata.ford.com/)
 - [ ] [ONCE](http://www.once-for-auto-driving.com)
 - [ ] [RADIATE](http://pro.hw.ac.uk/radiate/)
+- [ ] [DENSE](https://www.uni-ulm.de/en/in/driveu/projects/dense-datasets)
 
 More datasets: https://boschresearch.github.io/multimodalperception/dataset.html
 
