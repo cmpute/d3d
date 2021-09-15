@@ -88,35 +88,40 @@ class SemanticKittiLearningClass(Enum):
     pole = 18
     traffic_sign = 19
     
-    def to_original_id(self):
-        learning_map_inv = {
-            0: 0   ,
-            1: 10  ,
-            2: 11  ,
-            3: 15  ,
-            4: 18  ,
-            5: 20  ,
-            6: 30  ,
-            7: 31  ,
-            8: 32  ,
-            9: 40  ,
-            10: 44 ,
-            11: 48 ,
-            12: 49 ,
-            13: 50 ,
-            14: 51 ,
-            15: 70 ,
-            16: 71 ,
-            17: 72 ,
-            18: 80 ,
-            19: 81 ,
-            20: 252,
-            21: 253,
-            22: 254,
-            23: 255,
-            24: 259,
-            25: 258,
-        }
+    def to_original_id(self, is_moving=False):
+        if is_moving:
+            learning_map_inv = {
+                1: 252,
+                7: 253,
+                6: 254,
+                8: 255,
+                4: 258,
+                5: 259,
+            }
+        else:
+            learning_map_inv = {
+                0: 0   ,
+                1: 10  ,
+                2: 11  ,
+                3: 15  ,
+                4: 18  ,
+                5: 20  ,
+                6: 30  ,
+                7: 31  ,
+                8: 32  ,
+                9: 40  ,
+                10: 44 ,
+                11: 48 ,
+                12: 49 ,
+                13: 50 ,
+                14: 51 ,
+                15: 70 ,
+                16: 71 ,
+                17: 72 ,
+                18: 80 ,
+                19: 81 ,
+            }
+        
         return SemanticKittiClass(learning_map_inv[self.value])
 
 class SemanticKittiClass(Enum):
@@ -198,8 +203,9 @@ class SemanticKittiClass(Enum):
         b, g, r = color_map[self.value]
         return r, g, b
 
-    def to_learning_id(self):
-        learning_map = {
+    @classmethod
+    def _get_learning_map(self):
+        return {
             0  : 0  ,  # "unlabeled"
             1  : 0  ,  # "outlier" mapped to "unlabeled" --------------------------mapped
             10 : 1  ,  # "car"
@@ -226,16 +232,18 @@ class SemanticKittiClass(Enum):
             80 : 18 ,  # "pole"
             81 : 19 ,  # "traffic-sign"
             99 : 0  ,  # "other-object" to "unlabeled" ----------------------------mapped
-            252: 20 ,  # "moving-car"
-            253: 21 ,  # "moving-bicyclist"
-            254: 22 ,  # "moving-person"
-            255: 23 ,  # "moving-motorcyclist"
-            256: 24 ,  # "moving-on-rails" mapped to "moving-other-vehicle" ------mapped
-            257: 24 ,  # "moving-bus" mapped to "moving-other-vehicle" -----------mapped
-            258: 25 ,  # "moving-truck"
-            259: 24 ,  # "moving-other-vehicle"
+            252: 1  ,  # "moving-car" to "car" ------------------------------------mapped
+            253: 7  ,  # "moving-bicyclist" to "bicyclist" ------------------------mapped
+            254: 6  ,  # "moving-person" to "person" ------------------------------mapped
+            255: 8  ,  # "moving-motorcyclist" to "motorcyclist" ------------------mapped
+            256: 5  ,  # "moving-on-rails" mapped to "other-vehicle" --------------mapped
+            257: 5  ,  # "moving-bus" mapped to "other-vehicle" -------------------mapped
+            258: 4  ,  # "moving-truck" to "truck" --------------------------------mapped
+            259: 5  ,  # "moving-other"-vehicle to "other-vehicle" ----------------mapped
         }
-        return SemanticKittiLearningClass(learning_map[self.value])
+
+    def to_learning_id(self):
+        return SemanticKittiLearningClass(self._get_learning_map()[self.value])
 
 
 # ========== Loaders ==========

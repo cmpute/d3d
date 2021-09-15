@@ -23,11 +23,13 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
                           sequence: Any,
                           size_limit: Optional[int] = None,
                           object_encoder: Callable[[Target3DArray], Any] = None,
+                          point_label_field: str = None,
                           odom_frame: str = None,
                           root_name: str = "dataset"):  # TODO: apply root_name before topic
     """
     :param object_encoder: Function to encoder Target3DArray as ROS message. If not present, then it will be serialized as msgpack binary
     :param odom_frame: Which sensor frame to be selected as initial odom pose. If not present, the pose frame will be used for odom
+    :param point_label_field: If present, then the specified field will be considered as "label" and the point cloud will have a PointXYZL point type.
     """
     if isinstance(sequence, list):
         raise ValueError("Only support converting single sequence into ROS bag.")
@@ -158,11 +160,15 @@ def dump_sequence_dataset(dataset: SequenceDatasetBase,
             points = dataset.lidar_data(uidx, names=sensor, formatted=True)
             points = pcl.PointCloud(points)
             points_label = dataset.annotation_3dpoints(uidx, names=sensor)
-            points = points.append_fields(points_label)
+            if point_label_field:
+                points = pcl.create_xyzl(np.hstack([points.xyz,
+                    points_label[point_label_field][:, np.newaxis]]))
+            else:
+                points = points.append_fields(points_label)
             points_msg = points.to_msg()
             points_msg.header.frame_id = sensor
             bag.write(f'/annotation_3dpoints', points_msg,
-                      t=rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6))
+                    t=rospy.Time.from_sec(dataset.timestamp(uidx, sensor) / 1e6))
 
         # TODO: also save intermediate sensor data
 

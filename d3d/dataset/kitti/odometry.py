@@ -98,6 +98,10 @@ class KittiOdometryLoader(DatasetBase):
         self._calib_cache = {} # used to store parsed calibration data
         self._timestamp_cache = {}
 
+        self._segmapping = np.full(max([l.value for l in SemanticKittiClass]) + 1, -1, dtype='u1')
+        for ori, target in SemanticKittiClass._get_learning_map().items():
+            self._segmapping[ori] = target
+
     def _locate_frame(self, idx):
         idx = self.frames[idx] # use underlying frame index
 
@@ -277,7 +281,10 @@ class KittiOdometryLoader(DatasetBase):
         return seq_map[seq_id] + "_sync", frame_id
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def annotation_3dpoints(self, idx, names='velo'):
+    def annotation_3dpoints(self, idx, names='velo', convert_tag=True):
+        '''
+        :param conver_tag: If true, the output semantics will be represented in SemanticKittiLearningClass
+        '''
         seq_id, frame_idx = idx
         assert names == 'velo'
 
@@ -291,8 +298,14 @@ class KittiOdometryLoader(DatasetBase):
         else:
             buffer = (self.base_path / fname).read_bytes()
         label = np.frombuffer(buffer, dtype='u4')
+        upper_half = label >> 16      # get upper half for instances
+        lower_half = label & 0xFFFF   # get lower half for semantics
+        moving = lower_half > 100
 
-        return edict(semantic=label)
+        if convert_tag:
+            return edict(instance=upper_half, semantic=self._segmapping[lower_half], moving=moving)
+        else:
+            return edict(instance=upper_half, semantic=lower_half, moving=moving)
 
     def _preload_timestamp(self, seq_id):
         if seq_id in self._timestamp_cache:
