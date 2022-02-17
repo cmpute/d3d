@@ -37,6 +37,7 @@ To be supported:
 - [ ] [ONCE](http://www.once-for-auto-driving.com)
 - [ ] [RADIATE](http://pro.hw.ac.uk/radiate/)
 - [ ] [DENSE](https://www.uni-ulm.de/en/in/driveu/projects/dense-datasets)
+- [ ] [WADS](https://digitalcommons.mtu.edu/wads/)
 
 More datasets: https://boschresearch.github.io/multimodalperception/dataset.html
 

@@ -282,7 +282,6 @@ class KittiOdometryLoader(DatasetBase):
         :param convert_tag: True = convert to static learning tags,
             'dynamic' = convert to learning tags with dynamic objects
         """
-
         seq_id, frame_idx = idx
         assert names == 'velo'
 
@@ -296,19 +295,21 @@ class KittiOdometryLoader(DatasetBase):
         else:
             buffer = (self.base_path / fname).read_bytes()
         label = np.frombuffer(buffer, dtype='u4')
+        upper_half = label >> 16      # get upper half for instances
+        lower_half = label & 0xFFFF   # get lower half for semantics
 
         if convert_tag is True:
-            mapping = np.zeros(260, dtype='u4')
-            for c in SemanticKittiClass:
-                mapping[c.value] = c.to_learning_id().value
-            return edict(semantic=mapping[label & 0xFFFF])
+            mapping = np.full(max([l.value for l in SemanticKittiClass]) + 1, -1, dtype='u1')
+            for ori, target in SemanticKittiClass._get_learning_map().items():
+                mapping[ori] = target
+            return edict(instance=upper_half, semantic=mapping[lower_half], moving=lower_half > 100)
         elif convert_tag == 'dynamic':
-            mapping = np.zeros(260, dtype='u4')
-            for c in SemanticKittiClass:
-                mapping[c.value] = c.to_learning_id(static_only=False).value
-            return edict(semantic=mapping[label & 0xFFFF])
+            mapping = np.full(max([l.value for l in SemanticKittiClass]) + 1, -1, dtype='u1')
+            for ori, target in SemanticKittiClass._get_learning_map(static_only=False).items():
+                mapping[ori] = target
+            return edict(instance=upper_half, semantic=mapping[lower_half])
         else:
-            return edict(semantic=label)
+            return edict(instance=upper_half, semantic=label)
 
     def _preload_timestamp(self, seq_id):
         if seq_id in self._timestamp_cache:

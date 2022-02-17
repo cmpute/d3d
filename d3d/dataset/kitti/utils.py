@@ -94,35 +94,40 @@ class SemanticKittiLearningClass(Enum):
     moving_other_vehicle = 24
     moving_truck = 25
     
-    def to_original_id(self):
-        learning_map_inv = {
-            0: 0   ,
-            1: 10  ,
-            2: 11  ,
-            3: 15  ,
-            4: 18  ,
-            5: 20  ,
-            6: 30  ,
-            7: 31  ,
-            8: 32  ,
-            9: 40  ,
-            10: 44 ,
-            11: 48 ,
-            12: 49 ,
-            13: 50 ,
-            14: 51 ,
-            15: 70 ,
-            16: 71 ,
-            17: 72 ,
-            18: 80 ,
-            19: 81 ,
-            20: 252,
-            21: 253,
-            22: 254,
-            23: 255,
-            24: 259,
-            25: 258,
-        }
+    def to_original_id(self, is_moving=False):
+        if is_moving:
+            learning_map_inv = {
+                1: 252,
+                7: 253,
+                6: 254,
+                8: 255,
+                4: 258,
+                5: 259,
+            }
+        else:
+            learning_map_inv = {
+                0: 0   ,
+                1: 10  ,
+                2: 11  ,
+                3: 15  ,
+                4: 18  ,
+                5: 20  ,
+                6: 30  ,
+                7: 31  ,
+                8: 32  ,
+                9: 40  ,
+                10: 44 ,
+                11: 48 ,
+                12: 49 ,
+                13: 50 ,
+                14: 51 ,
+                15: 70 ,
+                16: 71 ,
+                17: 72 ,
+                18: 80 ,
+                19: 81 ,
+            }
+        
         return SemanticKittiClass(learning_map_inv[self.value])
 
 class SemanticKittiClass(Enum):
@@ -204,8 +209,9 @@ class SemanticKittiClass(Enum):
         b, g, r = color_map[self.value]
         return r, g, b
 
-    def to_learning_id(self, static_only=True):
-        learning_map = {
+    @classmethod
+    def _get_learning_map(cls, static_only=True):
+        return {
             0  : 0  ,  # "unlabeled"
             1  : 0  ,  # "outlier" mapped to "unlabeled" --------------------------mapped
             10 : 1  ,  # "car"
@@ -241,7 +247,9 @@ class SemanticKittiClass(Enum):
             258: 4 if static_only else 25,  # "moving-truck"
             259: 5 if static_only else 24,  # "moving-other-vehicle"
         }
-        return SemanticKittiLearningClass(learning_map[self.value])
+
+    def to_learning_id(self):
+        return SemanticKittiLearningClass(self._get_learning_map()[self.value])
 
 
 # ========== Loaders ==========
