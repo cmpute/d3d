@@ -87,6 +87,12 @@ class SemanticKittiLearningClass(Enum):
     terrain = 17
     pole = 18
     traffic_sign = 19
+    moving_car = 20
+    moving_bicyclist = 21
+    moving_person = 22
+    moving_motorcyclist = 23
+    moving_other_vehicle = 24
+    moving_truck = 25
     
     def to_original_id(self):
         learning_map_inv = {
@@ -122,7 +128,7 @@ class SemanticKittiLearningClass(Enum):
 class SemanticKittiClass(Enum):
     unlabeled = 0
     outlier = 1
-    static = 9
+    # static = 9
     car = 10
     bicycle = 11
     bus = 13
@@ -198,7 +204,7 @@ class SemanticKittiClass(Enum):
         b, g, r = color_map[self.value]
         return r, g, b
 
-    def to_learning_id(self):
+    def to_learning_id(self, static_only=True):
         learning_map = {
             0  : 0  ,  # "unlabeled"
             1  : 0  ,  # "outlier" mapped to "unlabeled" --------------------------mapped
@@ -226,14 +232,14 @@ class SemanticKittiClass(Enum):
             80 : 18 ,  # "pole"
             81 : 19 ,  # "traffic-sign"
             99 : 0  ,  # "other-object" to "unlabeled" ----------------------------mapped
-            252: 20 ,  # "moving-car"
-            253: 21 ,  # "moving-bicyclist"
-            254: 22 ,  # "moving-person"
-            255: 23 ,  # "moving-motorcyclist"
-            256: 24 ,  # "moving-on-rails" mapped to "moving-other-vehicle" ------mapped
-            257: 24 ,  # "moving-bus" mapped to "moving-other-vehicle" -----------mapped
-            258: 25 ,  # "moving-truck"
-            259: 24 ,  # "moving-other-vehicle"
+            252: 1 if static_only else 20,  # "moving-car"
+            253: 7 if static_only else 21,  # "moving-bicyclist"
+            254: 6 if static_only else 22,  # "moving-person"
+            255: 8 if static_only else 23,  # "moving-motorcyclist"
+            256: 5 if static_only else 24,  # "moving-on-rails" mapped to "moving-other-vehicle" ------mapped
+            257: 5 if static_only else 24,  # "moving-bus" mapped to "moving-other-vehicle" -----------mapped
+            258: 4 if static_only else 25,  # "moving-truck"
+            259: 5 if static_only else 24,  # "moving-other-vehicle"
         }
         return SemanticKittiLearningClass(learning_map[self.value])
 

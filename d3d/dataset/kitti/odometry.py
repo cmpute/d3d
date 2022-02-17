@@ -277,7 +277,12 @@ class KittiOdometryLoader(DatasetBase):
         return seq_map[seq_id] + "_sync", frame_id
 
     @expand_idx_name(VALID_LIDAR_NAMES)
-    def annotation_3dpoints(self, idx, names='velo'):
+    def annotation_3dpoints(self, idx, names='velo', convert_tag=True):
+        """
+        :param convert_tag: True = convert to static learning tags,
+            'dynamic' = convert to learning tags with dynamic objects
+        """
+
         seq_id, frame_idx = idx
         assert names == 'velo'
 
@@ -292,7 +297,18 @@ class KittiOdometryLoader(DatasetBase):
             buffer = (self.base_path / fname).read_bytes()
         label = np.frombuffer(buffer, dtype='u4')
 
-        return edict(semantic=label)
+        if convert_tag is True:
+            mapping = np.zeros(260, dtype='u4')
+            for c in SemanticKittiClass:
+                mapping[c.value] = c.to_learning_id().value
+            return edict(semantic=mapping[label & 0xFFFF])
+        elif convert_tag == 'dynamic':
+            mapping = np.zeros(260, dtype='u4')
+            for c in SemanticKittiClass:
+                mapping[c.value] = c.to_learning_id(static_only=False).value
+            return edict(semantic=mapping[label & 0xFFFF])
+        else:
+            return edict(semantic=label)
 
     def _preload_timestamp(self, seq_id):
         if seq_id in self._timestamp_cache:
